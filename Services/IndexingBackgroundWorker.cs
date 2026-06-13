@@ -55,6 +55,7 @@ public class IndexingBackgroundWorker : BackgroundService
         var volumeIndexer = scope.ServiceProvider.GetRequiredService<CandleVolumeIndexer>();
         var techIndexer = scope.ServiceProvider.GetRequiredService<TechnicalIndicatorIndexer>();
         var marketIndexer = scope.ServiceProvider.GetRequiredService<MarketMetricsIndexer>();
+        var patternSeqIndexer = scope.ServiceProvider.GetRequiredService<CandlePatternSequenceIndexer>();
 
         const string symbol = "BTCUSDT";
 
@@ -126,10 +127,25 @@ public class IndexingBackgroundWorker : BackgroundService
         {
             await marketIndexer.IndexFundingRateAsync(symbol, cancellationToken);
             await marketIndexer.IndexOpenInterestAsync(symbol, "1h", cancellationToken);
+            await marketIndexer.IndexLiquidationsAsync(symbol, cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to auto-index market metrics for {Symbol}", symbol);
+        }
+
+        // 6. Pattern sequences
+        foreach (var tf in new[] { "15m", "1h" })
+        {
+            try
+            {
+                var indexed = await patternSeqIndexer.IndexAsync(symbol, tf, cancellationToken);
+                _logger.LogInformation("Auto-indexed {Indexed} pattern sequences for {Symbol} {Timeframe}", indexed, symbol, tf);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to auto-index pattern sequences for {Symbol} {Timeframe}", symbol, tf);
+            }
         }
     }
 }

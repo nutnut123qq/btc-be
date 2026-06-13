@@ -14,6 +14,8 @@ public class MarketController : ControllerBase
     private readonly IPatternSearchService _patternSearch;
     private readonly IWindowVectorIndexer _vectorIndexer;
     private readonly ICandlePatternIndexer _patternIndexer;
+    private readonly IWindowDatasetService _windowDataset;
+    private readonly IMlDatasetService _mlDataset;
     private readonly AppDbContext _db;
     private readonly ILogger<MarketController> _logger;
 
@@ -22,6 +24,8 @@ public class MarketController : ControllerBase
         IPatternSearchService patternSearch,
         IWindowVectorIndexer vectorIndexer,
         ICandlePatternIndexer patternIndexer,
+        IWindowDatasetService windowDataset,
+        IMlDatasetService mlDataset,
         AppDbContext db,
         ILogger<MarketController> logger)
     {
@@ -29,6 +33,8 @@ public class MarketController : ControllerBase
         _patternSearch = patternSearch;
         _vectorIndexer = vectorIndexer;
         _patternIndexer = patternIndexer;
+        _windowDataset = windowDataset;
+        _mlDataset = mlDataset;
         _db = db;
         _logger = logger;
     }
@@ -326,6 +332,124 @@ public class MarketController : ControllerBase
             pageSize,
             total,
             items
+        });
+    }
+
+    [HttpGet("window-dataset")]
+    public async Task<ActionResult<object>> GetWindowDataset(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string timeframe = "1h",
+        [FromQuery] int windowSize = 10,
+        [FromQuery] string horizon = "1d",
+        [FromQuery] int? label = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (!new[] { 5, 10, 15, 20, 25 }.Contains(windowSize))
+            return BadRequest(new ApiErrorEnvelope
+            {
+                Code = "INVALID_WINDOW_SIZE",
+                Message = "windowSize must be one of: 5, 10, 15, 20, 25.",
+                Retryable = false,
+                RequestId = HttpContext.TraceIdentifier
+            });
+
+        if (!new[] { "1h", "4h", "1d" }.Contains(horizon))
+            return BadRequest(new ApiErrorEnvelope
+            {
+                Code = "INVALID_HORIZON",
+                Message = "horizon must be one of: 1h, 4h, 1d.",
+                Retryable = false,
+                RequestId = HttpContext.TraceIdentifier
+            });
+
+        page = Math.Clamp(page, 1, 1000);
+        take = Math.Clamp(take, 1, 1000);
+
+        var query = _db.WindowClassificationDatasets.AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.WindowSize == windowSize && x.Horizon == horizon);
+
+        if (label.HasValue)
+            query = query.Where(x => x.Label == label.Value);
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.WindowStartMs)
+            .Skip((page - 1) * take)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return Ok(new
+        {
+            requestId = HttpContext.TraceIdentifier,
+            symbol,
+            timeframe,
+            windowSize,
+            horizon,
+            label,
+            page,
+            take,
+            total,
+            items
+        });
+    }
+
+    [HttpPost("ml-dataset/build")]
+    public async Task<ActionResult<object>> BuildMlDataset(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string timeframe = "1h",
+        CancellationToken cancellationToken = default)
+    {
+        var started = DateTime.UtcNow;
+        var count = await _mlDataset.BuildAsync(symbol, timeframe, cancellationToken);
+        return Ok(new
+        {
+            requestId = HttpContext.TraceIdentifier,
+            symbol,
+            timeframe,
+            touched = count,
+            durationMs = (int)(DateTime.UtcNow - started).TotalMilliseconds
+        });
+    }
+
+    [HttpPost("window-dataset/build")]
+    public async Task<ActionResult<object>> BuildWindowDataset(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string timeframe = "1h",
+        [FromQuery] int windowSize = 10,
+        [FromQuery] string horizon = "1d",
+        CancellationToken cancellationToken = default)
+    {
+        if (!new[] { 5, 10, 15, 20, 25 }.Contains(windowSize))
+            return BadRequest(new ApiErrorEnvelope
+            {
+                Code = "INVALID_WINDOW_SIZE",
+                Message = "windowSize must be one of: 5, 10, 15, 20, 25.",
+                Retryable = false,
+                RequestId = HttpContext.TraceIdentifier
+            });
+
+        if (!new[] { "1h", "4h", "1d" }.Contains(horizon))
+            return BadRequest(new ApiErrorEnvelope
+            {
+                Code = "INVALID_HORIZON",
+                Message = "horizon must be one of: 1h, 4h, 1d.",
+                Retryable = false,
+                RequestId = HttpContext.TraceIdentifier
+            });
+
+        var started = DateTime.UtcNow;
+        var count = await _windowDataset.BuildAsync(symbol, timeframe, windowSize, horizon, cancellationToken);
+        return Ok(new
+        {
+            requestId = HttpContext.TraceIdentifier,
+            symbol,
+            timeframe,
+            windowSize,
+            horizon,
+            inserted = count,
+            durationMs = (int)(DateTime.UtcNow - started).TotalMilliseconds
         });
     }
 

@@ -21,6 +21,10 @@ public class AppDbContext : DbContext
     public DbSet<Kline> Klines => Set<Kline>();
     public DbSet<TechnicalIndicator> TechnicalIndicators => Set<TechnicalIndicator>();
     public DbSet<MarketMetrics> MarketMetrics => Set<MarketMetrics>();
+    public DbSet<MlFeatureStore> MlFeatureStores => Set<MlFeatureStore>();
+    public DbSet<PriceTarget> PriceTargets => Set<PriceTarget>();
+    public DbSet<PatternSequence> PatternSequences => Set<PatternSequence>();
+    public DbSet<WindowClassificationDataset> WindowClassificationDatasets => Set<WindowClassificationDataset>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -143,6 +147,44 @@ public class AppDbContext : DbContext
             e.Property(x => x.Symbol).HasMaxLength(32);
             e.Property(x => x.Timeframe).HasMaxLength(16);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.OpenTimeMs }).IsUnique();
+        });
+
+        modelBuilder.Entity<MlFeatureStore>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.OpenTimeMs }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<PriceTarget>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.OpenTimeMs }).IsUnique();
+        });
+
+        modelBuilder.Entity<PatternSequence>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.PatternChainJson).HasMaxLength(4000);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.StartTimeMs });
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize });
+        });
+
+        modelBuilder.Entity<WindowClassificationDataset>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Horizon).HasMaxLength(16);
+            e.Property(x => x.FeatureVector).HasColumnType("real[]");
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Horizon, x.WindowStartMs }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Horizon, x.Label });
         });
     }
 }

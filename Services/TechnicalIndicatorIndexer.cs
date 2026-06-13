@@ -49,14 +49,27 @@ public class TechnicalIndicatorIndexer
         var bb = ComputeBollinger(klines.Select(k => k.Close).ToList(), 20, 2.0);
         var atr14 = ComputeAtr(klines, 14);
         var obv = ComputeObv(klines);
+        var obvEma50 = ComputeEmaOfDouble(obv, 50);
         var macd = ComputeMacd(ema12, ema26);
         var vwap = ComputeVwap(klines, timeframe);
+        var rollingVwap = ComputeRollingVwap(klines, 24);
 
         var toAdd = new List<TechnicalIndicator>();
         for (int i = 0; i < klines.Count; i++)
         {
             var k = klines[i];
             if (existingSet.Contains(k.OpenTimeMs)) continue;
+
+            var atr = atr14[i];
+            var macdNorm = macd.MacdLine[i].HasValue && atr.HasValue && atr.Value > 0
+                ? (double?)(macd.MacdLine[i].Value / atr.Value)
+                : null;
+            var macdSignalNorm = macd.SignalLine[i].HasValue && atr.HasValue && atr.Value > 0
+                ? (double?)(macd.SignalLine[i].Value / atr.Value)
+                : null;
+            var macdHistogramNorm = macd.Histogram[i].HasValue && atr.HasValue && atr.Value > 0
+                ? (double?)(macd.Histogram[i].Value / atr.Value)
+                : null;
 
             toAdd.Add(new TechnicalIndicator
             {
@@ -71,12 +84,17 @@ public class TechnicalIndicatorIndexer
                 Macd = macd.MacdLine[i],
                 MacdSignal = macd.SignalLine[i],
                 MacdHistogram = macd.Histogram[i],
+                MacdNorm = macdNorm,
+                MacdSignalNorm = macdSignalNorm,
+                MacdHistogramNorm = macdHistogramNorm,
                 BollingerUpper = bb.Upper[i],
                 BollingerMiddle = bb.Middle[i],
                 BollingerLower = bb.Lower[i],
-                Atr14 = atr14[i],
+                Atr14 = atr,
                 Obv = obv[i],
-                Vwap = vwap[i]
+                ObvEma50 = obvEma50[i].HasValue ? (double?)obvEma50[i].Value : null,
+                Vwap = vwap[i],
+                RollingVwap24 = rollingVwap[i]
             });
         }
 
@@ -326,6 +344,36 @@ public class TechnicalIndicatorIndexer
             var tp = (k.High + k.Low + k.Close) / 3m;
             cumTpVol += tp * k.Volume;
             cumVol += k.Volume;
+            result.Add(cumVol > 0 ? cumTpVol / cumVol : null);
+        }
+        return result;
+    }
+
+    private static List<decimal?> ComputeRollingVwap(IReadOnlyList<Kline> klines, int period)
+    {
+        var result = new List<decimal?>();
+        var tpVols = new Queue<decimal>();
+        var vols = new Queue<decimal>();
+        decimal cumTpVol = 0;
+        decimal cumVol = 0;
+
+        for (int i = 0; i < klines.Count; i++)
+        {
+            var k = klines[i];
+            var tp = (k.High + k.Low + k.Close) / 3m;
+            var tpVol = tp * k.Volume;
+
+            tpVols.Enqueue(tpVol);
+            vols.Enqueue(k.Volume);
+            cumTpVol += tpVol;
+            cumVol += k.Volume;
+
+            if (tpVols.Count > period)
+            {
+                cumTpVol -= tpVols.Dequeue();
+                cumVol -= vols.Dequeue();
+            }
+
             result.Add(cumVol > 0 ? cumTpVol / cumVol : null);
         }
         return result;

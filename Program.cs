@@ -52,12 +52,18 @@ builder.Services.AddScoped<ICandleSequenceRulesEngine, CandleSequenceRulesEngine
 builder.Services.AddScoped<CandleVolumeIndexer>();
 builder.Services.AddScoped<TechnicalIndicatorIndexer>();
 builder.Services.AddScoped<MarketMetricsIndexer>();
+builder.Services.AddScoped<CandlePatternSequenceIndexer>();
+builder.Services.AddScoped<WindowVectorPcaService>();
+builder.Services.AddScoped<IMlDatasetService, MlDatasetService>();
+builder.Services.AddScoped<IWindowDatasetService, WindowDatasetService>();
 
 builder.Services.AddHostedService<RssIngestionService>();
 builder.Services.AddHostedService<PriceAlertWorker>();
 builder.Services.AddHostedService<IndexingBackgroundWorker>();
 builder.Services.AddHostedService<KlinesIngestionWorker>();
 builder.Services.AddHostedService<EmbeddingBackfillWorker>();
+builder.Services.AddHostedService<MlDatasetBuilder>();
+builder.Services.AddHostedService<WindowDatasetBuilder>();
 
 // CORS: Next (3000), Flutter web (port ngẫu nhiên ví dụ 58340), Swagger — cùng máy thì origin hay đổi port.
 // Tránh chỉ WithOrigins("http://localhost:3000"): Production mặc định sẽ chặn Flutter web.

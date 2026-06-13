@@ -21,6 +21,10 @@ public class MarketMetrics
     // Long/Short ratio
     public double? LongShortRatio { get; set; }
 
+    // Normalized / delta features
+    public double? FundingRateZscore { get; set; }
+    public double? OiDeltaPct { get; set; }
+
     // Liquidation data (nếu có)
     public double? LongLiquidationUsd { get; set; }
     public double? ShortLiquidationUsd { get; set; }

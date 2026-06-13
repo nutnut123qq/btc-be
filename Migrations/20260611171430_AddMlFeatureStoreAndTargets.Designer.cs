@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260611171430_AddMlFeatureStoreAndTargets")]
+    partial class AddMlFeatureStoreAndTargets
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -859,68 +862,6 @@ namespace Backend.Migrations
                         .IsUnique();
 
                     b.ToTable("TechnicalIndicators");
-                });
-
-            modelBuilder.Entity("Backend.Data.WindowClassificationDataset", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("FeatureDim")
-                        .HasColumnType("integer");
-
-                    b.Property<float[]>("FeatureVector")
-                        .IsRequired()
-                        .HasColumnType("real[]");
-
-                    b.Property<string>("Horizon")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<int>("Label")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<double?>("TargetReturn")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("Timeframe")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<long>("WindowEndMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<double>("WindowNullRatio")
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("WindowSize")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("WindowStartMs")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Symbol", "Timeframe", "WindowSize", "Horizon", "Label");
-
-                    b.HasIndex("Symbol", "Timeframe", "WindowSize", "Horizon", "WindowStartMs")
-                        .IsUnique()
-                        .HasDatabaseName("IX_WindowClassificationDatasets_Symbol_Timeframe_WindowSize_H~1");
-
-                    b.ToTable("WindowClassificationDatasets");
                 });
 
             modelBuilder.Entity("Backend.Data.WindowVector", b =>
