@@ -66,7 +66,7 @@ public class CandleSequenceController : ControllerBase
             interval,
             limit,
             swingLookback,
-            result.CurrentTrend,
+            currentTrend = result.CurrentTrend.ToString(),
             result.SummaryText,
             swings = result.Swings.Select(s => new
             {
@@ -100,6 +100,21 @@ public class CandleSequenceController : ControllerBase
         limit = Math.Clamp(limit, 20, 500);
         var klines = await _binance.GetKlinesAsync(symbol, interval, limit, cancellationToken: cancellationToken);
         var result = CandleSequenceScenarios.Analyze(klines, symbol, interval);
-        return Ok(result);
+        return Ok(new
+        {
+            result.Symbol,
+            result.Timeframe,
+            result.BarsAnalyzed,
+            result.SummaryText,
+            scenarios = result.Scenarios.Select(s => new
+            {
+                scenario = s.Scenario.ToString(),
+                s.Name,
+                s.Description,
+                s.Strength,
+                s.Suggestion,
+                s.Details
+            })
+        });
     }
 }

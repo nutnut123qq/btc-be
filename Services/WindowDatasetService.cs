@@ -1,5 +1,7 @@
 using Backend.Data;
+using Backend.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Services;
 
@@ -7,33 +9,45 @@ public class WindowDatasetService : IWindowDatasetService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<WindowDatasetService> _logger;
+    private readonly IndexingOptions _options;
 
     private static readonly int[] WindowSizes = { 5, 10, 15, 20, 25 };
     private static readonly string[] Horizons = { "1h", "4h", "1d" };
 
-    public WindowDatasetService(AppDbContext db, ILogger<WindowDatasetService> logger)
+    public WindowDatasetService(AppDbContext db, ILogger<WindowDatasetService> logger, IOptions<IndexingOptions> options)
     {
         _db = db;
         _logger = logger;
+        _options = options.Value;
     }
 
     public async Task<int> BuildAllAsync(string symbol, string timeframe, CancellationToken ct = default)
     {
         var total = 0;
+        foreach (var horizon in Horizons)
+        {
+            total += await BuildHorizonAsync(symbol, timeframe, horizon, null, ct);
+        }
+        return total;
+    }
+
+    public async Task<int> BuildHorizonAsync(string symbol, string timeframe, string horizon, int? maxSamplesPerWindowSize = null, CancellationToken ct = default)
+    {
+        if (!Horizons.Contains(horizon))
+            throw new ArgumentException("horizon must be one of: 1h, 4h, 1d", nameof(horizon));
+
+        var total = 0;
         foreach (var windowSize in WindowSizes)
         {
-            foreach (var horizon in Horizons)
+            try
             {
-                try
-                {
-                    total += await BuildAsync(symbol, timeframe, windowSize, horizon, ct);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Failed to build window dataset for {Symbol} {Timeframe} ws={WindowSize} h={Horizon}",
-                        symbol, timeframe, windowSize, horizon);
-                }
+                total += await BuildAsync(symbol, timeframe, windowSize, horizon, maxSamplesPerWindowSize, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to build window dataset for {Symbol} {Timeframe} ws={WindowSize} h={Horizon}",
+                    symbol, timeframe, windowSize, horizon);
             }
         }
         return total;
@@ -44,6 +58,7 @@ public class WindowDatasetService : IWindowDatasetService
         string timeframe,
         int windowSize,
         string horizon,
+        int? maxSamples = null,
         CancellationToken cancellationToken = default)
     {
         if (!WindowSizes.Contains(windowSize))
@@ -51,17 +66,48 @@ public class WindowDatasetService : IWindowDatasetService
         if (!Horizons.Contains(horizon))
             throw new ArgumentException("horizon must be one of: 1h, 4h, 1d", nameof(horizon));
 
-        var intervalMs = ResolveIntervalMs(timeframe);
+        var intervalMs = Timeframes.IntervalToMs(timeframe);
+        if (intervalMs <= 0) intervalMs = 3_600_000L; // default 1h for unknown interval
+
+        // Incremental: chỉ load features/targets từ sau cửa sổ cuối cùng đã index.
+        var maxExistingStart = await _db.WindowClassificationDatasets
+            .AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.WindowSize == windowSize && x.Horizon == horizon)
+            .Select(x => (long?)x.WindowStartMs)
+            .MaxAsync(cancellationToken) ?? 0L;
+
+        var maxFeatureTime = await _db.MlFeatureStores
+            .AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Select(x => (long?)x.OpenTimeMs)
+            .MaxAsync(cancellationToken) ?? 0L;
+
+        var maxTargetTime = await _db.PriceTargets
+            .AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Select(x => (long?)x.OpenTimeMs)
+            .MaxAsync(cancellationToken) ?? 0L;
+
+        var maxDataTime = Math.Min(maxFeatureTime, maxTargetTime);
+        var minFeatureTime = maxExistingStart > 0
+            ? Math.Max(0L, maxExistingStart - (windowSize + 5) * intervalMs)
+            : 0L;
+
+        // Nếu đã có dữ liệu window, giới hạn load phần mới nhất để tránh scan toàn bộ bảng.
+        if (maxExistingStart > 0 && maxDataTime > 0)
+        {
+            minFeatureTime = Math.Max(minFeatureTime, maxDataTime - (windowSize + 100) * intervalMs);
+        }
 
         var features = await _db.MlFeatureStores
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.OpenTimeMs >= minFeatureTime)
             .OrderBy(x => x.OpenTimeMs)
             .ToListAsync(cancellationToken);
 
         var targets = await _db.PriceTargets
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.OpenTimeMs >= minFeatureTime)
             .ToDictionaryAsync(x => x.OpenTimeMs, cancellationToken);
 
         if (features.Count < windowSize + 10)
@@ -74,15 +120,27 @@ public class WindowDatasetService : IWindowDatasetService
             .ToListAsync(cancellationToken))
             .ToHashSet();
 
-        var samples = new List<WindowClassificationDataset>();
+        var batchSize = Math.Max(100, _options.WindowDatasetBatchSize);
+        var samples = new List<WindowClassificationDataset>(batchSize);
         var totalInserted = 0;
-        const int maxBatch = 2000;
 
-        for (int i = 0; i + windowSize <= features.Count; i++)
+        // Giới hạn số sample để tránh quá tải với timeframe nhỏ (1m, 5m).
+        var stride = 1;
+        if (maxSamples.HasValue && features.Count > windowSize)
         {
-            var windowBars = features.Skip(i).Take(windowSize).ToList();
-            var startBar = windowBars.First();
-            var endBar = windowBars.Last();
+            var estimated = features.Count - windowSize + 1;
+            stride = Math.Max(1, estimated / maxSamples.Value);
+        }
+
+        for (int i = 0; i + windowSize <= features.Count; i += stride)
+        {
+            var startBar = features[i];
+
+            // Bỏ qua các cửa sổ đã index trong lần chạy trước.
+            if (startBar.OpenTimeMs <= maxExistingStart)
+                continue;
+
+            var endBar = features[i + windowSize - 1];
 
             // Ensure consecutive bars.
             if (endBar.OpenTimeMs - startBar.OpenTimeMs != (windowSize - 1) * intervalMs)
@@ -91,6 +149,7 @@ public class WindowDatasetService : IWindowDatasetService
             if (existingKeys.Contains(startBar.OpenTimeMs))
                 continue;
 
+            var windowBars = new SliceView<MlFeatureStore>(features, i, windowSize);
             var vector = BuildFeatureVector(windowBars);
             if (vector == null)
                 continue;
@@ -122,12 +181,13 @@ public class WindowDatasetService : IWindowDatasetService
                 CreatedAtUtc = DateTime.UtcNow,
             });
 
-            if (samples.Count >= maxBatch)
+            if (samples.Count >= batchSize)
             {
                 _db.WindowClassificationDatasets.AddRange(samples);
                 await _db.SaveChangesAsync(cancellationToken);
                 totalInserted += samples.Count;
                 samples.Clear();
+                _db.ChangeTracker.Clear();
             }
         }
 
@@ -136,6 +196,7 @@ public class WindowDatasetService : IWindowDatasetService
             _db.WindowClassificationDatasets.AddRange(samples);
             await _db.SaveChangesAsync(cancellationToken);
             totalInserted += samples.Count;
+            _db.ChangeTracker.Clear();
         }
 
         _logger.LogInformation(
@@ -145,7 +206,7 @@ public class WindowDatasetService : IWindowDatasetService
         return totalInserted;
     }
 
-    private static float[]? BuildFeatureVector(List<MlFeatureStore> windowBars)
+    private static float[]? BuildFeatureVector(IReadOnlyList<MlFeatureStore> windowBars)
     {
         var vector = new List<float>(windowBars.Count * 8);
 
@@ -186,17 +247,4 @@ public class WindowDatasetService : IWindowDatasetService
             _ => (null, null)
         };
     }
-
-    private static long ResolveIntervalMs(string interval) =>
-        interval switch
-        {
-            "1m" => 60_000L,
-            "5m" => 300_000L,
-            "15m" => 900_000L,
-            "30m" => 1_800_000L,
-            "1h" => 3_600_000L,
-            "4h" => 14_400_000L,
-            "1d" => 86_400_000L,
-            _ => 3_600_000L
-        };
 }

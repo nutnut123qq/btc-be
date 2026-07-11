@@ -17,7 +17,7 @@ public static class CandleSequenceValidator
             return new CandleValidationResult { Issues = issues };
         }
 
-        var intervalMs = ResolveIntervalMs(interval);
+        var intervalMs = Timeframes.IntervalToMs(interval);
 
         for (int i = 0; i < klines.Count; i++)
         {
@@ -79,29 +79,6 @@ public static class CandleSequenceValidator
             ValidBars = klines.Count - issues.Where(x => x.BarIndex >= 0).Select(x => x.BarIndex).Distinct().Count(),
             Issues = issues,
             IsValid = issues.Count == 0
-        };
-    }
-
-    private static long ResolveIntervalMs(string interval)
-    {
-        return interval?.ToLowerInvariant() switch
-        {
-            "1m" => 60_000L,
-            "3m" => 180_000L,
-            "5m" => 300_000L,
-            "15m" => 900_000L,
-            "30m" => 1_800_000L,
-            "1h" => 3_600_000L,
-            "2h" => 7_200_000L,
-            "4h" => 14_400_000L,
-            "6h" => 21_600_000L,
-            "8h" => 28_800_000L,
-            "12h" => 43_200_000L,
-            "1d" => 86_400_000L,
-            "3d" => 259_200_000L,
-            "1w" => 604_800_000L,
-            "1M" => 2_592_000_000L,
-            _ => 0L
         };
     }
 }

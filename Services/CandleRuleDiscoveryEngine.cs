@@ -161,13 +161,13 @@ public static class CandleRuleDiscoveryEngine
         var losses = returns.Count(r => r < -0.3);
         var neutrals = returns.Count - wins - losses;
 
-        double winRate = wins / (double)(wins + losses + 0.0001);
+        double winRate = wins / (double)(returns.Count + 0.0001);
         double avgRet = returns.Average();
         double profitFactor = returns.Where(r => r > 0).Sum() / (returns.Where(r => r < 0).Sum() * -1 + 0.0001);
         double maxDd = 0;
         double peak = 0;
         double cum = 0;
-        foreach (var r in returns.OrderBy(x => x)) // simplified
+        foreach (var r in returns) // keep original chronological order for real max drawdown
         {
             cum += r;
             if (cum > peak) peak = cum;

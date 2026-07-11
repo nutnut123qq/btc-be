@@ -1,6 +1,8 @@
 using Backend.Data;
+using Backend.Options;
 using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Services;
 
@@ -11,11 +13,16 @@ public class CandleVolumeIndexer
 {
     private readonly AppDbContext _db;
     private readonly ILogger<CandleVolumeIndexer> _logger;
+    private readonly IndexingOptions _options;
 
-    public CandleVolumeIndexer(AppDbContext db, ILogger<CandleVolumeIndexer> logger)
+    public CandleVolumeIndexer(
+        AppDbContext db,
+        ILogger<CandleVolumeIndexer> logger,
+        IOptions<IndexingOptions> options)
     {
         _db = db;
         _logger = logger;
+        _options = options.Value;
     }
 
     public async Task<int> IndexAsync(
@@ -26,50 +33,75 @@ public class CandleVolumeIndexer
     {
         if (klines.Count == 0) return 0;
 
-        var existingTimesList = await _db.CandleVolumeStats
-            .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
-            .Select(x => x.OpenTimeMs)
-            .ToListAsync(cancellationToken);
-        var existingTimes = new HashSet<long>(existingTimesList);
+        var startMs = klines[0].OpenTimeMs;
+        var endMs = klines[^1].OpenTimeMs;
+        var existingTimes = await LoadExistingTimesAsync(symbol, timeframe, startMs, endMs, cancellationToken);
 
-        var toAdd = new List<CandleVolumeStats>();
+        return await IndexAsync(symbol, timeframe, klines, existingTimes, cancellationToken);
+    }
+
+    /// <summary>
+    /// Index với existing times đã có sẵn. Dùng khi caller muốn cache keys giữa các chunk.
+    /// </summary>
+    public async Task<int> IndexAsync(
+        string symbol,
+        string timeframe,
+        IReadOnlyList<KlineDto> klines,
+        HashSet<long> existingTimes,
+        CancellationToken cancellationToken = default)
+    {
+        if (klines.Count == 0) return 0;
+
+        var batchSize = Math.Max(100, _options.VolumeStatsBatchSize);
+        var batch = new List<CandleVolumeStats>(batchSize);
+        var totalAdded = 0;
+
+        var (sma20, vsMax10) = ComputeRollingStats(klines);
 
         for (int i = 0; i < klines.Count; i++)
         {
             var k = klines[i];
             if (existingTimes.Contains(k.OpenTimeMs)) continue;
 
-            var sma20 = ComputeSma(klines, i, period: 20);
-            var ratio = sma20 > 0 ? (double)(k.Volume / sma20) : 1.0;
+            var ratio = sma20[i] > 0 ? (double)(k.Volume / sma20[i]) : 1.0;
             var vsPrev = i > 0 && klines[i - 1].Volume > 0
                 ? (double)(k.Volume / klines[i - 1].Volume)
                 : 1.0;
-            var vsMax10 = ComputeVsMax(klines, i, period: 10);
             var trend = DetermineTrend(klines, i);
 
-            toAdd.Add(new CandleVolumeStats
+            batch.Add(new CandleVolumeStats
             {
                 Symbol = symbol,
                 Timeframe = timeframe,
                 OpenTimeMs = k.OpenTimeMs,
                 Volume = k.Volume,
-                VolumeSma20 = sma20,
+                VolumeSma20 = sma20[i],
                 VolumeAnomalyRatio = ratio,
                 VolumeVsPrevious = vsPrev,
-                VolumeVsMax10 = vsMax10,
+                VolumeVsMax10 = vsMax10[i],
                 VolumeTrend = trend
             });
+
+            if (batch.Count >= batchSize)
+            {
+                _db.CandleVolumeStats.AddRange(batch);
+                await _db.SaveChangesAsync(cancellationToken);
+                totalAdded += batch.Count;
+                batch.Clear();
+                _db.ChangeTracker.Clear();
+            }
         }
 
-        if (toAdd.Count > 0)
+        if (batch.Count > 0)
         {
-            _db.CandleVolumeStats.AddRange(toAdd);
+            _db.CandleVolumeStats.AddRange(batch);
             await _db.SaveChangesAsync(cancellationToken);
+            totalAdded += batch.Count;
+            _db.ChangeTracker.Clear();
         }
 
-        _logger.LogInformation("Volume stats indexed {Count} bars for {Symbol} {Timeframe}", toAdd.Count, symbol, timeframe);
-        return toAdd.Count;
+        _logger.LogInformation("Volume stats indexed {Count} bars for {Symbol} {Timeframe}", totalAdded, symbol, timeframe);
+        return totalAdded;
     }
 
     public async Task<IReadOnlyList<CandleVolumeStats>> GetStatsAsync(
@@ -84,26 +116,65 @@ public class CandleVolumeIndexer
             .ToListAsync(cancellationToken);
     }
 
-    private static decimal ComputeSma(IReadOnlyList<KlineDto> klines, int idx, int period)
+    private async Task<HashSet<long>> LoadExistingTimesAsync(
+        string symbol,
+        string timeframe,
+        long startMs,
+        long endMs,
+        CancellationToken cancellationToken)
     {
-        int start = Math.Max(0, idx - period);
-        int count = idx - start;
-        if (count <= 0) return 0;
-        decimal sum = 0;
-        for (int i = start; i < idx; i++)
-            sum += klines[i].Volume;
-        return sum / count;
+        var times = await _db.CandleVolumeStats
+            .AsNoTracking()
+            .Where(x =>
+                x.Symbol == symbol &&
+                x.Timeframe == timeframe &&
+                x.OpenTimeMs >= startMs &&
+                x.OpenTimeMs <= endMs)
+            .Select(x => x.OpenTimeMs)
+            .ToListAsync(cancellationToken);
+
+        return new HashSet<long>(times);
     }
 
-    private static double ComputeVsMax(IReadOnlyList<KlineDto> klines, int idx, int period)
+    /// <summary>
+    /// Tính SMA20 và VsMax10 bằng sliding window O(1) mỗi nến.
+    /// </summary>
+    private static (decimal[] Sma20, double[] VsMax10) ComputeRollingStats(IReadOnlyList<KlineDto> klines)
     {
-        int start = Math.Max(0, idx - period);
-        if (start >= idx) return 1.0;
-        var max = 0m;
-        for (int i = start; i < idx; i++)
-            if (klines[i].Volume > max) max = klines[i].Volume;
-        if (max <= 0) return 1.0;
-        return (double)(klines[idx].Volume / max);
+        var n = klines.Count;
+        var sma20 = new decimal[n];
+        var vsMax10 = new double[n];
+
+        var sum20 = 0m;
+        var volQueue20 = new Queue<decimal>();
+        var maxDeque = new LinkedList<(int Index, decimal Volume)>(); // descending max deque for period 10
+
+        for (int i = 0; i < n; i++)
+        {
+            // Thêm nến trước đó vào các cửa sổ trước khi tính cho nến hiện tại
+            if (i > 0)
+            {
+                var prevVol = klines[i - 1].Volume;
+
+                sum20 += prevVol;
+                volQueue20.Enqueue(prevVol);
+                if (volQueue20.Count > 20)
+                    sum20 -= volQueue20.Dequeue();
+
+                while (maxDeque.Last is { } lastNode && lastNode.Value.Volume <= prevVol)
+                    maxDeque.RemoveLast();
+                maxDeque.AddLast((i - 1, prevVol));
+                if (maxDeque.First is { } firstNode && firstNode.Value.Index <= i - 11)
+                    maxDeque.RemoveFirst();
+            }
+
+            sma20[i] = volQueue20.Count > 0 ? sum20 / volQueue20.Count : 0;
+
+            var currentMax = maxDeque.First is { } currentMaxNode ? currentMaxNode.Value.Volume : 0m;
+            vsMax10[i] = currentMax > 0 ? (double)(klines[i].Volume / currentMax) : 1.0;
+        }
+
+        return (sma20, vsMax10);
     }
 
     private static string DetermineTrend(IReadOnlyList<KlineDto> klines, int idx)

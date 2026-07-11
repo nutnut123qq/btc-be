@@ -33,6 +33,8 @@ public class MlFeatureStore
     public double? Ema26Dist { get; set; }
     public double? Ema50Dist { get; set; }
     public double? Ema200Dist { get; set; }
+    public double? Sma50Dist { get; set; }
+    public double? Sma200Dist { get; set; }
     public double? BollingerWidth { get; set; }
     public double? BollingerPosition { get; set; }
     public double? Atr14Pct { get; set; }
@@ -45,22 +47,12 @@ public class MlFeatureStore
     public double? VolumeSma20Ratio { get; set; }
     public double? TakerBuyRatio { get; set; }
 
-    // --- Market microstructure features ---
-    public double? FundingRateZscore { get; set; }
-    public double? OiDeltaPct { get; set; }
-    public double? LongLiquidationUsd { get; set; }
-    public double? ShortLiquidationUsd { get; set; }
+    // ponytail: removed 9 dead columns — 4 microstructure (funding/OI/liq, 97-100% NULL, no data
+    // source) + 5 PCA components (99.3% NULL, non-stationary, never in the training vector).
 
     // --- Pattern / rule context ---
     public int? RecentPatternEncoded { get; set; }
     public int? ActiveRuleCount { get; set; }
-
-    // --- PCA components from window vectors ---
-    public double? PcaComponent1 { get; set; }
-    public double? PcaComponent2 { get; set; }
-    public double? PcaComponent3 { get; set; }
-    public double? PcaComponent4 { get; set; }
-    public double? PcaComponent5 { get; set; }
 
     // --- Metadata ---
     public double NullRatio { get; set; }

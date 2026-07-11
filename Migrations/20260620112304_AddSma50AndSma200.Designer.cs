@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260620112304_AddSma50AndSma200")]
+    partial class AddSma50AndSma200
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -460,7 +463,13 @@ namespace Backend.Migrations
                     b.Property<double?>("Ema50Dist")
                         .HasColumnType("double precision");
 
+                    b.Property<double?>("FundingRateZscore")
+                        .HasColumnType("double precision");
+
                     b.Property<double?>("HighLowRangePct")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("LongLiquidationUsd")
                         .HasColumnType("double precision");
 
                     b.Property<double?>("LowerWickPct")
@@ -481,8 +490,26 @@ namespace Backend.Migrations
                     b.Property<double?>("ObvEmaDist")
                         .HasColumnType("double precision");
 
+                    b.Property<double?>("OiDeltaPct")
+                        .HasColumnType("double precision");
+
                     b.Property<long>("OpenTimeMs")
                         .HasColumnType("bigint");
+
+                    b.Property<double?>("PcaComponent1")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("PcaComponent2")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("PcaComponent3")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("PcaComponent4")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("PcaComponent5")
+                        .HasColumnType("double precision");
 
                     b.Property<int?>("RecentPatternEncoded")
                         .HasColumnType("integer");
@@ -494,6 +521,9 @@ namespace Backend.Migrations
                         .HasColumnType("double precision");
 
                     b.Property<double?>("Rsi14Slope")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ShortLiquidationUsd")
                         .HasColumnType("double precision");
 
                     b.Property<double?>("Sma200Dist")

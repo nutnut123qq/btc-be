@@ -47,10 +47,11 @@ public class MlDatasetBuilder : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var mlService = scope.ServiceProvider.GetRequiredService<IMlDatasetService>();
-        var pcaService = scope.ServiceProvider.GetRequiredService<WindowVectorPcaService>();
 
         const string symbol = "BTCUSDT";
-        foreach (var tf in new[] { "15m", "1h" })
+        // 1m is intentionally excluded: it has ~139k gaps, is very noisy, and consumes the most RAM.
+        // We keep 5m–1d as the clean training timeframes. Raw Klines 1m is still ingested for possible future backfill.
+        foreach (var tf in new[] { "5m", "15m", "30m", "1h", "4h", "1d" })
         {
             try
             {
@@ -60,16 +61,6 @@ public class MlDatasetBuilder : BackgroundService
             {
                 _logger.LogWarning(ex, "Failed to build ML dataset for {Symbol} {Timeframe}", symbol, tf);
             }
-        }
-
-        try
-        {
-            await pcaService.ComputeAndStoreAsync(symbol, "15m", "returns_shape", 25, 5, cancellationToken);
-            await pcaService.ComputeAndStoreAsync(symbol, "1h", "returns_shape", 25, 5, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "PCA computation failed");
         }
     }
 }

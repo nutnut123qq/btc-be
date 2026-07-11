@@ -17,20 +17,22 @@ public static class CandlePatternRecognizer
         // Volume anomaly first (needs full klines for SMA lookback)
         VolumeAnalyzer.Compute(candles, klines, lookback: 20);
 
-        // Trend detection on broader context for pattern classification
-        var trend = DetectTrend(klines);
+        // tail is a contiguous suffix of klines; map a tail index to its klines index so
+        // trend is evaluated at each pattern's own bar, not once for the whole window.
+        var offset = klines.Count - candles.Count;
 
         // Single candle patterns
         for (int i = 0; i < candles.Count; i++)
         {
+            var trend = DetectTrendAt(klines, offset + i);
             candles[i].SinglePattern = RecognizeSingle(candles[i], i > 0 ? candles[i - 1] : null, trend);
         }
 
-        // Multi-candle patterns
+        // Multi-candle patterns — trend taken at the pattern's first bar (the preceding context)
         var multiPatterns = new List<RecognizedMultiPattern>();
         for (int i = 0; i < candles.Count - 1; i++)
         {
-            var d = RecognizeDouble(candles, i, trend);
+            var d = RecognizeDouble(candles, i, DetectTrendAt(klines, offset + i));
             if (d != MultiCandlePattern.None)
                 multiPatterns.Add(new RecognizedMultiPattern
                 {
@@ -41,7 +43,7 @@ public static class CandlePatternRecognizer
         }
         for (int i = 0; i < candles.Count - 2; i++)
         {
-            var t = RecognizeTriple(candles, i, trend);
+            var t = RecognizeTriple(candles, i, DetectTrendAt(klines, offset + i));
             if (t != MultiCandlePattern.None)
                 multiPatterns.Add(new RecognizedMultiPattern
                 {
@@ -74,16 +76,21 @@ public static class CandlePatternRecognizer
         };
     }
 
-    private static TrendDirection DetectTrend(IReadOnlyList<KlineDto> klines)
+    /// <summary>
+    /// Trend tại thởi điểm nến index <paramref name="endIndex"/>, dựa trên tối đa 6 nến
+    /// kết thúc tại index đó. Dùng chung cho recognizer và indexer.
+    /// </summary>
+    internal static TrendDirection DetectTrendAt(IReadOnlyList<KlineDto> klines, int endIndex)
     {
-        if (klines.Count < 6) return TrendDirection.Sideways;
-        var recent = klines.Skip(Math.Max(0, klines.Count - 6)).ToList();
-        var up = 0;
-        var down = 0;
-        for (int i = 1; i < recent.Count; i++)
+        if (endIndex < 0 || endIndex >= klines.Count) return TrendDirection.Sideways;
+        int start = Math.Max(0, endIndex - 5);
+        if (endIndex - start < 3) return TrendDirection.Sideways;
+
+        int up = 0, down = 0;
+        for (int i = start + 1; i <= endIndex; i++)
         {
-            if (recent[i].Close > recent[i - 1].Close) up++;
-            else if (recent[i].Close < recent[i - 1].Close) down++;
+            if (klines[i].Close > klines[i - 1].Close) up++;
+            else if (klines[i].Close < klines[i - 1].Close) down++;
         }
         if (up >= 4 && down <= 1) return TrendDirection.Uptrend;
         if (down >= 4 && up <= 1) return TrendDirection.Downtrend;
@@ -122,28 +129,20 @@ public static class CandlePatternRecognizer
             return SingleCandlePattern.SpinningTop;
         }
 
-        // Hammer / Hanging Man: small body at top, long lower shadow
-        if (lower >= body * 2.0)
+        // Hammer / Hanging Man: long lower shadow, tiny upper shadow (upperRatio < 0.15
+        // already means the body sits at the top of the range).
+        if (lower >= body * 2.0 && upperRatio < 0.15)
         {
-            var bodyTop = Math.Max(c.Open, c.Close);
-            var bodyTopRatio = (double)((bodyTop - c.Low) / c.Range);
-            if (bodyTopRatio < 0.35 && upperRatio < 0.15)
-            {
-                if (trend == TrendDirection.Downtrend) return SingleCandlePattern.Hammer;
-                if (trend == TrendDirection.Uptrend) return SingleCandlePattern.HangingMan;
-            }
+            if (trend == TrendDirection.Downtrend) return SingleCandlePattern.Hammer;
+            if (trend == TrendDirection.Uptrend) return SingleCandlePattern.HangingMan;
         }
 
-        // Inverted Hammer / Shooting Star: small body at bottom, long upper shadow
-        if (upper >= body * 2.0)
+        // Inverted Hammer / Shooting Star: long upper shadow, tiny lower shadow (lowerRatio < 0.15
+        // already means the body sits at the bottom of the range).
+        if (upper >= body * 2.0 && lowerRatio < 0.15)
         {
-            var bodyBottom = Math.Min(c.Open, c.Close);
-            var bodyBottomRatio = (double)((c.High - bodyBottom) / c.Range);
-            if (bodyBottomRatio < 0.35 && lowerRatio < 0.15)
-            {
-                if (trend == TrendDirection.Downtrend) return SingleCandlePattern.InvertedHammer;
-                if (trend == TrendDirection.Uptrend) return SingleCandlePattern.ShootingStar;
-            }
+            if (trend == TrendDirection.Downtrend) return SingleCandlePattern.InvertedHammer;
+            if (trend == TrendDirection.Uptrend) return SingleCandlePattern.ShootingStar;
         }
 
         return SingleCandlePattern.None;
@@ -198,10 +197,13 @@ public static class CandlePatternRecognizer
                 return MultiCandlePattern.BearishHarami;
         }
 
-        // Tweezer
-        if (trend == TrendDirection.Downtrend && Math.Abs((double)(c1.Low - c2.Low)) / (double)c1.Range < 0.08)
+        // Tweezer — matching extreme AND a reversal (opposite colors), else every adjacent
+        // pair with a similar high/low in a trend would falsely match.
+        if (trend == TrendDirection.Downtrend && c1.IsRed && c2.IsGreen &&
+            Math.Abs((double)(c1.Low - c2.Low)) / (double)c1.Range < 0.08)
             return MultiCandlePattern.TweezerBottoms;
-        if (trend == TrendDirection.Uptrend && Math.Abs((double)(c1.High - c2.High)) / (double)c1.Range < 0.08)
+        if (trend == TrendDirection.Uptrend && c1.IsGreen && c2.IsRed &&
+            Math.Abs((double)(c1.High - c2.High)) / (double)c1.Range < 0.08)
             return MultiCandlePattern.TweezerTops;
 
         return MultiCandlePattern.None;
