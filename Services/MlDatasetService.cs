@@ -361,6 +361,11 @@ public class MlDatasetService : IMlDatasetService
         target.TargetReturn7d = FutureReturnH(klines, idx, timeframe, "7d");
         target.TargetDirection7d = Direction(target.TargetReturn7d, DirectionThreshold("7d"));
 
+        // Triple-barrier labels (first touch of upper/lower barrier within horizon).
+        (target.TargetDirectionTb1h, target.TargetReturnTb1h) = TripleBarrier(klines, idx, timeframe, "1h");
+        (target.TargetDirectionTb4h, target.TargetReturnTb4h) = TripleBarrier(klines, idx, timeframe, "4h");
+        (target.TargetDirectionTb1d, target.TargetReturnTb1d) = TripleBarrier(klines, idx, timeframe, "1d");
+
         var dayBars = BarsForHorizon(timeframe, "1d");
         if (dayBars <= 500)
         {
@@ -414,6 +419,44 @@ public class MlDatasetService : IMlDatasetService
         var future = (double)klines[idx + bars].Close;
         var current = (double)klines[idx].Close;
         return (future - current) / current * 100.0;
+    }
+
+    /// <summary>
+    /// Triple-barrier label: walk forward bars and return the first touched barrier.
+    /// Returns (label, return_at_touch) where label is 1 (upper), -1 (lower), 0 (time barrier / neither).
+    /// </summary>
+    internal static (int?, double?) TripleBarrier(List<Kline> klines, int idx, string timeframe, string horizon)
+    {
+        var bars = BarsForHorizon(timeframe, horizon);
+        if (bars <= 0 || idx + bars >= klines.Count) return (null, null);
+
+        var threshold = DirectionThreshold(horizon);
+        var currentClose = (double)klines[idx].Close;
+        var upperBarrier = currentClose * (1.0 + threshold / 100.0);
+        var lowerBarrier = currentClose * (1.0 - threshold / 100.0);
+
+        for (int i = 1; i <= bars && idx + i < klines.Count; i++)
+        {
+            var k = klines[idx + i];
+            var high = (double)k.High;
+            var low = (double)k.Low;
+
+            if (high >= upperBarrier)
+            {
+                var ret = (high - currentClose) / currentClose * 100.0;
+                return (1, ret);
+            }
+            if (low <= lowerBarrier)
+            {
+                var ret = (low - currentClose) / currentClose * 100.0;
+                return (-1, ret);
+            }
+        }
+
+        // Time barrier: return close-to-close at horizon end.
+        var endClose = (double)klines[idx + bars].Close;
+        var endRet = (endClose - currentClose) / currentClose * 100.0;
+        return (0, endRet);
     }
 
     internal static int? Direction(double? ret, double threshold)

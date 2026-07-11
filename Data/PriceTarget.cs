@@ -30,6 +30,14 @@ public class PriceTarget
     public double? TargetReturn7d { get; set; }
     public int? TargetDirection7d { get; set; }
 
+    // Triple-barrier labels: first touch of upper/lower barrier within horizon.
+    public int? TargetDirectionTb1h { get; set; }
+    public double? TargetReturnTb1h { get; set; }
+    public int? TargetDirectionTb4h { get; set; }
+    public double? TargetReturnTb4h { get; set; }
+    public int? TargetDirectionTb1d { get; set; }
+    public double? TargetReturnTb1d { get; set; }
+
     // Risk targets
     public double? TargetVolatility1d { get; set; }
     public double? TargetMaxDrawdown1d { get; set; }

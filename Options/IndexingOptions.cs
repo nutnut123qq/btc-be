@@ -64,4 +64,7 @@ public class IndexingOptions
 
     /// <summary>Số nến gần nhất dùng cho pattern sequences (0 = toàn bộ).</summary>
     public int PatternSequenceLookbackBars { get; set; } = 5000;
+
+    /// <summary>Label strategy for window dataset: "CloseToClose" or "TripleBarrier".</summary>
+    public string WindowDatasetLabelType { get; set; } = "TripleBarrier";
 }

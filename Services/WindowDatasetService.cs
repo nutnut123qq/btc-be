@@ -14,6 +14,47 @@ public class WindowDatasetService : IWindowDatasetService
     private static readonly int[] WindowSizes = { 5, 10, 15, 20, 25 };
     private static readonly string[] Horizons = { "1h", "4h", "1d" };
 
+    // Ordered list of features flattened into the window vector.
+    // Keep in sync with BuildFeatureVector below.
+    public static readonly string[] FeatureNames = new[]
+    {
+        "CloseZscore",
+        "ClosePctChange1",
+        "ClosePctChange4",
+        "ClosePctChange24",
+        "HighLowRangePct",
+        "BodyPct",
+        "UpperWickPct",
+        "LowerWickPct",
+        "Rsi14",
+        "Rsi14Slope",
+        "MacdNorm",
+        "MacdSignalNorm",
+        "MacdHistogramNorm",
+        "Ema12Dist",
+        "Ema26Dist",
+        "Ema50Dist",
+        "Ema200Dist",
+        "Sma50Dist",
+        "Sma200Dist",
+        "BollingerWidth",
+        "BollingerPosition",
+        "Atr14Pct",
+        "ObvEmaDist",
+        "VwapDist",
+        "RollingVwapDist",
+        "VolumeZscore",
+        "VolumeSma20Ratio",
+        "TakerBuyRatio",
+        "RecentPatternEncoded",
+        "ActiveRuleCount",
+        "HourSin",
+        "HourCos",
+        "DayOfWeekSin",
+        "DayOfWeekCos",
+        "IsWeekend",
+    };
+
     public WindowDatasetService(AppDbContext db, ILogger<WindowDatasetService> logger, IOptions<IndexingOptions> options)
     {
         _db = db;
@@ -208,37 +249,108 @@ public class WindowDatasetService : IWindowDatasetService
 
     private static float[]? BuildFeatureVector(IReadOnlyList<MlFeatureStore> windowBars)
     {
-        var vector = new List<float>(windowBars.Count * 8);
+        var featureCount = FeatureNames.Length;
+        var vector = new List<float>(windowBars.Count * featureCount);
 
         foreach (var bar in windowBars)
         {
-            if (bar.ClosePctChange1 == null ||
-                bar.BodyPct == null ||
+            // All features must be present for the window to be usable.
+            if (bar.CloseZscore == null ||
+                bar.ClosePctChange1 == null ||
+                bar.ClosePctChange4 == null ||
+                bar.ClosePctChange24 == null ||
                 bar.HighLowRangePct == null ||
+                bar.BodyPct == null ||
+                bar.UpperWickPct == null ||
+                bar.LowerWickPct == null ||
                 bar.Rsi14 == null ||
+                bar.Rsi14Slope == null ||
+                bar.MacdNorm == null ||
+                bar.MacdSignalNorm == null ||
                 bar.MacdHistogramNorm == null ||
                 bar.Ema12Dist == null ||
                 bar.Ema26Dist == null ||
-                bar.VolumeZscore == null)
+                bar.Ema50Dist == null ||
+                bar.Ema200Dist == null ||
+                bar.Sma50Dist == null ||
+                bar.Sma200Dist == null ||
+                bar.BollingerWidth == null ||
+                bar.BollingerPosition == null ||
+                bar.Atr14Pct == null ||
+                bar.ObvEmaDist == null ||
+                bar.VwapDist == null ||
+                bar.RollingVwapDist == null ||
+                bar.VolumeZscore == null ||
+                bar.VolumeSma20Ratio == null ||
+                bar.TakerBuyRatio == null ||
+                bar.RecentPatternEncoded == null ||
+                bar.ActiveRuleCount == null)
             {
                 return null;
             }
 
+            vector.Add((float)bar.CloseZscore.Value);
             vector.Add((float)bar.ClosePctChange1.Value);
-            vector.Add((float)bar.BodyPct.Value);
+            vector.Add((float)bar.ClosePctChange4.Value);
+            vector.Add((float)bar.ClosePctChange24.Value);
             vector.Add((float)bar.HighLowRangePct.Value);
+            vector.Add((float)bar.BodyPct.Value);
+            vector.Add((float)bar.UpperWickPct.Value);
+            vector.Add((float)bar.LowerWickPct.Value);
             vector.Add((float)bar.Rsi14.Value);
+            vector.Add((float)bar.Rsi14Slope.Value);
+            vector.Add((float)bar.MacdNorm.Value);
+            vector.Add((float)bar.MacdSignalNorm.Value);
             vector.Add((float)bar.MacdHistogramNorm.Value);
             vector.Add((float)bar.Ema12Dist.Value);
             vector.Add((float)bar.Ema26Dist.Value);
+            vector.Add((float)bar.Ema50Dist.Value);
+            vector.Add((float)bar.Ema200Dist.Value);
+            vector.Add((float)bar.Sma50Dist.Value);
+            vector.Add((float)bar.Sma200Dist.Value);
+            vector.Add((float)bar.BollingerWidth.Value);
+            vector.Add((float)bar.BollingerPosition.Value);
+            vector.Add((float)bar.Atr14Pct.Value);
+            vector.Add((float)bar.ObvEmaDist.Value);
+            vector.Add((float)bar.VwapDist.Value);
+            vector.Add((float)bar.RollingVwapDist.Value);
             vector.Add((float)bar.VolumeZscore.Value);
+            vector.Add((float)bar.VolumeSma20Ratio.Value);
+            vector.Add((float)bar.TakerBuyRatio.Value);
+            vector.Add((float)bar.RecentPatternEncoded.Value);
+            vector.Add((float)bar.ActiveRuleCount.Value);
+
+            // Time-based features from OpenTimeMs (UTC).
+            var dt = DateTimeOffset.FromUnixTimeMilliseconds(bar.OpenTimeMs).UtcDateTime;
+            var hour = dt.Hour;
+            var dayOfWeek = (int)dt.DayOfWeek; // 0 = Sunday
+            var hourAngle = 2.0 * Math.PI * hour / 24.0;
+            var dayAngle = 2.0 * Math.PI * dayOfWeek / 7.0;
+            vector.Add((float)Math.Sin(hourAngle));
+            vector.Add((float)Math.Cos(hourAngle));
+            vector.Add((float)Math.Sin(dayAngle));
+            vector.Add((float)Math.Cos(dayAngle));
+            vector.Add(dayOfWeek is 0 or 6 ? 1.0f : 0.0f);
         }
 
         return vector.ToArray();
     }
 
-    private static (int? Label, double? Return) ExtractLabelAndReturn(PriceTarget target, string horizon)
+    private (int? Label, double? Return) ExtractLabelAndReturn(PriceTarget target, string horizon)
     {
+        var useTb = string.Equals(_options.WindowDatasetLabelType, "TripleBarrier", StringComparison.OrdinalIgnoreCase);
+
+        if (useTb)
+        {
+            return horizon switch
+            {
+                "1h" => (target.TargetDirectionTb1h, target.TargetReturnTb1h),
+                "4h" => (target.TargetDirectionTb4h, target.TargetReturnTb4h),
+                "1d" => (target.TargetDirectionTb1d, target.TargetReturnTb1d),
+                _ => (null, null)
+            };
+        }
+
         return horizon switch
         {
             "1h" => (target.TargetDirection1h, target.TargetReturn1h),

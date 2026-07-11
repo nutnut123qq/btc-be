@@ -11,11 +11,13 @@ namespace Backend.Controllers;
 public class IndexerController : ControllerBase
 {
     private readonly TechnicalIndicatorIndexer _techIndexer;
+    private readonly IMlDatasetService _mlDatasetService;
     private readonly ILogger<IndexerController> _logger;
 
-    public IndexerController(TechnicalIndicatorIndexer techIndexer, ILogger<IndexerController> logger)
+    public IndexerController(TechnicalIndicatorIndexer techIndexer, IMlDatasetService mlDatasetService, ILogger<IndexerController> logger)
     {
         _techIndexer = techIndexer;
+        _mlDatasetService = mlDatasetService;
         _logger = logger;
     }
 
@@ -46,6 +48,38 @@ public class IndexerController : ControllerBase
             {
                 _logger.LogWarning(ex, "Failed to index technical indicators for {Symbol} {Timeframe}", symbol, tf);
                 results[tf] = new { indexed = 0, status = "error", error = ex.Message };
+            }
+        }
+
+        return Ok(new { symbol, timeframes = results.Keys, results });
+    }
+
+    /// <summary>
+    /// Rebuild ML features and price targets for one or more timeframes.
+    /// </summary>
+    [HttpPost("ml-dataset")]
+    public async Task<IActionResult> RebuildMlDataset(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string? timeframe = null,
+        CancellationToken cancellationToken = default)
+    {
+        var timeframes = string.IsNullOrWhiteSpace(timeframe)
+            ? new[] { "5m", "15m", "30m", "1h", "4h", "1d" }
+            : new[] { timeframe.Trim() };
+
+        var results = new Dictionary<string, object>();
+        foreach (var tf in timeframes)
+        {
+            try
+            {
+                var count = await _mlDatasetService.BuildAsync(symbol, tf, cancellationToken);
+                results[tf] = new { count, status = "ok" };
+                _logger.LogInformation("Manually rebuilt ML dataset for {Symbol} {Timeframe}: {Count} rows", symbol, tf, count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to rebuild ML dataset for {Symbol} {Timeframe}", symbol, tf);
+                results[tf] = new { count = 0, status = "error", error = ex.Message };
             }
         }
 
