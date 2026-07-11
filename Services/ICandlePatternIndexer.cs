@@ -10,6 +10,13 @@ public interface ICandlePatternIndexer
         IReadOnlyList<KlineDto> klines,
         CancellationToken cancellationToken = default);
 
+    Task<int> IndexAsync(
+        string symbol,
+        string timeframe,
+        IReadOnlyList<KlineDto> klines,
+        HashSet<(long OpenTimeMs, string PatternType)> existingKeys,
+        CancellationToken cancellationToken = default);
+
     Task<int> BuildFullAsync(
         string symbol,
         string timeframe,

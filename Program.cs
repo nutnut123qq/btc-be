@@ -8,9 +8,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddMemoryCache();
 
 builder.Services.Configure<RssOptions>(builder.Configuration.GetSection(RssOptions.SectionName));
 builder.Services.Configure<AlertOptions>(builder.Configuration.GetSection(AlertOptions.SectionName));
+builder.Services.Configure<KlinesIngestionOptions>(builder.Configuration.GetSection(KlinesIngestionOptions.SectionName));
+builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not set.");
@@ -45,6 +48,7 @@ builder.Services.AddHttpClient("GeminiEmbedding", client =>
 builder.Services.AddScoped<IGeminiEmbeddingClient, GeminiEmbeddingClient>();
 builder.Services.AddScoped<IRagService, RagService>();
 builder.Services.AddScoped<IBinanceKlinesService, BinanceKlinesService>();
+builder.Services.AddScoped<KlinesBackfillService>();
 builder.Services.AddScoped<IPatternSearchService, PatternSearchService>();
 builder.Services.AddScoped<IWindowVectorIndexer, WindowVectorIndexer>();
 builder.Services.AddScoped<ICandlePatternIndexer, CandlePatternIndexer>();
@@ -53,15 +57,21 @@ builder.Services.AddScoped<CandleVolumeIndexer>();
 builder.Services.AddScoped<TechnicalIndicatorIndexer>();
 builder.Services.AddScoped<MarketMetricsIndexer>();
 builder.Services.AddScoped<CandlePatternSequenceIndexer>();
-builder.Services.AddScoped<WindowVectorPcaService>();
 builder.Services.AddScoped<IMlDatasetService, MlDatasetService>();
 builder.Services.AddScoped<IWindowDatasetService, WindowDatasetService>();
+builder.Services.AddScoped<IDataAuditService, DataAuditService>();
+// FullReindexService and MlDatasetRebuildService are kept as scoped helpers
+// (used by tests / manual triggers). The queue/worker/controller glue has been removed.
+builder.Services.AddScoped<FullReindexService>();
+builder.Services.AddScoped<MlDatasetRebuildService>();
 
-builder.Services.AddHostedService<RssIngestionService>();
-builder.Services.AddHostedService<PriceAlertWorker>();
-builder.Services.AddHostedService<IndexingBackgroundWorker>();
 builder.Services.AddHostedService<KlinesIngestionWorker>();
-builder.Services.AddHostedService<EmbeddingBackfillWorker>();
+builder.Services.AddHostedService<IndexingBackgroundWorker>();
+
+// Các worker khác tạm tắt khi chạy backfill thủ công để tránh xung đột DB/log noise.
+// builder.Services.AddHostedService<RssIngestionService>();
+builder.Services.AddHostedService<PriceAlertWorker>();
+// builder.Services.AddHostedService<EmbeddingBackfillWorker>();
 builder.Services.AddHostedService<MlDatasetBuilder>();
 builder.Services.AddHostedService<WindowDatasetBuilder>();
 
@@ -118,3 +128,5 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

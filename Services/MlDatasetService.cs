@@ -1,28 +1,75 @@
 using Backend.Data;
+using Backend.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Services;
 
 /// <summary>
 /// Computes ML-ready per-bar features and price targets into MlFeatureStore and PriceTargets.
+/// Hỗ trợ incremental indexing: chỉ tính cho các nến chưa có feature/target.
 /// </summary>
 public class MlDatasetService : IMlDatasetService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<MlDatasetService> _logger;
+    private readonly IndexingOptions _options;
 
-    public MlDatasetService(AppDbContext db, ILogger<MlDatasetService> logger)
+    public MlDatasetService(
+        AppDbContext db,
+        ILogger<MlDatasetService> logger,
+        IOptions<IndexingOptions> options)
     {
         _db = db;
         _logger = logger;
+        _options = options.Value;
     }
 
     public async Task<int> BuildAsync(string symbol, string timeframe, CancellationToken cancellationToken = default)
     {
+        var intervalMs = Timeframes.IntervalToMs(timeframe);
+        if (intervalMs <= 0)
+        {
+            _logger.LogWarning("Invalid timeframe {Timeframe} for ML dataset build", timeframe);
+            return 0;
+        }
+
+        var existingFeatureTimes = (await _db.MlFeatureStores
+            .AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Select(x => x.OpenTimeMs)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        var existingTargetTimes = (await _db.PriceTargets
+            .AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Select(x => x.OpenTimeMs)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        var maxFeatureTime = existingFeatureTimes.Count > 0 ? existingFeatureTimes.Max() : (long?)null;
+        var maxTargetTime = existingTargetTimes.Count > 0 ? existingTargetTimes.Max() : (long?)null;
+        var maxExistingTime = maxFeatureTime.HasValue && maxTargetTime.HasValue
+            ? Math.Max(maxFeatureTime.Value, maxTargetTime.Value)
+            : maxFeatureTime ?? maxTargetTime ?? 0L;
+
+        var warmupBars = _options.MlDatasetWarmupBars;
+        // ponytail: cap klines loaded per call (memory safety) so a huge backfill gap (1m ≈ 3M bars)
+        // can't load millions of klines/indicators/patterns at once and OOM. Cap by COUNT via Take so
+        // the window is always anchored to real data; large gaps converge over repeated calls, and a
+        // one-shot rebuild loops BuildAsync until it returns 0.
+        const int maxBarsPerBuild = 200_000;
+
+        long startMs = maxExistingTime == 0L
+            ? 0L
+            : Math.Max(0L, maxExistingTime - warmupBars * intervalMs);
+
         var klines = await _db.Klines
             .AsNoTracking()
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && k.OpenTimeMs >= startMs)
             .OrderBy(k => k.OpenTimeMs)
+            .Take(warmupBars + maxBarsPerBuild)
             .ToListAsync(cancellationToken);
 
         if (klines.Count < 300)
@@ -31,25 +78,49 @@ public class MlDatasetService : IMlDatasetService
             return 0;
         }
 
+        // Upper bound of the loaded window — co-loads (indicators/patterns/…) track the same range.
+        var endMsValue = klines[^1].OpenTimeMs;
+
+        var allKlineTimes = klines.Select(k => k.OpenTimeMs).ToList();
+        var missingFeatureTimes = allKlineTimes.Where(t => !existingFeatureTimes.Contains(t)).ToHashSet();
+        var missingTargetTimes = allKlineTimes.Where(t => !existingTargetTimes.Contains(t)).ToHashSet();
+
+        if (missingFeatureTimes.Count == 0 && missingTargetTimes.Count == 0)
+        {
+            _logger.LogInformation("ML dataset already up-to-date for {Symbol} {Timeframe}", symbol, timeframe);
+            return 0;
+        }
+
+        if (klines.Count < 300)
+        {
+            _logger.LogWarning("Not enough klines in incremental range for {Symbol} {Timeframe}", symbol, timeframe);
+            return 0;
+        }
+
         var indicators = await _db.TechnicalIndicators
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.OpenTimeMs >= startMs && x.OpenTimeMs <= endMsValue)
             .ToDictionaryAsync(x => x.OpenTimeMs, cancellationToken);
+
+        var orderedIndicators = indicators.OrderBy(x => x.Key).ToList();
+        var indicatorIndexByTime = new Dictionary<long, int>(orderedIndicators.Count);
+        for (int ii = 0; ii < orderedIndicators.Count; ii++)
+            indicatorIndexByTime[orderedIndicators[ii].Key] = ii;
 
         var volumeStats = await _db.CandleVolumeStats
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.OpenTimeMs >= startMs && x.OpenTimeMs <= endMsValue)
             .ToDictionaryAsync(x => x.OpenTimeMs, cancellationToken);
 
         var marketMetrics = await _db.MarketMetrics
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol)
+            .Where(x => x.Symbol == symbol && x.OpenTimeMs >= startMs && x.OpenTimeMs <= endMsValue)
             .OrderBy(x => x.OpenTimeMs)
             .ToListAsync(cancellationToken);
 
         var patterns = await _db.CandlePatterns
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.OpenTimeMs >= startMs && x.OpenTimeMs <= endMsValue)
             .OrderBy(x => x.OpenTimeMs)
             .ToListAsync(cancellationToken);
 
@@ -57,91 +128,112 @@ public class MlDatasetService : IMlDatasetService
             .AsNoTracking()
             .CountAsync(r => r.Symbol == symbol && r.Timeframe == timeframe && r.IsEnabled, cancellationToken);
 
-        var existingFeatures = await _db.MlFeatureStores
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
-            .ToDictionaryAsync(x => x.OpenTimeMs, cancellationToken);
-
-        var existingTargets = await _db.PriceTargets
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
-            .ToDictionaryAsync(x => x.OpenTimeMs, cancellationToken);
-
-        var featureUpdates = new List<MlFeatureStore>();
-        var featureAdds = new List<MlFeatureStore>();
-        var targetUpdates = new List<PriceTarget>();
-        var targetAdds = new List<PriceTarget>();
+        var batchSize = Math.Max(100, _options.MlFeatureBatchSize);
+        var featureAdds = new List<MlFeatureStore>(batchSize);
+        var targetAdds = new List<PriceTarget>(batchSize * 5);
+        var totalFeatureAdds = 0;
+        var totalTargetAdds = 0;
 
         var closes = klines.Select(k => (double)k.Close).ToArray();
         var volumes = klines.Select(k => (double)k.Volume).ToArray();
+        var closeZscores = ComputeRollingZscore(closes, 20);
+        var volumeZscores = ComputeRollingZscore(volumes, 20);
+        var volumeSmaRatios = ComputeRollingSmaRatio(volumes, 20);
+
+        async Task FlushAddsAsync()
+        {
+            if (featureAdds.Count > 0)
+                _db.MlFeatureStores.AddRange(featureAdds);
+            if (targetAdds.Count > 0)
+                _db.PriceTargets.AddRange(targetAdds);
+            if (featureAdds.Count > 0 || targetAdds.Count > 0)
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                _db.ChangeTracker.Clear();
+            }
+            totalFeatureAdds += featureAdds.Count;
+            totalTargetAdds += targetAdds.Count;
+            featureAdds.Clear();
+            targetAdds.Clear();
+        }
+
+        int patternPointer = 0;
+        int metricPointer = 0;
 
         for (int i = 0; i < klines.Count; i++)
         {
             var k = klines[i];
-            var feature = existingFeatures.TryGetValue(k.OpenTimeMs, out var f) ? f : null;
-            var target = existingTargets.TryGetValue(k.OpenTimeMs, out var t) ? t : null;
-
-            var newFeature = ComputeFeatures(
-                klines, i, indicators, volumeStats, marketMetrics, patterns, activeRules,
-                closes, volumes, timeframe);
-            var newTarget = ComputeTargets(klines, i, timeframe);
-
-            if (newFeature == null || newFeature.NullRatio > 0.25)
+            var needFeature = missingFeatureTimes.Contains(k.OpenTimeMs);
+            var needTarget = missingTargetTimes.Contains(k.OpenTimeMs);
+            if (!needFeature && !needTarget)
                 continue;
 
-            if (feature == null)
+            while (patternPointer < patterns.Count && patterns[patternPointer].OpenTimeMs <= k.OpenTimeMs)
+                patternPointer++;
+            var recentPattern = patternPointer > 0 ? patterns[patternPointer - 1] : null;
+
+            while (metricPointer < marketMetrics.Count && marketMetrics[metricPointer].OpenTimeMs <= k.OpenTimeMs)
+                metricPointer++;
+            var nearestMetric = metricPointer > 0 ? marketMetrics[metricPointer - 1] : null;
+
+            if (needFeature)
             {
-                newFeature.Symbol = symbol;
-                newFeature.Timeframe = timeframe;
-                newFeature.OpenTimeMs = k.OpenTimeMs;
-                featureAdds.Add(newFeature);
-            }
-            else
-            {
-                CopyFeatureValues(newFeature, feature);
-                feature.UpdatedAtUtc = DateTime.UtcNow;
-                featureUpdates.Add(feature);
+                var newFeature = ComputeFeatures(
+                    klines, i, indicators, orderedIndicators, indicatorIndexByTime, volumeStats,
+                    nearestMetric, recentPattern, activeRules,
+                    closes, volumes, timeframe,
+                    closeZscores, volumeZscores, volumeSmaRatios);
+
+                if (newFeature != null && newFeature.NullRatio <= 0.25)
+                {
+                    newFeature.Symbol = symbol;
+                    newFeature.Timeframe = timeframe;
+                    newFeature.OpenTimeMs = k.OpenTimeMs;
+                    featureAdds.Add(newFeature);
+                }
             }
 
-            if (target == null)
+            if (needTarget)
             {
-                var pt = newTarget ?? new PriceTarget();
-                pt.Symbol = symbol;
-                pt.Timeframe = timeframe;
-                pt.OpenTimeMs = k.OpenTimeMs;
+                var newTarget = ComputeTargets(klines, i, timeframe);
                 if (newTarget != null)
-                    targetAdds.Add(pt);
+                {
+                    newTarget.Symbol = symbol;
+                    newTarget.Timeframe = timeframe;
+                    newTarget.OpenTimeMs = k.OpenTimeMs;
+                    targetAdds.Add(newTarget);
+                }
             }
-            else if (newTarget != null)
-            {
-                CopyTargetValues(newTarget, target);
-                targetUpdates.Add(target);
-            }
+
+            if (featureAdds.Count >= batchSize)
+                await FlushAddsAsync();
         }
 
-        if (featureAdds.Count > 0)
-            _db.MlFeatureStores.AddRange(featureAdds);
-        if (targetAdds.Count > 0)
-            _db.PriceTargets.AddRange(targetAdds);
-
-        await _db.SaveChangesAsync(cancellationToken);
+        await FlushAddsAsync();
 
         _logger.LogInformation(
-            "ML dataset built for {Symbol} {Timeframe}: {FeatureAdds} feature adds, {FeatureUpdates} updates, {TargetAdds} target adds, {TargetUpdates} updates",
-            symbol, timeframe, featureAdds.Count, featureUpdates.Count, targetAdds.Count, targetUpdates.Count);
+            "ML dataset built for {Symbol} {Timeframe}: {FeatureAdds} feature adds, {TargetAdds} target adds",
+            symbol, timeframe, totalFeatureAdds, totalTargetAdds);
 
-        return featureAdds.Count + featureUpdates.Count + targetAdds.Count + targetUpdates.Count;
+        return totalFeatureAdds + totalTargetAdds;
     }
 
     private MlFeatureStore? ComputeFeatures(
         List<Kline> klines,
         int idx,
         Dictionary<long, TechnicalIndicator> indicators,
+        IReadOnlyList<KeyValuePair<long, TechnicalIndicator>> orderedIndicators,
+        Dictionary<long, int> indicatorIndexByTime,
         Dictionary<long, CandleVolumeStats> volumeStats,
-        List<MarketMetrics> marketMetrics,
-        List<CandlePattern> patterns,
+        MarketMetrics? nearestMetric,
+        CandlePattern? recentPattern,
         int activeRuleCount,
         double[] closes,
         double[] volumes,
-        string timeframe)
+        string timeframe,
+        double?[] closeZscores,
+        double?[] volumeZscores,
+        double?[] volumeSmaRatios)
     {
         var k = klines[idx];
         var close = (double)k.Close;
@@ -174,18 +266,19 @@ public class MlDatasetService : IMlDatasetService
         feature.BodyPct = V(range > 0 ? body / range : null);
         feature.UpperWickPct = V(range > 0 ? ((double)k.High - Math.Max((double)k.Open, (double)k.Close)) / range : null);
         feature.LowerWickPct = V(range > 0 ? (Math.Min((double)k.Open, (double)k.Close) - (double)k.Low) / range : null);
-        feature.CloseZscore = V(ComputeZscore(closes, idx, 20));
+        feature.CloseZscore = V(closeZscores[idx]);
 
         // Volume
-        feature.VolumeZscore = V(ComputeZscore(volumes, idx, 20));
-        feature.VolumeSma20Ratio = V(ComputeSmaRatio(volumes, idx, 20));
+        feature.VolumeZscore = V(volumeZscores[idx]);
+        feature.VolumeSma20Ratio = V(volumeSmaRatios[idx]);
         feature.TakerBuyRatio = V(k.Volume > 0 ? (double)(k.TakerBuyVolume / k.Volume) : null);
 
         // Technicals
         if (indicators.TryGetValue(k.OpenTimeMs, out var ind))
         {
             feature.Rsi14 = V(ind.Rsi14);
-            feature.Rsi14Slope = V(ComputeSlope(indicators, k.OpenTimeMs, i => i.Rsi14, 5));
+            var indIdx = indicatorIndexByTime.TryGetValue(k.OpenTimeMs, out var iiVal) ? iiVal : -1;
+            feature.Rsi14Slope = V(indIdx >= 0 ? ComputeSlope(orderedIndicators, indIdx, i => i.Rsi14, 5) : null);
             feature.MacdNorm = V(ind.MacdNorm);
             feature.MacdSignalNorm = V(ind.MacdSignalNorm);
             feature.MacdHistogramNorm = V(ind.MacdHistogramNorm);
@@ -193,6 +286,8 @@ public class MlDatasetService : IMlDatasetService
             feature.Ema26Dist = V(DistPct(close, ind.Ema26));
             feature.Ema50Dist = V(DistPct(close, ind.Ema50));
             feature.Ema200Dist = V(DistPct(close, ind.Ema200));
+            feature.Sma50Dist = V(DistPct(close, ind.Sma50));
+            feature.Sma200Dist = V(DistPct(close, ind.Sma200));
 
             if (ind.BollingerUpper.HasValue && ind.BollingerLower.HasValue && ind.BollingerMiddle.HasValue)
             {
@@ -222,6 +317,8 @@ public class MlDatasetService : IMlDatasetService
             feature.Ema26Dist = V(null);
             feature.Ema50Dist = V(null);
             feature.Ema200Dist = V(null);
+            feature.Sma50Dist = V(null);
+            feature.Sma200Dist = V(null);
             feature.BollingerWidth = V(null);
             feature.BollingerPosition = V(null);
             feature.Atr14Pct = V(null);
@@ -230,25 +327,11 @@ public class MlDatasetService : IMlDatasetService
             feature.RollingVwapDist = V(null);
         }
 
-        // Market metrics: find nearest before current time
-        var nearestMetric = marketMetrics.LastOrDefault(m => m.OpenTimeMs <= k.OpenTimeMs);
-        if (nearestMetric != null)
-        {
-            feature.FundingRateZscore = V(nearestMetric.FundingRateZscore);
-            feature.OiDeltaPct = V(nearestMetric.OiDeltaPct);
-            feature.LongLiquidationUsd = V(nearestMetric.LongLiquidationUsd);
-            feature.ShortLiquidationUsd = V(nearestMetric.ShortLiquidationUsd);
-        }
-        else
-        {
-            feature.FundingRateZscore = V(null);
-            feature.OiDeltaPct = V(null);
-            feature.LongLiquidationUsd = V(null);
-            feature.ShortLiquidationUsd = V(null);
-        }
+        // ponytail: dropped funding/OI/liquidation features — MarketMetrics only ever had 257 rows
+        // (funding for 3 months, OI/liq never populated), so these were 97-100% NULL. Removed from
+        // the schema; MarketMetrics source table is untouched. Re-add if a real futures feed is wired.
 
         // Pattern context
-        var recentPattern = patterns.LastOrDefault(p => p.OpenTimeMs <= k.OpenTimeMs);
         feature.RecentPatternEncoded = VI(recentPattern != null ? EncodePattern(recentPattern.PatternType) : (int?)null);
         feature.ActiveRuleCount = VI(activeRuleCount);
 
@@ -263,31 +346,34 @@ public class MlDatasetService : IMlDatasetService
 
         var target = new PriceTarget();
 
-        target.TargetReturn1h = FutureReturn(klines, idx, BarsForHorizon(timeframe, "1h"));
-        target.TargetDirection1h = Direction(target.TargetReturn1h);
+        target.TargetReturn1h = FutureReturnH(klines, idx, timeframe, "1h");
+        target.TargetDirection1h = Direction(target.TargetReturn1h, DirectionThreshold("1h"));
 
-        target.TargetReturn4h = FutureReturn(klines, idx, BarsForHorizon(timeframe, "4h"));
-        target.TargetDirection4h = Direction(target.TargetReturn4h);
+        target.TargetReturn4h = FutureReturnH(klines, idx, timeframe, "4h");
+        target.TargetDirection4h = Direction(target.TargetReturn4h, DirectionThreshold("4h"));
 
-        target.TargetReturn1d = FutureReturn(klines, idx, BarsForHorizon(timeframe, "1d"));
-        target.TargetDirection1d = Direction(target.TargetReturn1d);
+        target.TargetReturn1d = FutureReturnH(klines, idx, timeframe, "1d");
+        target.TargetDirection1d = Direction(target.TargetReturn1d, DirectionThreshold("1d"));
 
-        target.TargetReturn3d = FutureReturn(klines, idx, BarsForHorizon(timeframe, "3d"));
-        target.TargetDirection3d = Direction(target.TargetReturn3d);
+        target.TargetReturn3d = FutureReturnH(klines, idx, timeframe, "3d");
+        target.TargetDirection3d = Direction(target.TargetReturn3d, DirectionThreshold("3d"));
 
-        target.TargetReturn7d = FutureReturn(klines, idx, BarsForHorizon(timeframe, "7d"));
-        target.TargetDirection7d = Direction(target.TargetReturn7d);
+        target.TargetReturn7d = FutureReturnH(klines, idx, timeframe, "7d");
+        target.TargetDirection7d = Direction(target.TargetReturn7d, DirectionThreshold("7d"));
 
         var dayBars = BarsForHorizon(timeframe, "1d");
-        target.TargetVolatility1d = FutureVolatility(klines, idx, dayBars);
-        target.TargetMaxDrawdown1d = FutureMaxDrawdown(klines, idx, dayBars);
+        if (dayBars <= 500)
+        {
+            target.TargetVolatility1d = FutureVolatility(klines, idx, dayBars);
+            target.TargetMaxDrawdown1d = FutureMaxDrawdown(klines, idx, dayBars);
+        }
 
         if (!target.TargetReturn1d.HasValue)
             return null;
         return target;
     }
 
-    private static int BarsForHorizon(string timeframe, string horizon)
+    internal static int BarsForHorizon(string timeframe, string horizon)
     {
         var tfMinutes = timeframe switch
         {
@@ -309,10 +395,20 @@ public class MlDatasetService : IMlDatasetService
             "7d" => 10080,
             _ => 60
         };
-        return Math.Max(1, horizonMinutes / tfMinutes);
+        // ponytail: raw division, may be 0 when horizon is finer than the timeframe (e.g. "1h" on a "4h" tf).
+        // Callers treat <=0 as "not a valid label" instead of the old Max(1,..) which faked a 1-bar target
+        // and produced byte-identical duplicate labels across horizons on 4h/1d timeframes.
+        return horizonMinutes / tfMinutes;
     }
 
-    private static double? FutureReturn(List<Kline> klines, int idx, int bars)
+    // ponytail: null when horizon < timeframe (bars<=0) — no more fake 1-bar labels on coarse timeframes.
+    private static double? FutureReturnH(List<Kline> klines, int idx, string timeframe, string horizon)
+    {
+        var bars = BarsForHorizon(timeframe, horizon);
+        return bars <= 0 ? null : FutureReturn(klines, idx, bars);
+    }
+
+    internal static double? FutureReturn(List<Kline> klines, int idx, int bars)
     {
         if (idx + bars >= klines.Count) return null;
         var future = (double)klines[idx + bars].Close;
@@ -320,13 +416,25 @@ public class MlDatasetService : IMlDatasetService
         return (future - current) / current * 100.0;
     }
 
-    private static int? Direction(double? ret)
+    internal static int? Direction(double? ret, double threshold)
     {
         if (!ret.HasValue) return null;
-        if (ret.Value > 0.3) return 1;
-        if (ret.Value < -0.3) return -1;
+        if (ret.Value > threshold) return 1;
+        if (ret.Value < -threshold) return -1;
         return 0;
     }
+
+    // ponytail: per-horizon neutral band (BTC vol grows ~sqrt(t)); the old flat ±0.3% made the "sideway"
+    // class 58% at 1h but 4% at 7d. These are tunable knobs — upgrade path is ATR-scaled / triple-barrier.
+    internal static double DirectionThreshold(string horizon) => horizon switch
+    {
+        "1h" => 0.3,
+        "4h" => 0.6,
+        "1d" => 1.2,
+        "3d" => 2.0,
+        "7d" => 3.0,
+        _ => 0.3,
+    };
 
     private static double? FutureVolatility(List<Kline> klines, int idx, int bars)
     {
@@ -365,23 +473,61 @@ public class MlDatasetService : IMlDatasetService
         return (values[idx] - prev) / prev * 100.0;
     }
 
-    private static double? ComputeZscore(double[] values, int idx, int period)
+    private static double?[] ComputeRollingZscore(double[] values, int period)
     {
-        if (idx < period - 1) return null;
-        var slice = values.Skip(idx - period + 1).Take(period).ToArray();
-        var avg = slice.Average();
-        var std = Math.Sqrt(slice.Average(x => (x - avg) * (x - avg)));
-        if (std == 0) return 0;
-        return (values[idx] - avg) / std;
+        var result = new double?[values.Length];
+        double sum = 0;
+        double sumSq = 0;
+        var window = new Queue<double>(period);
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            sum += values[i];
+            sumSq += values[i] * values[i];
+            window.Enqueue(values[i]);
+            if (window.Count > period)
+            {
+                var removed = window.Dequeue();
+                sum -= removed;
+                sumSq -= removed * removed;
+            }
+
+            if (i < period - 1)
+            {
+                result[i] = null;
+            }
+            else
+            {
+                var mean = sum / period;
+                var variance = sumSq / period - mean * mean;
+                if (variance <= 0)
+                    result[i] = 0;
+                else
+                    result[i] = (values[i] - mean) / Math.Sqrt(variance);
+            }
+        }
+        return result;
     }
 
-    private static double? ComputeSmaRatio(double[] values, int idx, int period)
+    private static double?[] ComputeRollingSmaRatio(double[] values, int period)
     {
-        if (idx < period - 1) return null;
-        var slice = values.Skip(idx - period + 1).Take(period).ToArray();
-        var avg = slice.Average();
-        if (avg == 0) return null;
-        return values[idx] / avg;
+        var result = new double?[values.Length];
+        double sum = 0;
+        var window = new Queue<double>(period);
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            sum += values[i];
+            window.Enqueue(values[i]);
+            if (window.Count > period)
+                sum -= window.Dequeue();
+
+            if (i < period - 1 || sum == 0)
+                result[i] = null;
+            else
+                result[i] = values[i] / (sum / period);
+        }
+        return result;
     }
 
     private static double? DistPct(double close, decimal? ema)
@@ -390,27 +536,28 @@ public class MlDatasetService : IMlDatasetService
         return (close - (double)ema.Value) / (double)ema.Value * 100.0;
     }
 
-    private static double? ObvEmaDist(TechnicalIndicator ind)
+    internal static double? ObvEmaDist(TechnicalIndicator ind)
     {
         if (!ind.Obv.HasValue || !ind.ObvEma50.HasValue || ind.ObvEma50.Value == 0) return null;
-        return (ind.Obv.Value - ind.ObvEma50.Value) / Math.Abs(ind.ObvEma50.Value) * 100.0;
+        var dist = (ind.Obv.Value - ind.ObvEma50.Value) / Math.Abs(ind.ObvEma50.Value) * 100.0;
+        // ponytail: OBV EMA crosses ~0 -> denominator vanishes -> dist blew up to ±3.3M and killed any
+        // scaler. p99 is only ±32, so clamping at ±1000 keeps all real signal. Upgrade path: OBV z-score.
+        return Math.Clamp(dist, -1000.0, 1000.0);
     }
 
     private static double? ComputeSlope(
-        Dictionary<long, TechnicalIndicator> indicators,
-        long openTimeMs,
+        IReadOnlyList<KeyValuePair<long, TechnicalIndicator>> orderedIndicators,
+        int idx,
         Func<TechnicalIndicator, double?> selector,
         int lookbackBars)
     {
-        var ordered = indicators.OrderBy(x => x.Key).ToList();
-        var idx = ordered.FindIndex(x => x.Key == openTimeMs);
         if (idx < lookbackBars) return null;
 
         var xs = Enumerable.Range(0, lookbackBars).Select(i => (double)i).ToArray();
-        var ys = new List<double>();
+        var ys = new List<double>(lookbackBars);
         for (int i = idx - lookbackBars + 1; i <= idx; i++)
         {
-            var v = selector(ordered[i].Value);
+            var v = selector(orderedIndicators[i].Value);
             if (!v.HasValue) return null;
             ys.Add(v.Value);
         }
@@ -426,61 +573,23 @@ public class MlDatasetService : IMlDatasetService
         return den == 0 ? 0 : num / den;
     }
 
-    private static int EncodePattern(string patternType)
+    // ponytail: fixed order -> deterministic stable code. Append NEW patterns at the END only,
+    // so existing codes never shift. Old code used String.GetHashCode() which is randomized per
+    // process in .NET Core (same pattern -> different int across runs / at serving time).
+    private static readonly string[] PatternOrder =
     {
-        return Math.Abs(patternType.GetHashCode() % 1000);
-    }
+        "Doji", "DragonflyDoji", "GravestoneDoji", "Hammer", "HangingMan", "InvertedHammer",
+        "ShootingStar", "SpinningTop", "BullishMarubozu", "BearishMarubozu",
+        "BullishEngulfing", "BearishEngulfing", "PiercingLine", "DarkCloudCover", "BullishHarami",
+        "BearishHarami", "TweezerBottoms", "TweezerTops", "MorningStar", "EveningStar",
+        "ThreeWhiteSoldiers", "ThreeBlackCrows", "ThreeInsideUp", "ThreeInsideDown",
+    };
 
-    private static void CopyFeatureValues(MlFeatureStore source, MlFeatureStore dest)
-    {
-        dest.CloseZscore = source.CloseZscore;
-        dest.ClosePctChange1 = source.ClosePctChange1;
-        dest.ClosePctChange4 = source.ClosePctChange4;
-        dest.ClosePctChange24 = source.ClosePctChange24;
-        dest.HighLowRangePct = source.HighLowRangePct;
-        dest.BodyPct = source.BodyPct;
-        dest.UpperWickPct = source.UpperWickPct;
-        dest.LowerWickPct = source.LowerWickPct;
-        dest.Rsi14 = source.Rsi14;
-        dest.Rsi14Slope = source.Rsi14Slope;
-        dest.MacdNorm = source.MacdNorm;
-        dest.MacdSignalNorm = source.MacdSignalNorm;
-        dest.MacdHistogramNorm = source.MacdHistogramNorm;
-        dest.Ema12Dist = source.Ema12Dist;
-        dest.Ema26Dist = source.Ema26Dist;
-        dest.Ema50Dist = source.Ema50Dist;
-        dest.Ema200Dist = source.Ema200Dist;
-        dest.BollingerWidth = source.BollingerWidth;
-        dest.BollingerPosition = source.BollingerPosition;
-        dest.Atr14Pct = source.Atr14Pct;
-        dest.ObvEmaDist = source.ObvEmaDist;
-        dest.VwapDist = source.VwapDist;
-        dest.RollingVwapDist = source.RollingVwapDist;
-        dest.VolumeZscore = source.VolumeZscore;
-        dest.VolumeSma20Ratio = source.VolumeSma20Ratio;
-        dest.TakerBuyRatio = source.TakerBuyRatio;
-        dest.FundingRateZscore = source.FundingRateZscore;
-        dest.OiDeltaPct = source.OiDeltaPct;
-        dest.LongLiquidationUsd = source.LongLiquidationUsd;
-        dest.ShortLiquidationUsd = source.ShortLiquidationUsd;
-        dest.RecentPatternEncoded = source.RecentPatternEncoded;
-        dest.ActiveRuleCount = source.ActiveRuleCount;
-        dest.NullRatio = source.NullRatio;
-    }
+    private static readonly Dictionary<string, int> PatternCodes =
+        PatternOrder
+            .Select((name, i) => (name, code: i + 1))
+            .ToDictionary(x => x.name, x => x.code);
 
-    private static void CopyTargetValues(PriceTarget source, PriceTarget dest)
-    {
-        dest.TargetReturn1h = source.TargetReturn1h;
-        dest.TargetDirection1h = source.TargetDirection1h;
-        dest.TargetReturn4h = source.TargetReturn4h;
-        dest.TargetDirection4h = source.TargetDirection4h;
-        dest.TargetReturn1d = source.TargetReturn1d;
-        dest.TargetDirection1d = source.TargetDirection1d;
-        dest.TargetReturn3d = source.TargetReturn3d;
-        dest.TargetDirection3d = source.TargetDirection3d;
-        dest.TargetReturn7d = source.TargetReturn7d;
-        dest.TargetDirection7d = source.TargetDirection7d;
-        dest.TargetVolatility1d = source.TargetVolatility1d;
-        dest.TargetMaxDrawdown1d = source.TargetMaxDrawdown1d;
-    }
+    internal static int EncodePattern(string patternType)
+        => PatternCodes.TryGetValue(patternType, out var code) ? code : 0;
 }

@@ -11,30 +11,36 @@ namespace Backend.Controllers;
 public class MarketController : ControllerBase
 {
     private readonly IBinanceKlinesService _binance;
+    private readonly KlinesBackfillService _backfill;
     private readonly IPatternSearchService _patternSearch;
     private readonly IWindowVectorIndexer _vectorIndexer;
     private readonly ICandlePatternIndexer _patternIndexer;
     private readonly IWindowDatasetService _windowDataset;
     private readonly IMlDatasetService _mlDataset;
+    private readonly IDataAuditService _dataAudit;
     private readonly AppDbContext _db;
     private readonly ILogger<MarketController> _logger;
 
     public MarketController(
         IBinanceKlinesService binance,
+        KlinesBackfillService backfill,
         IPatternSearchService patternSearch,
         IWindowVectorIndexer vectorIndexer,
         ICandlePatternIndexer patternIndexer,
         IWindowDatasetService windowDataset,
         IMlDatasetService mlDataset,
+        IDataAuditService dataAudit,
         AppDbContext db,
         ILogger<MarketController> logger)
     {
         _binance = binance;
+        _backfill = backfill;
         _patternSearch = patternSearch;
         _vectorIndexer = vectorIndexer;
         _patternIndexer = patternIndexer;
         _windowDataset = windowDataset;
         _mlDataset = mlDataset;
+        _dataAudit = dataAudit;
         _db = db;
         _logger = logger;
     }
@@ -78,6 +84,63 @@ public class MarketController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Backfill dữ liệu nến từ Binance Spot API vào bảng Klines.
+    /// Mặc định chạy ngầm (202 Accepted); đặt wait=true để đợi hoàn thành (có thể rất lâu).
+    /// Đặt fillGaps=true để tìm và lấp tất cả gaps trong khoảng [startDateUtc, endDateUtc] thay vì chỉ resume từ nến cuối.
+    /// </summary>
+    [HttpPost("klines/backfill")]
+    public async Task<ActionResult<BackfillStartInfo>> BackfillKlines(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string? timeframe = null,
+        [FromQuery] DateTime? startDateUtc = null,
+        [FromQuery] DateTime? endDateUtc = null,
+        [FromQuery] int requestsPerMinuteLimit = 400,
+        [FromQuery] bool wait = false,
+        [FromQuery] bool fillGaps = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return BadRequest(new ApiErrorEnvelope { Code = "INVALID_SYMBOL", Message = "symbol is required.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
+
+        if (requestsPerMinuteLimit is < 10 or > 600)
+            return BadRequest(new ApiErrorEnvelope { Code = "INVALID_RATE_LIMIT", Message = "requestsPerMinuteLimit must be between 10 and 600.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
+
+        IReadOnlyList<string>? timeframes = null;
+        if (!string.IsNullOrWhiteSpace(timeframe))
+        {
+            var tf = timeframe.Trim();
+            if (Timeframes.IntervalToMs(tf) <= 0)
+            {
+                return BadRequest(new ApiErrorEnvelope
+                {
+                    Code = "INVALID_TIMEFRAME",
+                    Message = $"timeframe '{tf}' is not supported.",
+                    Retryable = false,
+                    RequestId = HttpContext.TraceIdentifier
+                });
+            }
+            timeframes = new[] { tf };
+        }
+
+        var startInfo = await _backfill.StartAsync(
+            symbol: symbol,
+            timeframes: timeframes,
+            startDateUtc: startDateUtc,
+            endDateUtc: endDateUtc,
+            requestsPerMinuteLimit: requestsPerMinuteLimit,
+            wait: wait,
+            fillGaps: fillGaps,
+            cancellationToken: cancellationToken);
+
+        startInfo.RequestId = HttpContext.TraceIdentifier;
+
+        if (startInfo.Status == "already_running")
+            return Conflict(startInfo);
+
+        return wait ? Ok(startInfo) : Accepted(startInfo);
+    }
+
     [HttpGet("candles/around")]
     public async Task<ActionResult<CandlesAroundResponse>> GetCandlesAround(
         [FromQuery] string symbol = "BTCUSDT",
@@ -95,12 +158,21 @@ public class MarketController : ControllerBase
                 Retryable = false,
                 RequestId = HttpContext.TraceIdentifier
             });
-        beforeBars = Math.Clamp(beforeBars, 0, 2000);
-        afterBars = Math.Clamp(afterBars, 0, 2000);
+        beforeBars = Math.Clamp(beforeBars, 0, 1000);
+        afterBars = Math.Clamp(afterBars, 0, 1000);
+        // Binance returns at most 1000 bars/call; scale the window down (keeping the ratio)
+        // so the response isn't silently truncated below what was requested.
+        if (beforeBars + afterBars + 1 > 1000)
+        {
+            var scale = 999.0 / (beforeBars + afterBars);
+            beforeBars = (int)(beforeBars * scale);
+            afterBars = (int)(afterBars * scale);
+        }
 
         try
         {
-            var tfMs = ResolveIntervalMs(timeframe);
+            var tfMs = Timeframes.IntervalToMs(timeframe);
+            if (tfMs <= 0) tfMs = 900_000L; // default 15m for unknown interval
             var limit = Math.Clamp(beforeBars + afterBars + 1, 1, 1000);
             var data = await _binance.GetKlinesAsync(
                 symbol: symbol,
@@ -440,7 +512,7 @@ public class MarketController : ControllerBase
             });
 
         var started = DateTime.UtcNow;
-        var count = await _windowDataset.BuildAsync(symbol, timeframe, windowSize, horizon, cancellationToken);
+        var count = await _windowDataset.BuildAsync(symbol, timeframe, windowSize, horizon, null, cancellationToken);
         return Ok(new
         {
             requestId = HttpContext.TraceIdentifier,
@@ -474,16 +546,19 @@ public class MarketController : ControllerBase
         });
     }
 
-    private static long ResolveIntervalMs(string interval) =>
-        interval switch
-        {
-            "1m" => 60_000L,
-            "5m" => 300_000L,
-            "15m" => 900_000L,
-            "30m" => 1_800_000L,
-            "1h" => 3_600_000L,
-            "4h" => 14_400_000L,
-            "1d" => 86_400_000L,
-            _ => 900_000L
-        };
+    /// <summary>
+    /// Audit độ đầy đủ và gaps của dữ liệu sau backfill/re-index.
+    /// </summary>
+    [HttpGet("data-audit")]
+    public async Task<ActionResult<DataAuditResponse>> GetDataAudit(
+        [FromQuery] string symbol = "BTCUSDT",
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return BadRequest(new ApiErrorEnvelope { Code = "INVALID_SYMBOL", Message = "symbol is required.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
+
+        var result = await _dataAudit.AuditAsync(symbol, cancellationToken);
+        return Ok(result);
+    }
+
 }

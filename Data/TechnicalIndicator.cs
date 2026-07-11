@@ -25,6 +25,12 @@ public class TechnicalIndicator
     [Column(TypeName = "numeric")]
     public decimal? Ema200 { get; set; }
 
+    // SMAs
+    [Column(TypeName = "numeric")]
+    public decimal? Sma50 { get; set; }
+    [Column(TypeName = "numeric")]
+    public decimal? Sma200 { get; set; }
+
     // MACD
     public double? Macd { get; set; }
     public double? MacdSignal { get; set; }

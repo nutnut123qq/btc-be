@@ -1,17 +1,21 @@
 using System.Globalization;
 using System.Text.Json;
 using Backend.Services.Models;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Backend.Services;
 
 public class BinanceKlinesService : IBinanceKlinesService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<BinanceKlinesService> _logger;
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(20);
 
-    public BinanceKlinesService(IHttpClientFactory httpClientFactory, ILogger<BinanceKlinesService> logger)
+    public BinanceKlinesService(IHttpClientFactory httpClientFactory, IMemoryCache cache, ILogger<BinanceKlinesService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -22,6 +26,26 @@ public class BinanceKlinesService : IBinanceKlinesService
         long? startTimeMs = null,
         long? endTimeMs = null,
         CancellationToken cancellationToken = default)
+    {
+        // ponytail: 20s cache — chart refresh + repeated AI/analysis calls hit Binance once
+        // instead of per request (latency + rate-limit). Closed/historical ranges are
+        // immutable so 20s is conservative; raise TTL for endTime-bounded ranges if needed.
+        var cacheKey = $"klines:{symbol}:{interval}:{limit}:{startTimeMs}:{endTimeMs}";
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<KlineDto>? cached) && cached is not null)
+            return cached;
+
+        var fresh = await FetchKlinesAsync(symbol, interval, limit, startTimeMs, endTimeMs, cancellationToken);
+        _cache.Set(cacheKey, fresh, CacheTtl);
+        return fresh;
+    }
+
+    private async Task<IReadOnlyList<KlineDto>> FetchKlinesAsync(
+        string symbol,
+        string interval,
+        int limit,
+        long? startTimeMs,
+        long? endTimeMs,
+        CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("Binance");
         var query = new List<string>
@@ -120,8 +144,15 @@ public class BinanceKlinesService : IBinanceKlinesService
             ? (double)((last.Close - first.Close) / first.Close * 100m)
             : 0;
 
-        var rsi = ComputeSimpleRsi(klines.Select(k => k.Close).ToList(), period: 14);
+        var closes = klines.Select(k => k.Close).ToList();
+        var rsi = ComputeSimpleRsi(closes, period: 14);
         var rsiStr = double.IsNaN(rsi) ? "n/a (not enough bars)" : $"{rsi:F2}";
+
+        var sma50 = ComputeSma(closes, period: 50);
+        var sma200 = ComputeSma(closes, period: 200);
+        var sma50Str = sma50.HasValue ? $"{sma50.Value:F2}" : "n/a (not enough bars)";
+        var sma200Str = sma200.HasValue ? $"{sma200.Value:F2}" : "n/a (not enough bars)";
+        var smaPosition = GetSmaPosition(last.Close, sma50, sma200);
 
         var patternResult = CandlePatternRecognizer.Recognize(klines, tailCount: Math.Min(30, klines.Count));
         var volumeSummary = VolumeAnalyzer.Summarize(patternResult.Candles);
@@ -133,6 +164,7 @@ public class BinanceKlinesService : IBinanceKlinesService
             Period high: {high:F2}, period low: {low:F2}.
             Approximate change from oldest to newest close in window: {changePct:F2}%.
             Simple RSI(14) on closes (last window): {rsiStr}.
+            SMA(50): {sma50Str}, SMA(200): {sma200Str}. Position: {smaPosition}.
 
             {patternResult.SummaryText}
 
@@ -160,5 +192,33 @@ public class BinanceKlinesService : IBinanceKlinesService
             return 100;
         var rs = avgGain / avgLoss;
         return 100 - 100 / (1 + rs);
+    }
+
+    private static decimal? ComputeSma(IReadOnlyList<decimal> closes, int period)
+    {
+        if (closes.Count < period)
+            return null;
+        var slice = closes.Skip(closes.Count - period).Take(period);
+        return slice.Average();
+    }
+
+    private static string GetSmaPosition(decimal lastClose, decimal? sma50, decimal? sma200)
+    {
+        if (!sma50.HasValue || !sma200.HasValue)
+            return "n/a (not enough bars for both SMAs)";
+
+        var above50 = lastClose > sma50.Value;
+        var above200 = lastClose > sma200.Value;
+        var goldenCross = sma50.Value > sma200.Value;
+
+        return (above50, above200, goldenCross) switch
+        {
+            (true, true, true) => "price above both SMAs (bullish / golden cross)",
+            (true, true, false) => "price above both SMAs but SMA50 below SMA200 (mixed)",
+            (false, false, false) => "price below both SMAs (bearish / death cross)",
+            (false, false, true) => "price below both SMAs but SMA50 above SMA200 (mixed)",
+            (true, false, _) => "price between SMA50 and SMA200 (testing SMA200 resistance)",
+            (false, true, _) => "price between SMA200 and SMA50 (testing SMA50 support)",
+        };
     }
 }
