@@ -336,6 +336,47 @@ public class WindowDatasetService : IWindowDatasetService
         return vector.ToArray();
     }
 
+    public async Task<(float[] Vector, long WindowStartMs, long WindowEndMs)?> BuildLatestFeatureVectorAsync(
+        string symbol,
+        string timeframe,
+        int windowSize,
+        CancellationToken ct = default)
+    {
+        if (!WindowSizes.Contains(windowSize))
+            return null;
+
+        var intervalMs = Timeframes.IntervalToMs(timeframe);
+        if (intervalMs <= 0)
+            return null;
+
+        var features = await _db.MlFeatureStores
+            .AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .OrderByDescending(x => x.OpenTimeMs)
+            .Take(windowSize)
+            .ToListAsync(ct);
+
+        if (features.Count < windowSize)
+            return null;
+
+        // Order ascending for vector construction
+        features.Reverse();
+
+        var start = features[0];
+        var end = features[^1];
+
+        // Ensure consecutive bars
+        if (end.OpenTimeMs - start.OpenTimeMs != (windowSize - 1) * intervalMs)
+            return null;
+
+        var windowBars = new SliceView<MlFeatureStore>(features, 0, windowSize);
+        var vector = BuildFeatureVector(windowBars);
+        if (vector == null)
+            return null;
+
+        return (vector, start.OpenTimeMs, end.OpenTimeMs);
+    }
+
     private (int? Label, double? Return) ExtractLabelAndReturn(PriceTarget target, string horizon)
     {
         var useTb = string.Equals(_options.WindowDatasetLabelType, "TripleBarrier", StringComparison.OrdinalIgnoreCase);

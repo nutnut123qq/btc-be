@@ -25,6 +25,9 @@ public class AppDbContext : DbContext
     public DbSet<PriceTarget> PriceTargets => Set<PriceTarget>();
     public DbSet<PatternSequence> PatternSequences => Set<PatternSequence>();
     public DbSet<WindowClassificationDataset> WindowClassificationDatasets => Set<WindowClassificationDataset>();
+    public DbSet<ModelPrediction> ModelPredictions => Set<ModelPrediction>();
+    public DbSet<BacktestRun> BacktestRuns => Set<BacktestRun>();
+    public DbSet<BacktestTrade> BacktestTrades => Set<BacktestTrade>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -185,6 +188,38 @@ public class AppDbContext : DbContext
             e.Property(x => x.FeatureVector).HasColumnType("real[]");
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Horizon, x.WindowStartMs }).IsUnique();
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Horizon, x.Label });
+        });
+
+        modelBuilder.Entity<ModelPrediction>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Horizon).HasMaxLength(16);
+            e.Property(x => x.ModelVersion).HasMaxLength(256);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Horizon, x.WindowEndMs });
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<BacktestRun>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Horizon).HasMaxLength(16);
+            e.Property(x => x.ModelName).HasMaxLength(256);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<BacktestTrade>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Side).HasMaxLength(16);
+            e.HasIndex(x => new { x.BacktestRunId, x.EntryTimeMs });
+            e.HasOne(x => x.BacktestRun)
+                .WithMany(r => r.Trades)
+                .HasForeignKey(x => x.BacktestRunId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
