@@ -254,7 +254,8 @@ public class IndexingBackgroundWorker : BackgroundService
         {
             await marketIndexer.IndexFundingRateAsync(Symbol, cancellationToken);
             await marketIndexer.IndexOpenInterestAsync(Symbol, "1h", cancellationToken);
-            await marketIndexer.IndexLiquidationsAsync(Symbol, cancellationToken);
+            // Liquidations: endpoint /fapi/v1/forceOrders yêu cầu API key (401 Unauthorized) — tắt để tránh log spam.
+            // await marketIndexer.IndexLiquidationsAsync(Symbol, cancellationToken);
             _logger.LogInformation("Auto-indexed market metrics for {Symbol}", Symbol);
         }
         catch (Exception ex)

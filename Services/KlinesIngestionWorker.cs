@@ -25,7 +25,7 @@ public class KlinesIngestionWorker : BackgroundService
     private const int BatchLimit = 1000;
 
     // Ưu tiên khung lớn trước: ít request hơn, giảm gapCount nhanh hơn.
-    private static readonly string[] DefaultTimeframes = { "1d", "4h", "1h", "15m", "5m", "1m" };
+    private static readonly string[] DefaultTimeframes = { "1d", "4h", "1h", "30m", "15m", "5m", "1m" };
 
     public KlinesIngestionWorker(
         IServiceScopeFactory scopeFactory,
