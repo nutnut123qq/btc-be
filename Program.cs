@@ -14,6 +14,7 @@ builder.Services.Configure<RssOptions>(builder.Configuration.GetSection(RssOptio
 builder.Services.Configure<AlertOptions>(builder.Configuration.GetSection(AlertOptions.SectionName));
 builder.Services.Configure<KlinesIngestionOptions>(builder.Configuration.GetSection(KlinesIngestionOptions.SectionName));
 builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
+builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not set.");
@@ -45,6 +46,8 @@ builder.Services.AddHttpClient("GeminiEmbedding", client =>
     client.Timeout = TimeSpan.FromSeconds(60);
 });
 
+builder.Services.AddHttpClient("Telegram", client => { client.Timeout = TimeSpan.FromSeconds(30); });
+
 builder.Services.AddScoped<IGeminiEmbeddingClient, GeminiEmbeddingClient>();
 builder.Services.AddScoped<IRagService, RagService>();
 builder.Services.AddScoped<IBinanceKlinesService, BinanceKlinesService>();
@@ -60,6 +63,7 @@ builder.Services.AddScoped<CandlePatternSequenceIndexer>();
 builder.Services.AddScoped<IMlDatasetService, MlDatasetService>();
 builder.Services.AddScoped<IWindowDatasetService, WindowDatasetService>();
 builder.Services.AddScoped<IDataAuditService, DataAuditService>();
+builder.Services.AddScoped<ITelegramNotificationService, TelegramNotificationService>();
 // FullReindexService and MlDatasetRebuildService are kept as scoped helpers
 // (used by tests / manual triggers). The queue/worker/controller glue has been removed.
 builder.Services.AddScoped<FullReindexService>();
@@ -69,9 +73,9 @@ builder.Services.AddHostedService<KlinesIngestionWorker>();
 builder.Services.AddHostedService<IndexingBackgroundWorker>();
 
 // Các worker khác tạm tắt khi chạy backfill thủ công để tránh xung đột DB/log noise.
-// builder.Services.AddHostedService<RssIngestionService>();
+builder.Services.AddHostedService<RssIngestionService>();
 builder.Services.AddHostedService<PriceAlertWorker>();
-// builder.Services.AddHostedService<EmbeddingBackfillWorker>();
+builder.Services.AddHostedService<EmbeddingBackfillWorker>();
 builder.Services.AddHostedService<MlDatasetBuilder>();
 builder.Services.AddHostedService<WindowDatasetBuilder>();
 

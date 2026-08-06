@@ -70,6 +70,7 @@ public class PriceAlertWorker : BackgroundService
         var binance = scope.ServiceProvider.GetRequiredService<IBinanceKlinesService>();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var seqEngine = scope.ServiceProvider.GetRequiredService<ICandleSequenceRulesEngine>();
+        var telegram = scope.ServiceProvider.GetService<ITelegramNotificationService>();
 
         var userId = string.IsNullOrWhiteSpace(opts.DefaultUserId) ? "default" : opts.DefaultUserId.Trim();
 
@@ -97,12 +98,12 @@ public class PriceAlertWorker : BackgroundService
                 var close = priceKlines[^1].Close;
                 if (settings.PriceAboveUsd.HasValue && close > settings.PriceAboveUsd.Value)
                 {
-                    await TryCreateAlertAsync(db, userId, "price_above", "BTC vượt ngưỡng giá",
+                    await TryCreateAlertAsync(db, telegram, userId, "price_above", "BTC vượt ngưỡng giá",
                         $"Giá đóng nến ({interval}) {close:F2} USDT > {settings.PriceAboveUsd.Value:F2} USDT.", close, cooldown, cancellationToken);
                 }
                 if (settings.PriceBelowUsd.HasValue && close < settings.PriceBelowUsd.Value)
                 {
-                    await TryCreateAlertAsync(db, userId, "price_below", "BTC dưới ngưỡng giá",
+                    await TryCreateAlertAsync(db, telegram, userId, "price_below", "BTC dưới ngưỡng giá",
                         $"Giá đóng nến ({interval}) {close:F2} USDT < {settings.PriceBelowUsd.Value:F2} USDT.", close, cooldown, cancellationToken);
                 }
             }
@@ -133,7 +134,7 @@ public class PriceAlertWorker : BackgroundService
                 var signals = await seqEngine.EvaluateAsync("BTCUSDT", tf, klines, cancellationToken);
                 foreach (var signal in signals)
                 {
-                    await TryCreateAlertAsync(db, userId, "sequence_rule", signal.RuleName, signal.Message, signal.TriggerClose, cooldown, cancellationToken);
+                    await TryCreateAlertAsync(db, telegram, userId, "sequence_rule", signal.RuleName, signal.Message, signal.TriggerClose, cooldown, cancellationToken);
 
                     db.CandleSequenceSignals.Add(new CandleSequenceSignal
                     {
@@ -162,6 +163,7 @@ public class PriceAlertWorker : BackgroundService
 
     private static async Task TryCreateAlertAsync(
         AppDbContext db,
+        ITelegramNotificationService? telegram,
         string userId,
         string type,
         string title,
@@ -178,7 +180,7 @@ public class PriceAlertWorker : BackgroundService
         if (recent)
             return;
 
-        db.AppAlerts.Add(new AppAlert
+        var alert = new AppAlert
         {
             Id = Guid.NewGuid(),
             UserId = userId,
@@ -188,8 +190,15 @@ public class PriceAlertWorker : BackgroundService
             PriceSnapshot = priceSnapshot,
             CreatedAt = DateTimeOffset.UtcNow,
             IsRead = false
-        });
+        };
+        db.AppAlerts.Add(alert);
 
         await db.SaveChangesAsync(cancellationToken);
+
+        if (telegram != null)
+        {
+            var tgMsg = $"🔔 *Cảnh báo BTC*\n📍 Giá: ${alert.PriceSnapshot:N0}\n⚡ {alert.Title}\n📝 {alert.Message}";
+            await telegram.SendMessageAsync(tgMsg, cancellationToken);
+        }
     }
 }

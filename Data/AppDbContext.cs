@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<ModelPrediction> ModelPredictions => Set<ModelPrediction>();
     public DbSet<BacktestRun> BacktestRuns => Set<BacktestRun>();
     public DbSet<BacktestTrade> BacktestTrades => Set<BacktestTrade>();
+    public DbSet<PaperTrade> PaperTrades => Set<PaperTrade>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -220,6 +221,13 @@ public class AppDbContext : DbContext
                 .WithMany(r => r.Trades)
                 .HasForeignKey(x => x.BacktestRunId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PaperTrade>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.WindowEndMs }).IsUnique();
+            e.ToTable("PaperTrades");
         });
     }
 }

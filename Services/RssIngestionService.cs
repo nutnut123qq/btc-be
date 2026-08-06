@@ -76,7 +76,7 @@ public class RssIngestionService : BackgroundService
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                await IngestFeedAsync(db, embedder, http, feed.Source, feed.Url, cancellationToken);
+                await IngestFeedAsync(db, embedder, http, feed.Source, feed.Url, _logger, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -93,6 +93,7 @@ public class RssIngestionService : BackgroundService
         HttpClient http,
         string source,
         string feedUrl,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         using var response = await http.GetAsync(feedUrl, cancellationToken);
@@ -101,6 +102,9 @@ public class RssIngestionService : BackgroundService
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Ignore });
         var feed = SyndicationFeed.Load(reader);
+
+        int newCount = 0;
+        int skippedCount = 0;
 
         foreach (var item in feed.Items ?? Array.Empty<SyndicationItem>())
         {
@@ -121,8 +125,12 @@ public class RssIngestionService : BackgroundService
 
             var exists = await db.NewsArticles.AnyAsync(a => a.Link == link, cancellationToken);
             if (exists)
+            {
+                skippedCount++;
                 continue;
+            }
 
+            newCount++;
             var article = new NewsArticle
             {
                 Id = Guid.NewGuid(),
@@ -164,5 +172,7 @@ public class RssIngestionService : BackgroundService
 
             await db.SaveChangesAsync(cancellationToken);
         }
+
+        logger.LogInformation("Fetched {New} new articles from {FeedName}, skipped {Skipped} duplicates", newCount, source, skippedCount);
     }
 }

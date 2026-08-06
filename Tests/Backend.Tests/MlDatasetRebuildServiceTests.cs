@@ -177,6 +177,11 @@ public class MlDatasetRebuildServiceTests
             throw new NotImplementedException();
         }
 
+        public Task<(float[] Vector, long WindowStartMs, long WindowEndMs)?> BuildLatestFeatureVectorAsync(string symbol, string timeframe, int windowSize, CancellationToken ct = default)
+        {
+            return Task.FromResult<(float[] Vector, long WindowStartMs, long WindowEndMs)?>(null);
+        }
+
         public async Task<int> BuildHorizonAsync(string symbol, string timeframe, string horizon, int? maxSamplesPerWindowSize = null, CancellationToken ct = default)
         {
             var baseTime = 2_000_000L;
