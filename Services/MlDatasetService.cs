@@ -327,9 +327,21 @@ public class MlDatasetService : IMlDatasetService
             feature.RollingVwapDist = V(null);
         }
 
-        // ponytail: dropped funding/OI/liquidation features — MarketMetrics only ever had 257 rows
-        // (funding for 3 months, OI/liq never populated), so these were 97-100% NULL. Removed from
-        // the schema; MarketMetrics source table is untouched. Re-add if a real futures feed is wired.
+        // Futures & Order Flow features
+        if (nearestMetric != null)
+        {
+            feature.FundingRateNorm = V(nearestMetric.FundingRate.HasValue ? nearestMetric.FundingRate.Value * 100.0 : null);
+            feature.GlobalLsRatio = V(nearestMetric.LongShortRatio);
+            feature.TopTraderLsRatio = V(nearestMetric.LongShortRatio);
+            feature.OiChangePct24 = V(nearestMetric.OiDeltaPct);
+        }
+        else
+        {
+            feature.FundingRateNorm = V(null);
+            feature.GlobalLsRatio = V(null);
+            feature.TopTraderLsRatio = V(null);
+            feature.OiChangePct24 = V(null);
+        }
 
         // Pattern context
         feature.RecentPatternEncoded = VI(recentPattern != null ? EncodePattern(recentPattern.PatternType) : (int?)null);

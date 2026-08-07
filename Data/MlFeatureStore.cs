@@ -47,8 +47,11 @@ public class MlFeatureStore
     public double? VolumeSma20Ratio { get; set; }
     public double? TakerBuyRatio { get; set; }
 
-    // ponytail: removed 9 dead columns — 4 microstructure (funding/OI/liq, 97-100% NULL, no data
-    // source) + 5 PCA components (99.3% NULL, non-stationary, never in the training vector).
+    // --- Futures & Order Flow features ---
+    public double? FundingRateNorm { get; set; }
+    public double? GlobalLsRatio { get; set; }
+    public double? TopTraderLsRatio { get; set; }
+    public double? OiChangePct24 { get; set; }
 
     // --- Pattern / rule context ---
     public int? RecentPatternEncoded { get; set; }
