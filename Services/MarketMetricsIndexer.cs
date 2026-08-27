@@ -179,8 +179,8 @@ public class MarketMetricsIndexer
             if (prevIdx < 0) continue;
             var prev = bars[prevIdx].OpenInterest;
             var curr = bars[i].OpenInterest;
-            if (prev.HasValue && prev.Value > 0)
-                bars[i].OiDeltaPct = (curr!.Value - prev.Value) / prev.Value * 100.0;
+            if (prev.HasValue && prev.Value > 0 && curr.HasValue)
+                bars[i].OiDeltaPct = (curr.Value - prev.Value) / prev.Value * 100.0;
         }
 
         await _db.SaveChangesAsync(cancellationToken);

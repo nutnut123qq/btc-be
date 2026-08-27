@@ -18,7 +18,7 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
             .Build();
 
         var cs = config.GetConnectionString("DefaultConnection")
-            ?? "Host=localhost;Port=5432;Database=bitcoin_analyst;Username=postgres;Password=postgres";
+            ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not configured in appsettings or environment variables.");
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         optionsBuilder.UseNpgsql(cs);

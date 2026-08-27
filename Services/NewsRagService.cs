@@ -43,11 +43,11 @@ public class NewsRagService : INewsRagService, IRagService
                 var rawSql = @"
                     SELECT c.""Id"", c.""ArticleId"", COALESCE(a.""Title"", '') AS ""Title"", COALESCE(a.""Link"", '') AS ""Link"",
                            c.""Text"" AS ""Content"",
-                           1.0 - (c.""EmbeddingVector"" <=> {0}::vector) AS ""Similarity""
+                           1.0 - (c.""Embedding""::vector <=> {0}::vector) AS ""Similarity""
                     FROM ""NewsChunks"" c
                     LEFT JOIN ""NewsArticles"" a ON c.""ArticleId"" = a.""Id""
-                    WHERE c.""EmbeddingVector"" IS NOT NULL
-                    ORDER BY c.""EmbeddingVector"" <=> {0}::vector ASC
+                    WHERE c.""Embedding"" IS NOT NULL
+                    ORDER BY c.""Embedding""::vector <=> {0}::vector ASC
                     LIMIT {1};
                 ";
 

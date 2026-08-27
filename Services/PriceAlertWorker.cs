@@ -197,7 +197,9 @@ public class PriceAlertWorker : BackgroundService
 
         if (telegram != null)
         {
-            var tgMsg = $"🔔 *Cảnh báo BTC*\n📍 Giá: ${alert.PriceSnapshot:N0}\n⚡ {alert.Title}\n📝 {alert.Message}";
+            var encTitle = System.Net.WebUtility.HtmlEncode(alert.Title);
+            var encMsg = System.Net.WebUtility.HtmlEncode(alert.Message);
+            var tgMsg = $"🔔 <b>Cảnh báo BTC</b>\n📍 Giá: ${alert.PriceSnapshot:N0}\n⚡ {encTitle}\n📝 {encMsg}";
             await telegram.SendMessageAsync(tgMsg, cancellationToken);
         }
     }

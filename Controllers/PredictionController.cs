@@ -116,6 +116,7 @@ public class PredictionController : ControllerBase
             };
 
             _db.ModelPredictions.Add(prediction);
+            await _db.SaveChangesAsync(cancellationToken);
             var responseObj = new
             {
                 requestId = HttpContext.TraceIdentifier,

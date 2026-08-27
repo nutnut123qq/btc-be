@@ -9,6 +9,8 @@ public class BinanceTestnetOptions
     public string ApiKey { get; set; } = "";
     public string ApiSecret { get; set; } = "";
     public string TradingMode { get; set; } = "Paper";
+    public bool ExecutionEnabled { get; set; } = false;
+    public string ExecutionApiKey { get; set; } = "";
     public bool StreamEnabled { get; set; } = true;
     public int PingIntervalMinutes { get; set; } = 30;
     public int MaxReconnectBackoffSeconds { get; set; } = 30;

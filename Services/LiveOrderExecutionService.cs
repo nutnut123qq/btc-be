@@ -30,7 +30,21 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
         _baseUrl = config["BinanceTestnet:BaseUrl"] ?? "https://testnet.binancefuture.com";
         _apiKey = config["BinanceTestnet:ApiKey"] ?? "";
         _apiSecret = config["BinanceTestnet:ApiSecret"] ?? "";
-        _tradingMode = config["BinanceTestnet:TradingMode"] ?? "Paper";
+        
+        var rawMode = config["BinanceTestnet:TradingMode"] ?? "Paper";
+        _tradingMode = string.Equals(rawMode, "Live", StringComparison.OrdinalIgnoreCase) ? "Live"
+            : string.Equals(rawMode, "Testnet", StringComparison.OrdinalIgnoreCase) ? "Testnet"
+            : "Paper";
+
+        // Fail-closed safety check: block production exchange endpoints unless explicitly permitted
+        var isProdUrl = _baseUrl.Contains("fapi.binance.com", StringComparison.OrdinalIgnoreCase) ||
+                        _baseUrl.Contains("api.binance.com", StringComparison.OrdinalIgnoreCase);
+        var allowProd = config.GetValue<bool>("BinanceTestnet:AllowProductionTrading", false);
+        if (isProdUrl && !allowProd)
+        {
+            _logger.LogError("[TradingSafety] Production Binance URL detected ({Url}) without explicit AllowProductionTrading=true flag.", _baseUrl);
+            throw new InvalidOperationException($"Production Binance Futures URL ({_baseUrl}) blocked by fail-closed safety guardrail. Only testnet.binancefuture.com is allowed.");
+        }
 
         _http.BaseAddress = new Uri(_baseUrl);
         _http.Timeout = TimeSpan.FromSeconds(15);

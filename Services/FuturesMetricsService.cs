@@ -30,13 +30,10 @@ public class FuturesMetricsService : IFuturesMetricsService
                 openInterestUsd = oi * 65000.0;
             }
 
-            var frRes = await _http.GetFromJsonAsync<JsonArray>($"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={symbol}", ct);
-            if (frRes != null && frRes.Count > 0 && frRes[0] is JsonObject frObj)
+            var frRes = await _http.GetFromJsonAsync<JsonObject>($"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={symbol}", ct);
+            if (frRes != null && frRes.TryGetPropertyValue("lastFundingRate", out var frVal) && double.TryParse(frVal?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var fr))
             {
-                if (frObj.TryGetPropertyValue("lastFundingRate", out var frVal) && double.TryParse(frVal?.ToString(), out var fr))
-                {
-                    fundingRatePct = fr * 100.0;
-                }
+                fundingRatePct = fr * 100.0;
             }
         }
         catch (Exception ex)

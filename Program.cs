@@ -198,14 +198,18 @@ app.UseCors("AllowNextJs");
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    try
+    if (!app.Environment.IsEnvironment("Testing"))
     {
-        db.Database.Migrate();
-    }
-    catch (Exception ex)
-    {
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogWarning(ex, "Database migration skipped or failed (ensure PostgreSQL is running).");
+        try
+        {
+            db.Database.Migrate();
+        }
+        catch (Exception ex)
+        {
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogCritical(ex, "FATAL: Database migration failed. Ensure PostgreSQL is running and accessible.");
+            throw;
+        }
     }
 }
 

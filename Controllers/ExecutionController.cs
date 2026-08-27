@@ -1,8 +1,10 @@
+using Backend.Options;
 using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Controllers;
 
@@ -13,6 +15,7 @@ public class ExecutionController : ControllerBase
     private readonly ILiveOrderExecutionService _executionService;
     private readonly IBinanceUserDataStreamService _streamService;
     private readonly IUserDataStreamHandlerService _handlerService;
+    private readonly IOptions<BinanceTestnetOptions> _options;
     private readonly IMemoryCache _cache;
     private readonly ILogger<ExecutionController> _logger;
     private static readonly TimeSpan AccountTtl = TimeSpan.FromSeconds(2);
@@ -23,12 +26,14 @@ public class ExecutionController : ControllerBase
         ILiveOrderExecutionService executionService,
         IBinanceUserDataStreamService streamService,
         IUserDataStreamHandlerService handlerService,
+        IOptions<BinanceTestnetOptions> options,
         IMemoryCache cache,
         ILogger<ExecutionController> logger)
     {
         _executionService = executionService;
         _streamService = streamService;
         _handlerService = handlerService;
+        _options = options;
         _cache = cache;
         _logger = logger;
     }
@@ -38,8 +43,44 @@ public class ExecutionController : ControllerBase
         IBinanceUserDataStreamService streamService,
         IUserDataStreamHandlerService handlerService,
         ILogger<ExecutionController> logger)
-        : this(executionService, streamService, handlerService, new MemoryCache(new MemoryCacheOptions()), logger)
+        : this(
+            executionService,
+            streamService,
+            handlerService,
+            Microsoft.Extensions.Options.Options.Create(new BinanceTestnetOptions()),
+            new MemoryCache(new MemoryCacheOptions()),
+            logger)
     {
+    }
+
+    private ActionResult? ValidateExecutionGuard()
+    {
+        var opts = _options.Value;
+        if (!opts.ExecutionEnabled)
+        {
+            _logger.LogWarning("[ExecutionGuard] Order execution blocked: BinanceTestnet:ExecutionEnabled is false.");
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                Success = false,
+                Message = "Order execution is disabled by default for safety. Set BinanceTestnet:ExecutionEnabled=true in configuration to enable."
+            });
+        }
+
+        if (!string.IsNullOrEmpty(opts.ExecutionApiKey))
+        {
+            if (!Request.Headers.TryGetValue("X-Execution-Key", out var headerVal) ||
+                !string.Equals(headerVal.ToString(), opts.ExecutionApiKey, StringComparison.Ordinal))
+            {
+                _logger.LogWarning("[ExecutionGuard] Unauthorized execution attempt: invalid or missing X-Execution-Key.");
+                return Unauthorized(new
+                {
+                    Success = false,
+                    Message = "Unauthorized: Missing or invalid X-Execution-Key header."
+                });
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -110,6 +151,17 @@ public class ExecutionController : ControllerBase
         [FromBody] BinanceOrderRequest request,
         CancellationToken ct)
     {
+        var guardResult = ValidateExecutionGuard();
+        if (guardResult != null) return guardResult;
+
+        if (string.IsNullOrWhiteSpace(request.Symbol))
+            return BadRequest(new { Message = "Symbol is required" });
+
+        if (string.IsNullOrWhiteSpace(request.Side) || 
+            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) && 
+             !string.Equals(request.Side, "SELL", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(new { Message = "Side must be BUY or SELL" });
+
         if (request.Quantity <= 0)
             return BadRequest(new { Message = "Quantity must be greater than 0" });
 
@@ -126,8 +178,22 @@ public class ExecutionController : ControllerBase
         [FromBody] BinanceOrderRequest request,
         CancellationToken ct)
     {
+        var guardResult = ValidateExecutionGuard();
+        if (guardResult != null) return guardResult;
+
+        if (string.IsNullOrWhiteSpace(request.Symbol))
+            return BadRequest(new { Message = "Symbol is required" });
+
+        if (string.IsNullOrWhiteSpace(request.Side) || 
+            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) && 
+             !string.Equals(request.Side, "SELL", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(new { Message = "Side must be BUY or SELL" });
+
+        if (request.Quantity <= 0)
+            return BadRequest(new { Message = "Quantity must be greater than 0" });
+
         if (!request.StopPrice.HasValue || request.StopPrice.Value <= 0)
-            return BadRequest(new { Message = "StopPrice is required" });
+            return BadRequest(new { Message = "Valid positive StopPrice is required" });
 
         var result = await _executionService.PlaceStopLossOrderAsync(
             request.Symbol, request.Side, request.StopPrice.Value, request.Quantity, ct);
@@ -142,8 +208,22 @@ public class ExecutionController : ControllerBase
         [FromBody] BinanceOrderRequest request,
         CancellationToken ct)
     {
+        var guardResult = ValidateExecutionGuard();
+        if (guardResult != null) return guardResult;
+
+        if (string.IsNullOrWhiteSpace(request.Symbol))
+            return BadRequest(new { Message = "Symbol is required" });
+
+        if (string.IsNullOrWhiteSpace(request.Side) || 
+            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) && 
+             !string.Equals(request.Side, "SELL", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(new { Message = "Side must be BUY or SELL" });
+
+        if (request.Quantity <= 0)
+            return BadRequest(new { Message = "Quantity must be greater than 0" });
+
         if (!request.StopPrice.HasValue || request.StopPrice.Value <= 0)
-            return BadRequest(new { Message = "TakeProfit price (StopPrice) is required" });
+            return BadRequest(new { Message = "Valid positive TakeProfit price (StopPrice) is required" });
 
         var result = await _executionService.PlaceTakeProfitOrderAsync(
             request.Symbol, request.Side, request.StopPrice.Value, request.Quantity, ct);
@@ -158,6 +238,12 @@ public class ExecutionController : ControllerBase
         string symbol,
         CancellationToken ct)
     {
+        var guardResult = ValidateExecutionGuard();
+        if (guardResult != null) return guardResult;
+
+        if (string.IsNullOrWhiteSpace(symbol))
+            return BadRequest(new { Message = "Symbol is required" });
+
         var result = await _executionService.CancelAllOpenOrdersAsync(symbol, ct);
         return Ok(result);
     }

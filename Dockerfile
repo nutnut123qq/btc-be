@@ -16,4 +16,6 @@ COPY --from=build /app/publish .
 ENV ASPNETCORE_URLS=http://+:5197
 EXPOSE 5197
 
+USER $APP_UID
+
 ENTRYPOINT ["dotnet", "Backend.dll"]

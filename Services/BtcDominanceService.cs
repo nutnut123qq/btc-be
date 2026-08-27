@@ -21,14 +21,14 @@ public class BtcDominanceService : IBtcDominanceService
 
         try
         {
-            var res = await _http.GetFromJsonAsync<JsonArray>("https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCDOMUSDT", ct);
-            if (res != null && res.Count > 0 && res[0] is JsonObject obj)
+            var res = await _http.GetFromJsonAsync<JsonObject>("https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCDOMUSDT", ct);
+            if (res != null)
             {
-                if (obj.TryGetPropertyValue("lastPrice", out var lpVal) && double.TryParse(lpVal?.ToString(), out var lp))
+                if (res.TryGetPropertyValue("lastPrice", out var lpVal) && double.TryParse(lpVal?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var lp))
                 {
                     domPct = lp / 100.0;
                 }
-                if (obj.TryGetPropertyValue("priceChangePercent", out var pcVal) && double.TryParse(pcVal?.ToString(), out var pc))
+                if (res.TryGetPropertyValue("priceChangePercent", out var pcVal) && double.TryParse(pcVal?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var pc))
                 {
                     change24h = pc;
                 }

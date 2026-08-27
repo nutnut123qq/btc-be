@@ -193,7 +193,7 @@ public class EnsembleService : IEnsembleService
 
         foreach (var r in records)
         {
-            if (r.EvaluationStatus == "N" && (nowMs - r.TimeMs >= horizonMs || records.Count <= 5))
+            if (r.EvaluationStatus == "N" && (nowMs - r.TimeMs >= horizonMs))
             {
                 double evalPrice = latestPrice;
                 double retPct = r.EntryPrice > 0 ? ((evalPrice - r.EntryPrice) / r.EntryPrice) * 100.0 : 0.0;
