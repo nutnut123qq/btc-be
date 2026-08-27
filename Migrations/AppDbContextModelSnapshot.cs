@@ -66,6 +66,258 @@ namespace Backend.Migrations
                     b.ToTable("AppAlerts");
                 });
 
+            modelBuilder.Entity("Backend.Data.ArchetypeOccurrence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ArchetypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<float>("DistanceToCentroid")
+                        .HasColumnType("real");
+
+                    b.Property<string>("Horizon")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("Label")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<double?>("TargetReturn")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("WindowEndMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("WindowSize")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("WindowStartMs")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ArchetypeId", "Horizon");
+
+                    b.HasIndex("Symbol", "Timeframe", "WindowSize", "WindowStartMs");
+
+                    b.ToTable("ArchetypeOccurrences");
+                });
+
+            modelBuilder.Entity("Backend.Data.ArchetypeOutcome", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ArchetypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<double>("AvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DownCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("DownRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Horizon")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<double>("MaxReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("MedianReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("MinReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("RecentAvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("RecentDownRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("RecentSamples")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("RecentUpRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("SidewaysCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("SidewaysRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("StdDevReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("TotalSamples")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UpCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("UpRate")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ArchetypeId", "Horizon");
+
+                    b.ToTable("ArchetypeOutcomes");
+                });
+
+            modelBuilder.Entity("Backend.Data.ArchetypeSequence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double>("AvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("FirstArchetypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("OccurrenceCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("OutcomeDownRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("OutcomeSidewaysRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("OutcomeUpRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<long>("SecondArchetypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<long>("ThirdArchetypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("WindowSize")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SecondArchetypeId");
+
+                    b.HasIndex("ThirdArchetypeId");
+
+                    b.HasIndex("Symbol", "Timeframe", "WindowSize");
+
+                    b.HasIndex("FirstArchetypeId", "SecondArchetypeId", "ThirdArchetypeId", "Symbol", "Timeframe", "WindowSize")
+                        .IsUnique();
+
+                    b.ToTable("ArchetypeSequences");
+                });
+
+            modelBuilder.Entity("Backend.Data.ArchetypeTransition", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double>("AvgBarsToTransition")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("AvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("FromArchetypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("LastSeenMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("ToArchetypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("TransitionCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("TransitionProbability")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WindowSize")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ToArchetypeId");
+
+                    b.HasIndex("Symbol", "Timeframe", "WindowSize");
+
+                    b.HasIndex("FromArchetypeId", "ToArchetypeId", "Symbol", "Timeframe", "WindowSize")
+                        .IsUnique();
+
+                    b.ToTable("ArchetypeTransitions");
+                });
+
             modelBuilder.Entity("Backend.Data.BacktestRun", b =>
                 {
                     b.Property<int>("Id")
@@ -205,6 +457,70 @@ namespace Backend.Migrations
                     b.HasIndex("BacktestRunId", "EntryTimeMs");
 
                     b.ToTable("BacktestTrades");
+                });
+
+            modelBuilder.Entity("Backend.Data.CandleArchetype", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ArchetypeCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("CentroidDim")
+                        .HasColumnType("integer");
+
+                    b.Property<float>("CentroidNorm")
+                        .HasColumnType("real");
+
+                    b.Property<float[]>("CentroidVector")
+                        .IsRequired()
+                        .HasColumnType("real[]");
+
+                    b.Property<int>("ClusterId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<float>("IntraClusterDistance")
+                        .HasColumnType("real");
+
+                    b.Property<int>("MemberCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RepresentativeOhlcJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WindowSize")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "WindowSize", "Version");
+
+                    b.HasIndex("Symbol", "Timeframe", "WindowSize", "ArchetypeCode", "Version")
+                        .IsUnique();
+
+                    b.ToTable("CandleArchetypes");
                 });
 
             modelBuilder.Entity("Backend.Data.CandlePattern", b =>
@@ -440,6 +756,164 @@ namespace Backend.Migrations
                     b.ToTable("CandleVolumeStats");
                 });
 
+            modelBuilder.Entity("Backend.Data.ConfluenceSnapshot", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ConflictDetails")
+                        .HasColumnType("text");
+
+                    b.Property<double>("ConfluenceScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("HasConflict")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OverallDirection")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("TimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TimeframeAlignmentsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "TimeMs");
+
+                    b.ToTable("ConfluenceSnapshots");
+                });
+
+            modelBuilder.Entity("Backend.Data.EnsemblePredictionRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double?>("ActualPrice24h")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ActualReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("EnsembleConfidence")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("EntryPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<long?>("EvaluatedAtMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EvaluationStatus")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FinalDirection")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("LayerBreakdownJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double>("ProbDown")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("ProbSideways")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("ProbUp")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("TimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "TimeMs");
+
+                    b.ToTable("EnsemblePredictionRecords");
+                });
+
+            modelBuilder.Entity("Backend.Data.FuturesMetric", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("FundingRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("GlobalLsRatio")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("MarkPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OpenInterest")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OpenInterestValue")
+                        .HasColumnType("double precision");
+
+                    b.Property<long>("OpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<double?>("TakerBuySellVolRatio")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("TopTraderLsCountRatio")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("TopTraderLsSumRatio")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "OpenTimeMs")
+                        .IsUnique();
+
+                    b.ToTable("FuturesMetrics", (string)null);
+                });
+
             modelBuilder.Entity("Backend.Data.Kline", b =>
                 {
                     b.Property<long>("Id")
@@ -501,6 +975,50 @@ namespace Backend.Migrations
                     b.ToTable("Klines");
                 });
 
+            modelBuilder.Entity("Backend.Data.LiquidationSnapshot", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("CurrentPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("HeatmapJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("TimestampUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("TotalLongLiqUsdt")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("TotalShortLiqUsdt")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "TimestampUtc");
+
+                    b.ToTable("LiquidationSnapshots");
+                });
+
             modelBuilder.Entity("Backend.Data.MarketMetrics", b =>
                 {
                     b.Property<long>("Id")
@@ -549,6 +1067,63 @@ namespace Backend.Migrations
                         .IsUnique();
 
                     b.ToTable("MarketMetrics");
+                });
+
+            modelBuilder.Entity("Backend.Data.MarketRegime", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double>("Adx")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("AtrRatio")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("BollingerBandwidth")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("MinusDi")
+                        .HasColumnType("double precision");
+
+                    b.Property<long>("OpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<double>("PlusDi")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("RegimeType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double>("TrendStrength")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("VolatilityScore")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "OpenTimeMs")
+                        .IsUnique();
+
+                    b.HasIndex("Symbol", "Timeframe", "RegimeType");
+
+                    b.ToTable("MarketRegimes");
                 });
 
             modelBuilder.Entity("Backend.Data.MlFeatureStore", b =>
@@ -601,6 +1176,12 @@ namespace Backend.Migrations
                     b.Property<double?>("Ema50Dist")
                         .HasColumnType("double precision");
 
+                    b.Property<double?>("FundingRateNorm")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("GlobalLsRatio")
+                        .HasColumnType("double precision");
+
                     b.Property<double?>("HighLowRangePct")
                         .HasColumnType("double precision");
 
@@ -620,6 +1201,9 @@ namespace Backend.Migrations
                         .HasColumnType("double precision");
 
                     b.Property<double?>("ObvEmaDist")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OiChangePct24")
                         .HasColumnType("double precision");
 
                     b.Property<long>("OpenTimeMs")
@@ -655,6 +1239,9 @@ namespace Backend.Migrations
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
+
+                    b.Property<double?>("TopTraderLsRatio")
+                        .HasColumnType("double precision");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -811,6 +1398,129 @@ namespace Backend.Migrations
                     b.HasIndex("ArticleId");
 
                     b.ToTable("NewsChunks");
+                });
+
+            modelBuilder.Entity("Backend.Data.PaperTrade", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double?>("Atr14")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("BalanceAfter")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("ClientOrderId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("Commission")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("CommissionAsset")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<double?>("Confidence")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EnsembleDirection")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<double?>("EntryPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<long>("EntryTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<double?>("ExecutedQty")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ExitPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("ExitReason")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("ExitTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ModelVersion")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<double?>("NetReturn")
+                        .HasColumnType("double precision");
+
+                    b.Property<long?>("OrderId")
+                        .HasColumnType("bigint");
+
+                    b.Property<double?>("PositionSizeUsdt")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ProbDown")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ProbSideways")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ProbUp")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("RealizedPnL")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<double?>("StopLossPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<double?>("TakeProfitPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("WindowEndMs")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "EntryTimeMs");
+
+                    b.HasIndex("Symbol", "Status");
+
+                    b.HasIndex("Symbol", "Timeframe", "WindowEndMs")
+                        .IsUnique();
+
+                    b.ToTable("PaperTrades", (string)null);
                 });
 
             modelBuilder.Entity("Backend.Data.PatternSequence", b =>
@@ -974,6 +1684,139 @@ namespace Backend.Migrations
                     b.ToTable("PriceTargets");
                 });
 
+            modelBuilder.Entity("Backend.Data.RegimeTransition", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DurationBars")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FromRegime")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ToRegime")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("TransitionTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "TransitionTimeMs");
+
+                    b.ToTable("RegimeTransitions");
+                });
+
+            modelBuilder.Entity("Backend.Data.SentimentSnapshot", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double>("AggregatedSentiment")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FearGreedScore")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("FundingRateZScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("LongShortRatio")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("NewsSentimentScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("SentimentLabel")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("TimeMs")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "TimeMs");
+
+                    b.ToTable("SentimentSnapshots");
+                });
+
+            modelBuilder.Entity("Backend.Data.SmartMoneyStructure", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double?>("HighPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<bool>("IsMitigated")
+                        .HasColumnType("boolean");
+
+                    b.Property<double?>("LowPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Price")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("TimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "TimeMs");
+
+                    b.ToTable("SmartMoneyStructures");
+                });
+
             modelBuilder.Entity("Backend.Data.TechnicalIndicator", b =>
                 {
                     b.Property<long>("Id")
@@ -1064,6 +1907,105 @@ namespace Backend.Migrations
                         .IsUnique();
 
                     b.ToTable("TechnicalIndicators");
+                });
+
+            modelBuilder.Entity("Backend.Data.VolumeProfileSnapshot", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("PocPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("ProfileBinsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double>("VahPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("ValPrice")
+                        .HasColumnType("double precision");
+
+                    b.Property<long>("WindowEndMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("WindowStartMs")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "WindowEndMs");
+
+                    b.ToTable("VolumeProfileSnapshots");
+                });
+
+            modelBuilder.Entity("Backend.Data.WalletBalanceSnapshot", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Asset")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("BalanceChange")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("CrossWalletBalance")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("EntryPrice")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("EventReasonType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal?>("PositionAmount")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("TotalUnrealizedProfit")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("UnrealizedPnL")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("WalletBalance")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Asset", "Timestamp");
+
+                    b.HasIndex("Symbol", "Timestamp");
+
+                    b.ToTable("WalletBalanceSnapshots", (string)null);
                 });
 
             modelBuilder.Entity("Backend.Data.WindowClassificationDataset", b =>
@@ -1187,6 +2129,74 @@ namespace Backend.Migrations
                         .IsUnique();
 
                     b.ToTable("WindowVectors");
+                });
+
+            modelBuilder.Entity("Backend.Data.ArchetypeOccurrence", b =>
+                {
+                    b.HasOne("Backend.Data.CandleArchetype", "Archetype")
+                        .WithMany()
+                        .HasForeignKey("ArchetypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Archetype");
+                });
+
+            modelBuilder.Entity("Backend.Data.ArchetypeOutcome", b =>
+                {
+                    b.HasOne("Backend.Data.CandleArchetype", "Archetype")
+                        .WithMany()
+                        .HasForeignKey("ArchetypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Archetype");
+                });
+
+            modelBuilder.Entity("Backend.Data.ArchetypeSequence", b =>
+                {
+                    b.HasOne("Backend.Data.CandleArchetype", "FirstArchetype")
+                        .WithMany()
+                        .HasForeignKey("FirstArchetypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Backend.Data.CandleArchetype", "SecondArchetype")
+                        .WithMany()
+                        .HasForeignKey("SecondArchetypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Backend.Data.CandleArchetype", "ThirdArchetype")
+                        .WithMany()
+                        .HasForeignKey("ThirdArchetypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FirstArchetype");
+
+                    b.Navigation("SecondArchetype");
+
+                    b.Navigation("ThirdArchetype");
+                });
+
+            modelBuilder.Entity("Backend.Data.ArchetypeTransition", b =>
+                {
+                    b.HasOne("Backend.Data.CandleArchetype", "FromArchetype")
+                        .WithMany()
+                        .HasForeignKey("FromArchetypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Backend.Data.CandleArchetype", "ToArchetype")
+                        .WithMany()
+                        .HasForeignKey("ToArchetypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FromArchetype");
+
+                    b.Navigation("ToArchetype");
                 });
 
             modelBuilder.Entity("Backend.Data.BacktestTrade", b =>

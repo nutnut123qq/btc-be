@@ -1,0 +1,180 @@
+using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+
+#nullable disable
+
+namespace Backend.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddCandleArchetypes : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            // MlFeatureStores columns may already exist (added via raw SQL previously)
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""MlFeatureStores"" ADD COLUMN IF NOT EXISTS ""FundingRateNorm"" double precision;
+                ALTER TABLE ""MlFeatureStores"" ADD COLUMN IF NOT EXISTS ""GlobalLsRatio"" double precision;
+                ALTER TABLE ""MlFeatureStores"" ADD COLUMN IF NOT EXISTS ""OiChangePct24"" double precision;
+                ALTER TABLE ""MlFeatureStores"" ADD COLUMN IF NOT EXISTS ""TopTraderLsRatio"" double precision;
+            ");
+
+            migrationBuilder.CreateTable(
+                name: "CandleArchetypes",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Symbol = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    Timeframe = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    WindowSize = table.Column<int>(type: "integer", nullable: false),
+                    ClusterId = table.Column<int>(type: "integer", nullable: false),
+                    ArchetypeCode = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    CentroidVector = table.Column<float[]>(type: "real[]", nullable: false),
+                    CentroidDim = table.Column<int>(type: "integer", nullable: false),
+                    CentroidNorm = table.Column<float>(type: "real", nullable: false),
+                    MemberCount = table.Column<int>(type: "integer", nullable: false),
+                    IntraClusterDistance = table.Column<float>(type: "real", nullable: false),
+                    RepresentativeOhlcJson = table.Column<string>(type: "text", nullable: true),
+                    Version = table.Column<int>(type: "integer", nullable: false),
+                    CreatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_CandleArchetypes", x => x.Id);
+                });
+
+            // PaperTrades already created by raw SQL in ai/paper_trader.py — skip creation
+            // Just ensure the index exists
+            migrationBuilder.Sql(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PaperTrades_Symbol_WindowEndMs""
+                ON ""PaperTrades"" (""Symbol"", ""WindowEndMs"");
+            ");
+
+            migrationBuilder.CreateTable(
+                name: "ArchetypeOccurrences",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ArchetypeId = table.Column<long>(type: "bigint", nullable: false),
+                    Symbol = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    Timeframe = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    WindowSize = table.Column<int>(type: "integer", nullable: false),
+                    WindowStartMs = table.Column<long>(type: "bigint", nullable: false),
+                    WindowEndMs = table.Column<long>(type: "bigint", nullable: false),
+                    DistanceToCentroid = table.Column<float>(type: "real", nullable: false),
+                    Label = table.Column<int>(type: "integer", nullable: false),
+                    TargetReturn = table.Column<double>(type: "double precision", nullable: true),
+                    Horizon = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    CreatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ArchetypeOccurrences", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ArchetypeOccurrences_CandleArchetypes_ArchetypeId",
+                        column: x => x.ArchetypeId,
+                        principalTable: "CandleArchetypes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ArchetypeOutcomes",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ArchetypeId = table.Column<long>(type: "bigint", nullable: false),
+                    Horizon = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    TotalSamples = table.Column<int>(type: "integer", nullable: false),
+                    UpCount = table.Column<int>(type: "integer", nullable: false),
+                    DownCount = table.Column<int>(type: "integer", nullable: false),
+                    SidewaysCount = table.Column<int>(type: "integer", nullable: false),
+                    UpRate = table.Column<double>(type: "double precision", nullable: false),
+                    DownRate = table.Column<double>(type: "double precision", nullable: false),
+                    SidewaysRate = table.Column<double>(type: "double precision", nullable: false),
+                    AvgReturnPct = table.Column<double>(type: "double precision", nullable: false),
+                    MedianReturnPct = table.Column<double>(type: "double precision", nullable: false),
+                    MaxReturnPct = table.Column<double>(type: "double precision", nullable: false),
+                    MinReturnPct = table.Column<double>(type: "double precision", nullable: false),
+                    StdDevReturnPct = table.Column<double>(type: "double precision", nullable: false),
+                    RecentSamples = table.Column<int>(type: "integer", nullable: false),
+                    RecentUpRate = table.Column<double>(type: "double precision", nullable: false),
+                    RecentDownRate = table.Column<double>(type: "double precision", nullable: false),
+                    RecentAvgReturnPct = table.Column<double>(type: "double precision", nullable: false),
+                    CreatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ArchetypeOutcomes", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ArchetypeOutcomes_CandleArchetypes_ArchetypeId",
+                        column: x => x.ArchetypeId,
+                        principalTable: "CandleArchetypes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchetypeOccurrences_ArchetypeId_Horizon",
+                table: "ArchetypeOccurrences",
+                columns: new[] { "ArchetypeId", "Horizon" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchetypeOccurrences_Symbol_Timeframe_WindowSize_WindowStar~",
+                table: "ArchetypeOccurrences",
+                columns: new[] { "Symbol", "Timeframe", "WindowSize", "WindowStartMs" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchetypeOutcomes_ArchetypeId_Horizon",
+                table: "ArchetypeOutcomes",
+                columns: new[] { "ArchetypeId", "Horizon" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CandleArchetypes_Symbol_Timeframe_WindowSize_ArchetypeCode_~",
+                table: "CandleArchetypes",
+                columns: new[] { "Symbol", "Timeframe", "WindowSize", "ArchetypeCode", "Version" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CandleArchetypes_Symbol_Timeframe_WindowSize_Version",
+                table: "CandleArchetypes",
+                columns: new[] { "Symbol", "Timeframe", "WindowSize", "Version" });
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "ArchetypeOccurrences");
+
+            migrationBuilder.DropTable(
+                name: "ArchetypeOutcomes");
+
+            migrationBuilder.DropTable(
+                name: "PaperTrades");
+
+            migrationBuilder.DropTable(
+                name: "CandleArchetypes");
+
+            migrationBuilder.DropColumn(
+                name: "FundingRateNorm",
+                table: "MlFeatureStores");
+
+            migrationBuilder.DropColumn(
+                name: "GlobalLsRatio",
+                table: "MlFeatureStores");
+
+            migrationBuilder.DropColumn(
+                name: "OiChangePct24",
+                table: "MlFeatureStores");
+
+            migrationBuilder.DropColumn(
+                name: "TopTraderLsRatio",
+                table: "MlFeatureStores");
+        }
+    }
+}

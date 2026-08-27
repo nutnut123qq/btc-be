@@ -15,7 +15,9 @@ public class MarketRetrievalController : ControllerBase
     }
 
     [HttpGet("tech-summary")]
+    [HttpGet("/api/market/tech-summary")]
     public async Task<IActionResult> GetTechSummary(
+        [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string interval = "1h",
         [FromQuery] int limit = 48,
         CancellationToken cancellationToken = default)
@@ -27,6 +29,7 @@ public class MarketRetrievalController : ControllerBase
             return BadRequest("limit must be between 1 and 2000.");
 
         var context = await _binanceKlines.BuildTechSummaryAsync(
+            symbol: symbol,
             interval: interval,
             limit: limit,
             cancellationToken: cancellationToken);

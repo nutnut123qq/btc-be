@@ -11,7 +11,8 @@ public class WindowDatasetBuilder : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WindowDatasetBuilder> _logger;
 
-    private static readonly string[] Timeframes = { "15m", "1h" };
+    private static readonly string[] Timeframes = { "1h", "4h", "1d" };
+    private static readonly string[] Symbols = { "BTCUSDT" };
 
     public WindowDatasetBuilder(
         IServiceScopeFactory scopeFactory,
@@ -53,21 +54,23 @@ public class WindowDatasetBuilder : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IWindowDatasetService>();
 
-        const string symbol = "BTCUSDT";
-        foreach (var timeframe in Timeframes)
+        foreach (var symbol in Symbols)
         {
-            try
+            foreach (var timeframe in Timeframes)
             {
-                var count = await service.BuildAllAsync(symbol, timeframe, cancellationToken);
-                _logger.LogInformation(
-                    "Window dataset cycle completed for {Symbol} {Timeframe}: {Count} samples",
-                    symbol, timeframe, count);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to build window dataset for {Symbol} {Timeframe}",
-                    symbol, timeframe);
+                try
+                {
+                    var count = await service.BuildAllAsync(symbol, timeframe, cancellationToken);
+                    _logger.LogInformation(
+                        "Window dataset cycle completed for {Symbol} {Timeframe}: {Count} samples",
+                        symbol, timeframe, count);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to build window dataset for {Symbol} {Timeframe}",
+                        symbol, timeframe);
+                }
             }
         }
     }

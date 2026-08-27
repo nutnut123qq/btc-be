@@ -29,6 +29,22 @@ public class AppDbContext : DbContext
     public DbSet<BacktestRun> BacktestRuns => Set<BacktestRun>();
     public DbSet<BacktestTrade> BacktestTrades => Set<BacktestTrade>();
     public DbSet<PaperTrade> PaperTrades => Set<PaperTrade>();
+    public DbSet<CandleArchetype> CandleArchetypes => Set<CandleArchetype>();
+    public DbSet<ArchetypeOutcome> ArchetypeOutcomes => Set<ArchetypeOutcome>();
+    public DbSet<ArchetypeOccurrence> ArchetypeOccurrences => Set<ArchetypeOccurrence>();
+    public DbSet<ArchetypeTransition> ArchetypeTransitions => Set<ArchetypeTransition>();
+    public DbSet<ArchetypeSequence> ArchetypeSequences => Set<ArchetypeSequence>();
+    public DbSet<MarketRegime> MarketRegimes => Set<MarketRegime>();
+    public DbSet<RegimeTransition> RegimeTransitions => Set<RegimeTransition>();
+    public DbSet<ConfluenceSnapshot> ConfluenceSnapshots => Set<ConfluenceSnapshot>();
+    public DbSet<VolumeProfileSnapshot> VolumeProfileSnapshots => Set<VolumeProfileSnapshot>();
+    public DbSet<SmartMoneyStructure> SmartMoneyStructures => Set<SmartMoneyStructure>();
+    public DbSet<SentimentSnapshot> SentimentSnapshots => Set<SentimentSnapshot>();
+    public DbSet<EnsemblePredictionRecord> EnsemblePredictionRecords => Set<EnsemblePredictionRecord>();
+    public DbSet<FuturesMetric> FuturesMetrics => Set<FuturesMetric>();
+    public DbSet<LiquidationSnapshot> LiquidationSnapshots => Set<LiquidationSnapshot>();
+    public DbSet<WalletBalanceSnapshot> WalletBalanceSnapshots => Set<WalletBalanceSnapshot>();
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -226,8 +242,156 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<PaperTrade>(e =>
         {
             e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.Symbol, x.WindowEndMs }).IsUnique();
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Side).HasMaxLength(8);
+            e.Property(x => x.Status).HasMaxLength(8);
+            e.Property(x => x.ModelVersion).HasMaxLength(128);
+            e.Property(x => x.ExitReason).HasMaxLength(16);
+            e.Property(x => x.EnsembleDirection).HasMaxLength(16);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowEndMs }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Status });
+            e.HasIndex(x => new { x.Symbol, x.EntryTimeMs });
             e.ToTable("PaperTrades");
+        });
+
+        modelBuilder.Entity<FuturesMetric>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.HasIndex(x => new { x.Symbol, x.OpenTimeMs }).IsUnique();
+            e.ToTable("FuturesMetrics");
+        });
+
+        modelBuilder.Entity<CandleArchetype>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.ArchetypeCode).HasMaxLength(32);
+            e.Property(x => x.CentroidVector).HasColumnType("real[]");
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.ArchetypeCode, x.Version }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Version });
+        });
+
+        modelBuilder.Entity<ArchetypeOutcome>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Horizon).HasMaxLength(16);
+            e.HasIndex(x => new { x.ArchetypeId, x.Horizon });
+            e.HasOne(x => x.Archetype)
+                .WithMany()
+                .HasForeignKey(x => x.ArchetypeId);
+        });
+
+        modelBuilder.Entity<ArchetypeOccurrence>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Horizon).HasMaxLength(16);
+            e.HasIndex(x => new { x.ArchetypeId, x.Horizon });
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.WindowStartMs });
+            e.HasOne(x => x.Archetype)
+                .WithMany()
+                .HasForeignKey(x => x.ArchetypeId);
+        });
+        modelBuilder.Entity<ArchetypeTransition>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.HasIndex(x => new { x.FromArchetypeId, x.ToArchetypeId, x.Symbol, x.Timeframe, x.WindowSize }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize });
+            e.HasOne(x => x.FromArchetype)
+                .WithMany()
+                .HasForeignKey(x => x.FromArchetypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ToArchetype)
+                .WithMany()
+                .HasForeignKey(x => x.ToArchetypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ArchetypeSequence>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.HasIndex(x => new { x.FirstArchetypeId, x.SecondArchetypeId, x.ThirdArchetypeId, x.Symbol, x.Timeframe, x.WindowSize }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize });
+            e.HasOne(x => x.FirstArchetype)
+                .WithMany()
+                .HasForeignKey(x => x.FirstArchetypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.SecondArchetype)
+                .WithMany()
+                .HasForeignKey(x => x.SecondArchetypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ThirdArchetype)
+                .WithMany()
+                .HasForeignKey(x => x.ThirdArchetypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<MarketRegime>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.OpenTimeMs }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.RegimeType });
+        });
+
+        modelBuilder.Entity<RegimeTransition>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TransitionTimeMs });
+        });
+
+        modelBuilder.Entity<ConfluenceSnapshot>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.TimeMs });
+        });
+
+        modelBuilder.Entity<VolumeProfileSnapshot>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowEndMs });
+        });
+
+        modelBuilder.Entity<SmartMoneyStructure>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TimeMs });
+        });
+        modelBuilder.Entity<SentimentSnapshot>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.TimeMs });
+        });
+
+        modelBuilder.Entity<EnsemblePredictionRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TimeMs });
+        });
+
+        modelBuilder.Entity<LiquidationSnapshot>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TimestampUtc });
+        });
+
+        modelBuilder.Entity<WalletBalanceSnapshot>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Asset).HasMaxLength(32);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.EventReasonType).HasMaxLength(32);
+            e.HasIndex(x => new { x.Asset, x.Timestamp });
+            e.HasIndex(x => new { x.Symbol, x.Timestamp });
+            e.ToTable("WalletBalanceSnapshots");
         });
     }
 }

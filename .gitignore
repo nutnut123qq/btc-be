@@ -23,6 +23,15 @@ out/
 # Logs
 *.log
 
+# Local configs & secrets
+appsettings.Local.json
+appsettings.Development.local.json
+*.local.json
+.env
+.env.*
+*.key
+*.pem
+
 # OS
 .DS_Store
 Thumbs.db

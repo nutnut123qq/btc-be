@@ -1,7 +1,12 @@
 using Backend.Data;
+using Backend.Hubs;
 using Backend.Options;
 using Backend.Services;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using System.IO.Compression;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,12 +14,53 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddMemoryCache();
+builder.Services.AddSignalR();
+
+// Response Compression (Brotli + Gzip) for High Concurrency Payload Optimization
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[]
+    {
+        "application/json",
+        "application/problem+json"
+    });
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Fastest;
+});
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Fastest;
+});
+
+// High-Concurrency Rate Limiter (.NET 8 built-in)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        return RateLimitPartition.GetSlidingWindowLimiter(clientIp, _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 1500,
+            Window = TimeSpan.FromSeconds(10),
+            SegmentsPerWindow = 5,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 200
+        });
+    });
+});
 
 builder.Services.Configure<RssOptions>(builder.Configuration.GetSection(RssOptions.SectionName));
 builder.Services.Configure<AlertOptions>(builder.Configuration.GetSection(AlertOptions.SectionName));
 builder.Services.Configure<KlinesIngestionOptions>(builder.Configuration.GetSection(KlinesIngestionOptions.SectionName));
 builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
+builder.Services.Configure<BinanceTestnetOptions>(builder.Configuration.GetSection(BinanceTestnetOptions.SectionName));
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not set.");
@@ -49,7 +95,10 @@ builder.Services.AddHttpClient("GeminiEmbedding", client =>
 builder.Services.AddHttpClient("Telegram", client => { client.Timeout = TimeSpan.FromSeconds(30); });
 
 builder.Services.AddScoped<IGeminiEmbeddingClient, GeminiEmbeddingClient>();
-builder.Services.AddScoped<IRagService, RagService>();
+builder.Services.AddScoped<INewsRagService, NewsRagService>();
+builder.Services.AddScoped<NewsRagService>();
+builder.Services.AddScoped<IRagService, NewsRagService>();
+builder.Services.AddScoped<RagService>();
 builder.Services.AddScoped<IBinanceKlinesService, BinanceKlinesService>();
 builder.Services.AddScoped<KlinesBackfillService>();
 builder.Services.AddScoped<IPatternSearchService, PatternSearchService>();
@@ -62,8 +111,42 @@ builder.Services.AddScoped<MarketMetricsIndexer>();
 builder.Services.AddScoped<CandlePatternSequenceIndexer>();
 builder.Services.AddScoped<IMlDatasetService, MlDatasetService>();
 builder.Services.AddScoped<IWindowDatasetService, WindowDatasetService>();
+builder.Services.AddScoped<IArchetypeService, ArchetypeService>();
+builder.Services.AddScoped<ITransitionService, TransitionService>();
 builder.Services.AddScoped<IDataAuditService, DataAuditService>();
+builder.Services.AddScoped<IRegimeDetectionService, RegimeDetectionService>();
+builder.Services.AddScoped<IConfluenceService, ConfluenceService>();
 builder.Services.AddScoped<ITelegramNotificationService, TelegramNotificationService>();
+builder.Services.AddScoped<IVolumeProfileService, VolumeProfileService>();
+builder.Services.AddScoped<ISmartMoneyService, SmartMoneyService>();
+builder.Services.AddScoped<ISentimentService, SentimentService>();
+builder.Services.AddScoped<IEnsembleService, EnsembleService>();
+builder.Services.AddScoped<IEnsembleBacktestService, EnsembleBacktestService>();
+builder.Services.AddScoped<IEnsemblePaperTraderService, EnsemblePaperTraderService>();
+builder.Services.AddScoped<IAiContextService, AiContextService>();
+builder.Services.AddScoped<IFuturesMetricsService, FuturesMetricsService>();
+builder.Services.AddScoped<IBtcDominanceService, BtcDominanceService>();
+builder.Services.AddHttpClient("BinanceFuturesTestnet", client =>
+{
+    var baseUrl = builder.Configuration["BinanceTestnet:BaseUrl"] ?? "https://testnet.binancefuture.com";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<IUserDataStreamHandlerService, UserDataStreamHandlerService>();
+builder.Services.AddHttpClient<ILiveOrderExecutionService, LiveOrderExecutionService>();
+
+builder.Services.AddSingleton<BinanceUserDataStreamService>(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    var http = factory.CreateClient("BinanceFuturesTestnet");
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<BinanceTestnetOptions>>();
+    var logger = sp.GetRequiredService<ILogger<BinanceUserDataStreamService>>();
+    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+    return new BinanceUserDataStreamService(http, options, logger, scopeFactory);
+});
+builder.Services.AddSingleton<IBinanceUserDataStreamService>(sp => sp.GetRequiredService<BinanceUserDataStreamService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BinanceUserDataStreamService>());
+
 // FullReindexService and MlDatasetRebuildService are kept as scoped helpers
 // (used by tests / manual triggers). The queue/worker/controller glue has been removed.
 builder.Services.AddScoped<FullReindexService>();
@@ -101,12 +184,15 @@ builder.Services.AddCors(options =>
                 }
             })
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
 var app = builder.Build();
 
+app.UseResponseCompression();
+app.UseRateLimiter();
 app.UseCors("AllowNextJs");
 
 using (var scope = app.Services.CreateScope())
@@ -130,6 +216,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+app.MapHub<TradeNotificationHub>(TradeNotificationHub.HubUrl);
 
 app.Run();
 

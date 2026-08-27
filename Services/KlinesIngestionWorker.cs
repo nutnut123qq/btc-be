@@ -21,7 +21,7 @@ public class KlinesIngestionWorker : BackgroundService
     private readonly ILogger<KlinesIngestionWorker> _logger;
     private readonly KlinesIngestionOptions _options;
 
-    private const string Symbol = "BTCUSDT";
+    private static readonly string[] DefaultSymbols = { "BTCUSDT", "ETHUSDT", "SOLUSDT" };
     private const int BatchLimit = 1000;
 
     // Ưu tiên khung lớn trước: ít request hơn, giảm gapCount nhanh hơn.
@@ -77,89 +77,90 @@ public class KlinesIngestionWorker : BackgroundService
         var totalInserted = 0;
 
         _logger.LogInformation(
-            "Klines ingestion cycle started. Budget={Budget} requests, range={StartIso} to {EndIso}",
+            "Klines ingestion cycle started for {SymbolsCount} symbols. Budget={Budget} requests, range={StartIso} to {EndIso}",
+            DefaultSymbols.Length,
             maxRequests,
             DateTimeOffset.FromUnixTimeMilliseconds(startMs).UtcDateTime.ToString("O"),
             DateTimeOffset.FromUnixTimeMilliseconds(endMs).UtcDateTime.ToString("O"));
 
-        foreach (var tf in DefaultTimeframes)
+        foreach (var symbol in DefaultSymbols)
         {
-            if (remainingRequests <= 0)
-            {
-                _logger.LogInformation("Klines ingestion request budget exhausted; skipping remaining timeframes");
-                break;
-            }
-
-            if (cancellationToken.IsCancellationRequested)
+            if (remainingRequests <= 0 || cancellationToken.IsCancellationRequested)
                 break;
 
-            var intervalMs = Timeframes.IntervalToMs(tf);
-            if (intervalMs <= 0)
+            foreach (var tf in DefaultTimeframes)
             {
-                _logger.LogWarning("Skipping invalid timeframe {Timeframe}", tf);
-                continue;
-            }
-
-            try
-            {
-                // 1. Lấy dữ liệu mới nhất.
-                var latestLimit = GetLatestLimit(tf);
-                var latest = await binance.GetKlinesAsync(Symbol, tf, latestLimit, cancellationToken: cancellationToken);
-                remainingRequests--;
-
-                var latestInserted = await InsertBatchAsync(db, Symbol, tf, latest, cancellationToken);
-                totalInserted += latestInserted;
-
-                _logger.LogInformation(
-                    "Fetched latest {Count} klines for {Symbol} {Timeframe}, inserted {Inserted}. Budget remaining {Remaining}",
-                    latest.Count, Symbol, tf, latestInserted, remainingRequests);
-
-                // 2. Phát hiện gaps trong khoảng đã cấu hình.
-                var gaps = await FindGapsAsync(db, Symbol, tf, startMs, endMs, _options.MaxGapsPerTimeframe, cancellationToken);
-                if (gaps.Count == 0)
+                if (remainingRequests <= 0 || cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogInformation("No gaps detected for {Symbol} {Timeframe}", Symbol, tf);
+                    _logger.LogInformation("Klines ingestion request budget exhausted; skipping remaining symbols/timeframes");
+                    break;
+                }
+
+                var intervalMs = Timeframes.IntervalToMs(tf);
+                if (intervalMs <= 0)
+                {
+                    _logger.LogWarning("Skipping invalid timeframe {Timeframe}", tf);
                     continue;
                 }
 
-                var gapDescriptions = string.Join(", ",
-                    gaps.Take(10).Select(g => $"{FormatMs(g.StartMs)}-{FormatMs(g.EndMs)}({g.MissingCount})"));
-
-                if (gaps.Count > 10)
-                    gapDescriptions += $", ... ({gaps.Count - 10} more)";
-
-                _logger.LogInformation(
-                    "Detected {GapCount} gaps for {Symbol} {Timeframe}: {Gaps}",
-                    gaps.Count, Symbol, tf, gapDescriptions);
-
-                // 3. Backfill gaps cho đến khi hết budget.
-                foreach (var gap in gaps)
+                try
                 {
-                    if (remainingRequests <= 0)
-                        break;
+                    // 1. Lấy dữ liệu mới nhất.
+                    var latestLimit = GetLatestLimit(tf);
+                    var latest = await binance.GetKlinesAsync(symbol, tf, latestLimit, cancellationToken: cancellationToken);
+                    remainingRequests--;
 
-                    if (cancellationToken.IsCancellationRequested)
-                        break;
-
-                    var (inserted, requestsUsed) = await BackfillGapAsync(
-                        binance, db, Symbol, tf, intervalMs,
-                        gap.StartMs, Math.Min(gap.EndMs, endMs),
-                        remainingRequests, cancellationToken);
-
-                    remainingRequests -= requestsUsed;
-                    totalInserted += inserted;
+                    var latestInserted = await InsertBatchAsync(db, symbol, tf, latest, cancellationToken);
+                    totalInserted += latestInserted;
 
                     _logger.LogInformation(
-                        "Backfilled gap {Symbol} {Timeframe} [{StartIso} .. {EndIso}]: inserted {Inserted} in {RequestsUsed} request(s), budget remaining {Remaining}",
-                        Symbol, tf,
-                        DateTimeOffset.FromUnixTimeMilliseconds(gap.StartMs).UtcDateTime.ToString("O"),
-                        DateTimeOffset.FromUnixTimeMilliseconds(gap.EndMs).UtcDateTime.ToString("O"),
-                        inserted, requestsUsed, remainingRequests);
+                        "Fetched latest {Count} klines for {Symbol} {Timeframe}, inserted {Inserted}. Budget remaining {Remaining}",
+                        latest.Count, symbol, tf, latestInserted, remainingRequests);
+
+                    // 2. Phát hiện gaps trong khoảng đã cấu hình.
+                    var gaps = await FindGapsAsync(db, symbol, tf, startMs, endMs, _options.MaxGapsPerTimeframe, cancellationToken);
+                    if (gaps.Count == 0)
+                    {
+                        _logger.LogInformation("No gaps detected for {Symbol} {Timeframe}", symbol, tf);
+                        continue;
+                    }
+
+                    var gapDescriptions = string.Join(", ",
+                        gaps.Take(10).Select(g => $"{FormatMs(g.StartMs)}-{FormatMs(g.EndMs)}({g.MissingCount})"));
+
+                    if (gaps.Count > 10)
+                        gapDescriptions += $", ... ({gaps.Count - 10} more)";
+
+                    _logger.LogInformation(
+                        "Detected {GapCount} gaps for {Symbol} {Timeframe}: {Gaps}",
+                        gaps.Count, symbol, tf, gapDescriptions);
+
+                    // 3. Backfill gaps cho đến khi hết budget.
+                    foreach (var gap in gaps)
+                    {
+                        if (remainingRequests <= 0 || cancellationToken.IsCancellationRequested)
+                            break;
+
+                        var (inserted, requestsUsed) = await BackfillGapAsync(
+                            binance, db, symbol, tf, intervalMs,
+                            gap.StartMs, Math.Min(gap.EndMs, endMs),
+                            remainingRequests, cancellationToken);
+
+                        remainingRequests -= requestsUsed;
+                        totalInserted += inserted;
+
+                        _logger.LogInformation(
+                            "Backfilled gap {Symbol} {Timeframe} [{StartIso} .. {EndIso}]: inserted {Inserted} in {RequestsUsed} request(s), budget remaining {Remaining}",
+                            symbol, tf,
+                            DateTimeOffset.FromUnixTimeMilliseconds(gap.StartMs).UtcDateTime.ToString("O"),
+                            DateTimeOffset.FromUnixTimeMilliseconds(gap.EndMs).UtcDateTime.ToString("O"),
+                            inserted, requestsUsed, remainingRequests);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to process klines for {Symbol} {Timeframe}", Symbol, tf);
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to process klines for {Symbol} {Timeframe}", symbol, tf);
+                }
             }
         }
 

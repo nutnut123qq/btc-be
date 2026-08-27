@@ -48,18 +48,23 @@ public class MlDatasetBuilder : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var mlService = scope.ServiceProvider.GetRequiredService<IMlDatasetService>();
 
-        const string symbol = "BTCUSDT";
-        // 1m is intentionally excluded: it has ~139k gaps, is very noisy, and consumes the most RAM.
-        // We keep 5m–1d as the clean training timeframes. Raw Klines 1m is still ingested for possible future backfill.
-        foreach (var tf in new[] { "5m", "15m", "30m", "1h", "4h", "1d" })
+        var symbols = new[] { "BTCUSDT", "ETHUSDT", "SOLUSDT" };
+        // 1m is intentionally excluded: it has large gap overhead and is very noisy.
+        // We keep 5m–1d as the clean training timeframes.
+        var timeframes = new[] { "5m", "15m", "30m", "1h", "4h", "1d" };
+
+        foreach (var symbol in symbols)
         {
-            try
+            foreach (var tf in timeframes)
             {
-                await mlService.BuildAsync(symbol, tf, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to build ML dataset for {Symbol} {Timeframe}", symbol, tf);
+                try
+                {
+                    await mlService.BuildAsync(symbol, tf, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to build ML dataset for {Symbol} {Timeframe}", symbol, tf);
+                }
             }
         }
     }

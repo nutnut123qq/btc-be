@@ -292,7 +292,16 @@ public class FullReindexServiceTests
             => GetKlinesAsync("BTCUSDT", interval, limit, cancellationToken: cancellationToken);
 
         public Task<string> BuildTechSummaryAsync(
-            string interval = "1h", int limit = 48, CancellationToken cancellationToken = default)
+            string symbol = "BTCUSDT", string interval = "1h", int limit = 48, CancellationToken cancellationToken = default)
             => Task.FromResult("fake summary");
+
+        public Task<IReadOnlyList<MarketTickerDto>> Get24hTickersAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<MarketTickerDto>>(new List<MarketTickerDto>());
+
+        public Task<IReadOnlyList<MarketTradeDto>> GetRecentTradesAsync(string symbol = "BTCUSDT", int limit = 50, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<MarketTradeDto>>(new List<MarketTradeDto>());
+
+        public Task<OrderBookDepthDto> GetOrderBookDepthAsync(string symbol = "BTCUSDT", int limit = 20, CancellationToken cancellationToken = default)
+            => Task.FromResult(new OrderBookDepthDto { Symbol = symbol });
     }
 }

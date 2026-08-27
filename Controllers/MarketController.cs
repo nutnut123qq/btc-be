@@ -85,6 +85,100 @@ public class MarketController : ControllerBase
     }
 
     /// <summary>
+    /// Generic klines endpoint supporting any symbol (alias to btc/klines with symbol).
+    /// </summary>
+    [HttpGet("klines")]
+    public async Task<ActionResult<IReadOnlyList<KlineDto>>> GetKlines(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string interval = "1h",
+        [FromQuery] int limit = 100,
+        [FromQuery] long? startTimeMs = null,
+        [FromQuery] long? endTimeMs = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await GetBtcKlines(interval, limit, symbol, startTimeMs, endTimeMs, cancellationToken);
+    }
+
+    /// <summary>
+    /// Lấy 24h ticker của tất cả các cặp giao dịch USDT trên Binance.
+    /// </summary>
+    [HttpGet("tickers")]
+    public async Task<ActionResult<IReadOnlyList<MarketTickerDto>>> GetTickers(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await _binance.Get24hTickersAsync(cancellationToken);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch Binance 24hr tickers");
+            return StatusCode(502, new ApiErrorEnvelope
+            {
+                Code = "MARKET_TICKERS_ERROR",
+                Message = "Failed to fetch 24hr tickers from Binance.",
+                Retryable = true,
+                RequestId = HttpContext.TraceIdentifier
+            });
+        }
+    }
+
+    /// <summary>
+    /// Lấy danh sách giao dịch khớp lệnh gần nhất (Recent Trades) của một mã từ Binance.
+    /// </summary>
+    [HttpGet("trades")]
+    public async Task<ActionResult<IReadOnlyList<MarketTradeDto>>> GetTrades(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await _binance.GetRecentTradesAsync(symbol, limit, cancellationToken);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch Binance trades for {Symbol}", symbol);
+            return StatusCode(502, new ApiErrorEnvelope
+            {
+                Code = "MARKET_TRADES_ERROR",
+                Message = $"Failed to fetch recent trades for {symbol}.",
+                Retryable = true,
+                RequestId = HttpContext.TraceIdentifier
+            });
+        }
+    }
+
+    /// <summary>
+    /// Lấy sổ lệnh (Order Book Depth) của một mã từ Binance.
+    /// </summary>
+    [HttpGet("depth")]
+    public async Task<ActionResult<OrderBookDepthDto>> GetDepth(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await _binance.GetOrderBookDepthAsync(symbol, limit, cancellationToken);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch Binance orderbook depth for {Symbol}", symbol);
+            return StatusCode(502, new ApiErrorEnvelope
+            {
+                Code = "MARKET_DEPTH_ERROR",
+                Message = $"Failed to fetch orderbook depth for {symbol}.",
+                Retryable = true,
+                RequestId = HttpContext.TraceIdentifier
+            });
+        }
+    }
+
+
+    /// <summary>
     /// Backfill dữ liệu nến từ Binance Spot API vào bảng Klines.
     /// Mặc định chạy ngầm (202 Accepted); đặt wait=true để đợi hoàn thành (có thể rất lâu).
     /// Đặt fillGaps=true để tìm và lấp tất cả gaps trong khoảng [startDateUtc, endDateUtc] thay vì chỉ resume từ nến cuối.

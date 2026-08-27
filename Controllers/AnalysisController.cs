@@ -30,25 +30,32 @@ public class AnalysisController : ControllerBase
         _env = env;
     }
 
+    [HttpGet]
+    [HttpGet("analyze")]
     [HttpGet("bitcoin")]
-    public async Task<IActionResult> GetBitcoinAnalysis(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetAnalysis([FromQuery] string symbol = "BTCUSDT", CancellationToken cancellationToken = default)
     {
         try
         {
+            var cleanSymbol = string.IsNullOrWhiteSpace(symbol) ? "BTCUSDT" : symbol.Trim().ToUpperInvariant();
+            var baseAsset = cleanSymbol.Replace("USDT", "").Replace("BUSD", "").Replace("USDC", "");
+
+            var newsQuery = $"{baseAsset} {cleanSymbol} cryptocurrency market news regulation ETF price";
             var newsContext = await _ragService.BuildNewsContextAsync(
-                "Bitcoin BTC cryptocurrency market news regulation ETF price",
+                newsQuery,
                 topK: 8,
                 cancellationToken);
 
             var techContext = await _binanceKlines.BuildTechSummaryAsync(
+                symbol: cleanSymbol,
                 interval: "1h",
                 limit: 48,
-                cancellationToken);
+                cancellationToken: cancellationToken);
 
             var client = _httpClientFactory.CreateClient("AIService");
             var requestBody = new AnalyzePayload
             {
-                Symbol = "BTC",
+                Symbol = baseAsset,
                 NewsContext = newsContext,
                 TechContext = techContext
             };

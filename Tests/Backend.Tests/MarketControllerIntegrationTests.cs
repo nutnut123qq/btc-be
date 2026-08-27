@@ -145,10 +145,27 @@ public class FakeBinanceKlinesService : IBinanceKlinesService
     }
 
     public Task<string> BuildTechSummaryAsync(
+        string symbol = "BTCUSDT",
         string interval = "1h",
         int limit = 48,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult("Fake tech summary");
+        return Task.FromResult($"Fake tech summary for {symbol}");
+    }
+
+    public Task<IReadOnlyList<MarketTickerDto>> Get24hTickersAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<MarketTickerDto>>(new List<MarketTickerDto>());
+    }
+
+    public Task<IReadOnlyList<MarketTradeDto>> GetRecentTradesAsync(string symbol = "BTCUSDT", int limit = 50, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<MarketTradeDto>>(new List<MarketTradeDto>());
+    }
+
+    public Task<OrderBookDepthDto> GetOrderBookDepthAsync(string symbol = "BTCUSDT", int limit = 20, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new OrderBookDepthDto { Symbol = symbol });
     }
 }
+

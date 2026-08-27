@@ -37,6 +37,35 @@ public class PaperTrade
     [MaxLength(128)]
     public string? ModelVersion { get; set; }
     
+    // --- Phase 10: Enhanced Paper Trading fields ---
+    public double? PositionSizeUsdt { get; set; }
+    public double? TakeProfitPrice { get; set; }
+    public double? StopLossPrice { get; set; }
+    public double? Atr14 { get; set; }
+    
+    [MaxLength(16)]
+    public string? ExitReason { get; set; }  // TP, SL, TIMEOUT, SIGNAL
+    
+    public double? BalanceAfter { get; set; }
+    
+    [MaxLength(16)]
+    public string? EnsembleDirection { get; set; }  // Bullish, Bearish, Sideways
+    
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset? ClosedAtUtc { get; set; }
+
+    // --- User Data Stream / Live Execution fields ---
+    public long? OrderId { get; set; }
+
+    [MaxLength(64)]
+    public string? ClientOrderId { get; set; }
+
+    public double? ExecutedQty { get; set; }
+    public double? Commission { get; set; }
+
+    [MaxLength(16)]
+    public string? CommissionAsset { get; set; }
+
+    public double? RealizedPnL { get; set; }
 }
+

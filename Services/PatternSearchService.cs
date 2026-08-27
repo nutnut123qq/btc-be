@@ -1,3 +1,4 @@
+using System.Numerics;
 using Backend.Services.Models;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
@@ -165,7 +166,7 @@ public class PatternSearchService : IPatternSearchService
                 FeatureType = featureType,
                 StartTimeMs = x.StartTimeMs,
                 EndTimeMs = x.EndTimeMs,
-                Distance = 1.0 - x.Similarity,
+                Distance = Math.Max(0.0, 1.0 - x.Similarity),
                 Similarity = x.Similarity,
                 Rank = idx + 1
             })
@@ -197,14 +198,37 @@ public class PatternSearchService : IPatternSearchService
         };
     }
 
+    /// <summary>
+    /// Hardware-accelerated SIMD cosine similarity calculation using Vector&lt;float&gt;.
+    /// </summary>
     private static double CosineSimilarity(float[] a, float normA, float[] b, float normB)
     {
-        if (normA <= 0 || normB <= 0) return 0;
-        var n = Math.Min(a.Length, b.Length);
-        double dot = 0;
-        for (var i = 0; i < n; i++)
+        if (normA <= 0 || normB <= 0 || a.Length == 0 || b.Length == 0) return 0;
+        int n = Math.Min(a.Length, b.Length);
+        int i = 0;
+        int vectorSize = Vector<float>.Count;
+        var dotVec = Vector<float>.Zero;
+
+        if (Vector.IsHardwareAccelerated && n >= vectorSize)
+        {
+            int limit = n - vectorSize;
+            while (i <= limit)
+            {
+                var va = new Vector<float>(a, i);
+                var vb = new Vector<float>(b, i);
+                dotVec += va * vb;
+                i += vectorSize;
+            }
+        }
+
+        float dot = Vector.Dot(dotVec, Vector<float>.One);
+
+        for (; i < n; i++)
+        {
             dot += a[i] * b[i];
-        return dot / (normA * normB);
+        }
+
+        return Math.Clamp(dot / (normA * normB), -1.0, 1.0);
     }
 
     private sealed record _Candidate(int StartIndex, long StartTimeMs, long EndTimeMs, double Similarity);

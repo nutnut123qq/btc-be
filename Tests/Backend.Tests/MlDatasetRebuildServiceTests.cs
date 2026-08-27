@@ -117,12 +117,10 @@ public class MlDatasetRebuildServiceTests
             tfResult.WindowClassificationDatasetsByHorizon.Values.Sum());
     }
 
-    /// <summary>
-    /// Fake ML dataset service: tạo 10 feature rows và 10 target rows mỗi lần BuildAsync được gọi.
-    /// </summary>
     private class FakeMlDatasetService : IMlDatasetService
     {
         private readonly AppDbContext _db;
+        private int _calls;
 
         public FakeMlDatasetService(AppDbContext db)
         {
@@ -131,6 +129,7 @@ public class MlDatasetRebuildServiceTests
 
         public async Task<int> BuildAsync(string symbol, string timeframe, CancellationToken ct = default)
         {
+            if (_calls++ > 0) return 0;
             var baseTime = 1_000_000L;
             for (int i = 0; i < 10; i++)
             {

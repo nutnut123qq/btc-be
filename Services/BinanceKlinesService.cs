@@ -128,13 +128,14 @@ public class BinanceKlinesService : IBinanceKlinesService
     }
 
     public async Task<string> BuildTechSummaryAsync(
+        string symbol = "BTCUSDT",
         string interval = "1h",
         int limit = 48,
         CancellationToken cancellationToken = default)
     {
-        var klines = await GetBtcKlinesAsync(interval, limit, cancellationToken);
+        var klines = await GetKlinesAsync(symbol, interval, limit, cancellationToken: cancellationToken);
         if (klines.Count == 0)
-            return "No kline data returned from Binance.";
+            return $"No kline data returned from Binance for {symbol}.";
 
         var first = klines[0];
         var last = klines[^1];
@@ -158,7 +159,7 @@ public class BinanceKlinesService : IBinanceKlinesService
         var volumeSummary = VolumeAnalyzer.Summarize(patternResult.Candles);
 
         return $"""
-            BTC/USDT ({interval} candles, last {klines.Count} bars from Binance).
+            {symbol} ({interval} candles, last {klines.Count} bars from Binance).
             First bar close (oldest in window): {first.Close:F2} USDT at {first.TimeIso}.
             Last bar close (newest): {last.Close:F2} USDT at {last.TimeIso}.
             Period high: {high:F2}, period low: {low:F2}.
@@ -221,4 +222,184 @@ public class BinanceKlinesService : IBinanceKlinesService
             (false, true, _) => "price between SMA200 and SMA50 (testing SMA50 support)",
         };
     }
+
+    public async Task<IReadOnlyList<MarketTickerDto>> Get24hTickersAsync(CancellationToken cancellationToken = default)
+    {
+        const string cacheKey = "market:tickers:24h";
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<MarketTickerDto>? cached) && cached is not null)
+            return cached;
+
+        var client = _httpClientFactory.CreateClient("Binance");
+        var url = "https://api.binance.com/api/v3/ticker/24hr";
+
+        using var response = await client.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Binance 24hr ticker failed: {Status}", response.StatusCode);
+            throw new InvalidOperationException($"Binance API error: {response.StatusCode}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            return Array.Empty<MarketTickerDto>();
+
+        var list = new List<MarketTickerDto>();
+        foreach (var item in doc.RootElement.EnumerateArray())
+        {
+            var symbol = item.GetProperty("symbol").GetString() ?? string.Empty;
+            if (!symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            decimal.TryParse(item.GetProperty("lastPrice").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var lastPrice);
+            decimal.TryParse(item.GetProperty("priceChange").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var priceChange);
+            decimal.TryParse(item.GetProperty("priceChangePercent").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var priceChangePercent);
+            decimal.TryParse(item.GetProperty("highPrice").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var highPrice);
+            decimal.TryParse(item.GetProperty("lowPrice").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var lowPrice);
+            decimal.TryParse(item.GetProperty("volume").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var volume);
+            decimal.TryParse(item.GetProperty("quoteVolume").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var quoteVolume);
+            decimal.TryParse(item.GetProperty("bidPrice").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var bidPrice);
+            decimal.TryParse(item.GetProperty("askPrice").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var askPrice);
+            var count = item.TryGetProperty("count", out var cProp) ? cProp.GetInt32() : 0;
+            var closeTime = item.TryGetProperty("closeTime", out var ctProp) ? ctProp.GetInt64() : 0;
+
+            list.Add(new MarketTickerDto
+            {
+                Symbol = symbol,
+                LastPrice = lastPrice,
+                PriceChange = priceChange,
+                PriceChangePercent = priceChangePercent,
+                HighPrice = highPrice,
+                LowPrice = lowPrice,
+                Volume = volume,
+                QuoteVolume = quoteVolume,
+                BidPrice = bidPrice,
+                AskPrice = askPrice,
+                Count = count,
+                CloseTimeMs = closeTime
+            });
+        }
+
+        var result = list.OrderByDescending(x => x.QuoteVolume).ToList();
+        _cache.Set(cacheKey, (IReadOnlyList<MarketTickerDto>)result, TimeSpan.FromSeconds(4));
+        return result;
+    }
+
+    public async Task<IReadOnlyList<MarketTradeDto>> GetRecentTradesAsync(
+        string symbol = "BTCUSDT",
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        limit = Math.Clamp(limit, 1, 500);
+        var cacheKey = $"market:trades:{symbol.ToUpperInvariant()}:{limit}";
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<MarketTradeDto>? cached) && cached is not null)
+            return cached;
+
+        var client = _httpClientFactory.CreateClient("Binance");
+        var url = $"https://api.binance.com/api/v3/trades?symbol={Uri.EscapeDataString(symbol.ToUpperInvariant())}&limit={limit}";
+
+        using var response = await client.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Binance trades failed for {Symbol}: {Status}", symbol, response.StatusCode);
+            throw new InvalidOperationException($"Binance API error: {response.StatusCode}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            return Array.Empty<MarketTradeDto>();
+
+        var list = new List<MarketTradeDto>();
+        foreach (var item in doc.RootElement.EnumerateArray())
+        {
+            var id = item.GetProperty("id").GetInt64();
+            decimal.TryParse(item.GetProperty("price").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var price);
+            decimal.TryParse(item.GetProperty("qty").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var qty);
+            decimal.TryParse(item.GetProperty("quoteQty").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var quoteQty);
+            var time = item.GetProperty("time").GetInt64();
+            var isBuyerMaker = item.GetProperty("isBuyerMaker").GetBoolean();
+
+            list.Add(new MarketTradeDto
+            {
+                Id = id,
+                Price = price,
+                Qty = qty,
+                QuoteQty = quoteQty > 0 ? quoteQty : price * qty,
+                TimeMs = time,
+                IsBuyerMaker = isBuyerMaker,
+                IsBuyer = !isBuyerMaker
+            });
+        }
+
+        var result = list.OrderByDescending(x => x.TimeMs).ThenByDescending(x => x.Id).ToList();
+        _cache.Set(cacheKey, (IReadOnlyList<MarketTradeDto>)result, TimeSpan.FromSeconds(1));
+        return result;
+    }
+
+    public async Task<OrderBookDepthDto> GetOrderBookDepthAsync(
+        string symbol = "BTCUSDT",
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        limit = Math.Clamp(limit, 5, 100);
+        var cacheKey = $"market:depth:{symbol.ToUpperInvariant()}:{limit}";
+        if (_cache.TryGetValue(cacheKey, out OrderBookDepthDto? cached) && cached is not null)
+            return cached;
+
+        var client = _httpClientFactory.CreateClient("Binance");
+        var url = $"https://api.binance.com/api/v3/depth?symbol={Uri.EscapeDataString(symbol.ToUpperInvariant())}&limit={limit}";
+
+        using var response = await client.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Binance depth failed for {Symbol}: {Status}", symbol, response.StatusCode);
+            throw new InvalidOperationException($"Binance API error: {response.StatusCode}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        var lastUpdateId = doc.RootElement.GetProperty("lastUpdateId").GetInt64();
+        var bids = new List<OrderBookEntryDto>();
+        var asks = new List<OrderBookEntryDto>();
+
+        if (doc.RootElement.TryGetProperty("bids", out var bidsEl) && bidsEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var b in bidsEl.EnumerateArray())
+            {
+                if (b.GetArrayLength() >= 2)
+                {
+                    decimal.TryParse(b[0].GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var p);
+                    decimal.TryParse(b[1].GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var q);
+                    bids.Add(new OrderBookEntryDto { Price = p, Qty = q, Total = p * q });
+                }
+            }
+        }
+
+        if (doc.RootElement.TryGetProperty("asks", out var asksEl) && asksEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var a in asksEl.EnumerateArray())
+            {
+                if (a.GetArrayLength() >= 2)
+                {
+                    decimal.TryParse(a[0].GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var p);
+                    decimal.TryParse(a[1].GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var q);
+                    asks.Add(new OrderBookEntryDto { Price = p, Qty = q, Total = p * q });
+                }
+            }
+        }
+
+        var result = new OrderBookDepthDto
+        {
+            Symbol = symbol.ToUpperInvariant(),
+            LastUpdateId = lastUpdateId,
+            Bids = bids.OrderByDescending(x => x.Price).ToList(),
+            Asks = asks.OrderBy(x => x.Price).ToList()
+        };
+
+        _cache.Set(cacheKey, result, TimeSpan.FromSeconds(1));
+        return result;
+    }
 }
+
