@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Backend.Options;
 using Backend.Services;
 using Backend.Services.Models;
@@ -66,18 +68,37 @@ public class ExecutionController : ControllerBase
             });
         }
 
-        if (!string.IsNullOrEmpty(opts.ExecutionApiKey))
+        if (string.IsNullOrWhiteSpace(opts.ExecutionApiKey))
         {
-            if (!Request.Headers.TryGetValue("X-Execution-Key", out var headerVal) ||
-                !string.Equals(headerVal.ToString(), opts.ExecutionApiKey, StringComparison.Ordinal))
+            _logger.LogError("[ExecutionGuard] Order execution blocked: BinanceTestnet:ExecutionApiKey is not configured or blank while ExecutionEnabled=true.");
+            return StatusCode(StatusCodes.Status401Unauthorized, new
             {
-                _logger.LogWarning("[ExecutionGuard] Unauthorized execution attempt: invalid or missing X-Execution-Key.");
-                return Unauthorized(new
-                {
-                    Success = false,
-                    Message = "Unauthorized: Missing or invalid X-Execution-Key header."
-                });
-            }
+                Success = false,
+                Message = "Unauthorized: Execution API key is not configured on the server."
+            });
+        }
+
+        if (!Request.Headers.TryGetValue("X-Execution-Key", out var headerVal) || string.IsNullOrWhiteSpace(headerVal))
+        {
+            _logger.LogWarning("[ExecutionGuard] Unauthorized execution attempt: missing X-Execution-Key header.");
+            return StatusCode(StatusCodes.Status401Unauthorized, new
+            {
+                Success = false,
+                Message = "Unauthorized: Missing X-Execution-Key header."
+            });
+        }
+
+        byte[] providedKeyBytes = Encoding.UTF8.GetBytes(headerVal.ToString());
+        byte[] expectedKeyBytes = Encoding.UTF8.GetBytes(opts.ExecutionApiKey);
+
+        if (!CryptographicOperations.FixedTimeEquals(providedKeyBytes, expectedKeyBytes))
+        {
+            _logger.LogWarning("[ExecutionGuard] Unauthorized execution attempt: invalid X-Execution-Key.");
+            return StatusCode(StatusCodes.Status401Unauthorized, new
+            {
+                Success = false,
+                Message = "Unauthorized: Invalid X-Execution-Key header."
+            });
         }
 
         return null;
@@ -157,8 +178,8 @@ public class ExecutionController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Symbol))
             return BadRequest(new { Message = "Symbol is required" });
 
-        if (string.IsNullOrWhiteSpace(request.Side) || 
-            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) && 
+        if (string.IsNullOrWhiteSpace(request.Side) ||
+            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Side, "SELL", StringComparison.OrdinalIgnoreCase)))
             return BadRequest(new { Message = "Side must be BUY or SELL" });
 
@@ -184,8 +205,8 @@ public class ExecutionController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Symbol))
             return BadRequest(new { Message = "Symbol is required" });
 
-        if (string.IsNullOrWhiteSpace(request.Side) || 
-            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) && 
+        if (string.IsNullOrWhiteSpace(request.Side) ||
+            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Side, "SELL", StringComparison.OrdinalIgnoreCase)))
             return BadRequest(new { Message = "Side must be BUY or SELL" });
 
@@ -214,8 +235,8 @@ public class ExecutionController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Symbol))
             return BadRequest(new { Message = "Symbol is required" });
 
-        if (string.IsNullOrWhiteSpace(request.Side) || 
-            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) && 
+        if (string.IsNullOrWhiteSpace(request.Side) ||
+            (!string.Equals(request.Side, "BUY", StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Side, "SELL", StringComparison.OrdinalIgnoreCase)))
             return BadRequest(new { Message = "Side must be BUY or SELL" });
 

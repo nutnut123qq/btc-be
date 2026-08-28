@@ -198,7 +198,7 @@ app.UseCors("AllowNextJs");
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    if (!app.Environment.IsEnvironment("Testing"))
+    if (db.Database.IsRelational() && !app.Environment.IsEnvironment("Testing"))
     {
         try
         {

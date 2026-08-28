@@ -30,10 +30,10 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
         _baseUrl = config["BinanceTestnet:BaseUrl"] ?? "https://testnet.binancefuture.com";
         _apiKey = config["BinanceTestnet:ApiKey"] ?? "";
         _apiSecret = config["BinanceTestnet:ApiSecret"] ?? "";
-        
+
         var rawMode = config["BinanceTestnet:TradingMode"] ?? "Paper";
         _tradingMode = string.Equals(rawMode, "Live", StringComparison.OrdinalIgnoreCase) ? "Live"
-            : string.Equals(rawMode, "Testnet", StringComparison.OrdinalIgnoreCase) ? "Testnet"
+            : (string.Equals(rawMode, "Testnet", StringComparison.OrdinalIgnoreCase) || string.Equals(rawMode, "LiveTestnet", StringComparison.OrdinalIgnoreCase)) ? "Testnet"
             : "Paper";
 
         // Fail-closed safety check: block production exchange endpoints unless explicitly permitted

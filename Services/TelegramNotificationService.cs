@@ -82,7 +82,7 @@ public class TelegramNotificationService : ITelegramNotificationService
 
         if (alert.IsExit && alert.ExitPrice.HasValue)
         {
-            sb.AppendLine($"💵 Giá vào: ${alert.EntryPrice:N2} → Giá đóng: ${alert.ExitPrice.Value:N2}");
+            sb.AppendLine($"💵 Giá vào: ${alert.EntryPrice:N2} -> Giá đóng: ${alert.ExitPrice.Value:N2}");
 
             double pnl = alert.RealizedPnL ?? 0.0;
             double roi = alert.RoiPercent ?? 0.0;
