@@ -88,8 +88,8 @@ public class ExecutionController : ControllerBase
             });
         }
 
-        byte[] providedKeyBytes = Encoding.UTF8.GetBytes(headerVal.ToString());
-        byte[] expectedKeyBytes = Encoding.UTF8.GetBytes(opts.ExecutionApiKey);
+        byte[] providedKeyBytes = SHA256.HashData(Encoding.UTF8.GetBytes(headerVal.ToString()));
+        byte[] expectedKeyBytes = SHA256.HashData(Encoding.UTF8.GetBytes(opts.ExecutionApiKey));
 
         if (!CryptographicOperations.FixedTimeEquals(providedKeyBytes, expectedKeyBytes))
         {
