@@ -25,11 +25,11 @@ public class DataAuditService : IDataAuditService
 
     public async Task<DataAuditResponse> AuditAsync(string symbol, CancellationToken cancellationToken = default)
     {
-        var timeframeAudits = new Dictionary<string, TimeframeAudit>();
+        var timeframeAudits = new List<TimeframeAudit>();
 
         foreach (var tf in DefaultTimeframes)
         {
-            timeframeAudits[tf] = await AuditTimeframeAsync(symbol, tf, cancellationToken);
+            timeframeAudits.Add(await AuditTimeframeAsync(symbol, tf, cancellationToken));
         }
 
         var news = await AuditNewsAsync(cancellationToken);
@@ -84,12 +84,24 @@ public class DataAuditService : IDataAuditService
 
         var gaps = await GetTopGapsAsync(symbol, timeframe, intervalMs, 10, cancellationToken);
 
+        double dataCoveragePct = 0;
+        if (expectedCount.HasValue && expectedCount.Value > 0)
+        {
+            dataCoveragePct = (double)klineCount / expectedCount.Value * 100.0;
+            if (dataCoveragePct > 100) dataCoveragePct = 100;
+        }
+
+        long largestGapMs = gaps.Count > 0 ? (gaps.Max(g => g.EndMs - g.StartMs)) : 0;
+
         return new TimeframeAudit(
+            timeframe,
             klineCount,
             minOpenTime,
             maxOpenTime,
             expectedCount,
             gapCount,
+            dataCoveragePct,
+            largestGapMs,
             candlePatternsCount,
             technicalIndicatorsCount,
             windowVectorsCount,

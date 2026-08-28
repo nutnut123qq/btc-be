@@ -91,13 +91,13 @@ public class UserDataStreamHandlerService : IUserDataStreamHandlerService
 
                 if (openTrade.PositionSizeUsdt.HasValue && openTrade.PositionSizeUsdt.Value > 0 && Math.Abs(realizedProfit) > 0.00001)
                 {
-                    openTrade.NetReturn = (realizedProfit - commission) / openTrade.PositionSizeUsdt.Value * 100.0;
+                    openTrade.NetReturn = (realizedProfit - commission) / openTrade.PositionSizeUsdt.Value;
                 }
                 else
                 {
                     double rawReturn = string.Equals(openTrade.Side, "LONG", StringComparison.OrdinalIgnoreCase) || string.Equals(openTrade.Side, "BUY", StringComparison.OrdinalIgnoreCase)
-                        ? (exitPrice - entryPrice) / entryPrice * 100.0
-                        : (entryPrice - exitPrice) / entryPrice * 100.0;
+                        ? (exitPrice - entryPrice) / entryPrice
+                        : (entryPrice - exitPrice) / entryPrice;
 
                     openTrade.NetReturn = rawReturn;
                 }

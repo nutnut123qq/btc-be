@@ -184,6 +184,7 @@ public class MarketController : ControllerBase
     /// Đặt fillGaps=true để tìm và lấp tất cả gaps trong khoảng [startDateUtc, endDateUtc] thay vì chỉ resume từ nến cuối.
     /// </summary>
     [HttpPost("klines/backfill")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<BackfillStartInfo>> BackfillKlines(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string? timeframe = null,
@@ -358,6 +359,7 @@ public class MarketController : ControllerBase
     }
 
     [HttpPost("pattern-index/rebuild")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> RebuildPatternIndex(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "15m",
@@ -392,6 +394,7 @@ public class MarketController : ControllerBase
     }
 
     [HttpPost("pattern-index/warmup")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> WarmupPatternIndex(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "15m",
@@ -562,6 +565,7 @@ public class MarketController : ControllerBase
     }
 
     [HttpPost("ml-dataset/build")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> BuildMlDataset(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
@@ -580,6 +584,7 @@ public class MarketController : ControllerBase
     }
 
     [HttpPost("window-dataset/build")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> BuildWindowDataset(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
@@ -620,6 +625,7 @@ public class MarketController : ControllerBase
     }
 
     [HttpPost("candle-patterns/index")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> IndexCandlePatterns(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",

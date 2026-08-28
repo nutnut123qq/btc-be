@@ -3,16 +3,19 @@ namespace Backend.Services.Models;
 public record DataAuditResponse(
     string Symbol,
     DateTime GeneratedAtUtc,
-    IReadOnlyDictionary<string, TimeframeAudit> Timeframes,
+    IReadOnlyList<TimeframeAudit> Timeframes,
     NewsAudit News,
     RulesAlertsAudit RulesAlerts);
 
 public record TimeframeAudit(
-    long KlinesCount,
+    string Timeframe,
+    long TotalKlines,
     long? MinOpenTimeMs,
     long? MaxOpenTimeMs,
     long? ExpectedCount,
-    long GapCount,
+    long GapsCount,
+    double DataCoveragePct,
+    long LargestGapMs,
     long CandlePatternsCount,
     long TechnicalIndicatorsCount,
     long WindowVectorsCount,

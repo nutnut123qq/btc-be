@@ -53,17 +53,8 @@ public class EnsembleBacktestService : IEnsembleBacktestService
             return (emptyRun, new List<BacktestTrade>(), new List<EquityCurvePointDto>());
         }
 
-        var ensemblePrediction = await _ensembleService.PredictEnsembleAsync(symbol, timeframe, ct);
-
-        double equity = initialCapital;
-        double peakEquity = initialCapital;
-        double maxDrawdownPct = 0;
-        int winCount = 0;
-        double grossProfit = 0;
-        double grossLoss = 0;
-
-        var trades = new List<BacktestTrade>();
-        var equityCurve = new List<EquityCurvePointDto>();
+        // Reject fake backtest because point-in-time ensemble predictions are not available.
+        throw new InvalidOperationException("INSUFFICIENT_POINT_IN_TIME_DATA: Cannot perform a truthful backtest because historical point-in-time predictions are unavailable. Using the current prediction for past data introduces look-ahead bias.");
 
         double feeRate = feeBps / 10000.0;
         bool inPosition = false;

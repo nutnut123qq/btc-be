@@ -292,7 +292,7 @@ public class PaperTradeController : ControllerBase
         var closedTrades = allTrades.Where(t => t.Status == "closed").ToList();
         
         var winCount = closedTrades.Count(t => t.NetReturn > 0);
-        var winRate = closedTrades.Count > 0 ? (double)winCount / closedTrades.Count * 100 : 0;
+        var winRate = closedTrades.Count > 0 ? (double)winCount / closedTrades.Count : 0;
         
         var totalNetReturnPct = closedTrades.Sum(t => t.NetReturn ?? 0) * 100;
         var avgReturnPct = closedTrades.Count > 0 ? closedTrades.Average(t => t.NetReturn ?? 0) * 100 : 0;

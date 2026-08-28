@@ -196,6 +196,7 @@ public class PredictionController : ControllerBase
     }
 
     [HttpPost("audit")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> AuditPredictions(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",

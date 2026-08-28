@@ -218,6 +218,21 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    app.UseExceptionHandler(errorApp => 
+    {
+        errorApp.Run(async context =>
+        {
+            context.Response.StatusCode = 500;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new { 
+                Code = "INTERNAL_SERVER_ERROR", 
+                Message = "An unexpected error occurred. Please try again later." 
+            });
+        });
+    });
+}
 
 app.MapControllers();
 app.MapHub<TradeNotificationHub>(TradeNotificationHub.HubUrl);

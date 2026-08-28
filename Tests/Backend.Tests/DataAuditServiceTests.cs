@@ -67,12 +67,12 @@ public class DataAuditServiceTests
         var service = CreateService(db);
         var result = await service.AuditAsync("BTCUSDT");
 
-        var tf = result.Timeframes["1h"];
-        Assert.Equal(3, tf.KlinesCount);
+        var tf = result.Timeframes.Single(t => t.Timeframe == "1h");
+        Assert.Equal(3, tf.TotalKlines);
         Assert.Equal(1, tf.CandlePatternsCount);
         Assert.Equal(1, tf.TechnicalIndicatorsCount);
         Assert.Equal(1, tf.WindowVectorsCount);
-        Assert.Equal(0, tf.GapCount);
+        Assert.Equal(0, tf.GapsCount);
     }
 
     [Fact]
@@ -91,10 +91,10 @@ public class DataAuditServiceTests
         var service = CreateService(db);
         var result = await service.AuditAsync("BTCUSDT");
 
-        var tf = result.Timeframes["1h"];
-        Assert.Equal(3, tf.KlinesCount);
+        var tf = result.Timeframes.Single(t => t.Timeframe == "1h");
+        Assert.Equal(3, tf.TotalKlines);
         Assert.Equal(4, tf.ExpectedCount);
-        Assert.Equal(1, tf.GapCount);
+        Assert.Equal(1, tf.GapsCount);
         Assert.Single(tf.Gaps);
 
         var gap = tf.Gaps[0];
@@ -117,15 +117,15 @@ public class DataAuditServiceTests
 
         foreach (var tf in result.Timeframes)
         {
-            Assert.Equal(0, tf.Value.KlinesCount);
-            Assert.Equal(0, tf.Value.CandlePatternsCount);
-            Assert.Equal(0, tf.Value.TechnicalIndicatorsCount);
-            Assert.Equal(0, tf.Value.WindowVectorsCount);
-            Assert.Equal(0, tf.Value.GapCount);
-            Assert.Empty(tf.Value.Gaps);
-            Assert.Null(tf.Value.MinOpenTimeMs);
-            Assert.Null(tf.Value.MaxOpenTimeMs);
-            Assert.Null(tf.Value.ExpectedCount);
+            Assert.Equal(0, tf.TotalKlines);
+            Assert.Equal(0, tf.CandlePatternsCount);
+            Assert.Equal(0, tf.TechnicalIndicatorsCount);
+            Assert.Equal(0, tf.WindowVectorsCount);
+            Assert.Equal(0, tf.GapsCount);
+            Assert.Empty(tf.Gaps);
+            Assert.Null(tf.MinOpenTimeMs);
+            Assert.Null(tf.MaxOpenTimeMs);
+            Assert.Null(tf.ExpectedCount);
         }
     }
 

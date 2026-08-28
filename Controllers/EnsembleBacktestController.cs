@@ -19,6 +19,7 @@ public class EnsembleBacktestController : ControllerBase
     }
 
     [HttpPost("run")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> RunBacktest([FromBody] EnsembleBacktestRunRequestDto req, CancellationToken ct)
     {
         try
@@ -68,6 +69,11 @@ public class EnsembleBacktestController : ControllerBase
                 equityCurve
             });
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("INSUFFICIENT_POINT_IN_TIME_DATA"))
+        {
+            _logger.LogWarning(ex, "Rejected fake backtest");
+            return BadRequest(new { message = "INSUFFICIENT_POINT_IN_TIME_DATA", detail = ex.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to run Ensemble backtest");
@@ -76,6 +82,7 @@ public class EnsembleBacktestController : ControllerBase
     }
 
     [HttpPost("optimize")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> OptimizeWeights(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
