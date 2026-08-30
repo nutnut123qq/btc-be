@@ -185,7 +185,6 @@ public class EnsembleService : IEnsembleService
         const long horizonMs = 24 * 60 * 60 * 1000L;
         var records = await _db.EnsemblePredictionRecords
             .Where(r => r.Symbol == symbol
-                && r.EvaluationStatus == "N"
                 && r.TimeMs <= nowMs - horizonMs)
             .OrderByDescending(r => r.TimeMs)
             .ToListAsync(ct);
