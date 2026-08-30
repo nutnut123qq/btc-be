@@ -65,6 +65,7 @@ public class AlertsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/read")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> MarkRead(Guid id, CancellationToken cancellationToken = default)
     {
         var alert = await _db.AppAlerts.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
@@ -77,6 +78,7 @@ public class AlertsController : ControllerBase
     }
 
     [HttpPost("read-all")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> MarkAllRead(
         [FromQuery] string userId = "default",
         CancellationToken cancellationToken = default)
@@ -90,6 +92,7 @@ public class AlertsController : ControllerBase
 
     /// <summary>Delete one alert if it belongs to the given user.</summary>
     [HttpDelete("{id:guid}")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> DeleteAlert(
         Guid id,
         [FromQuery] string userId = "default",
@@ -106,6 +109,7 @@ public class AlertsController : ControllerBase
 
     /// <summary>Delete all alerts for the user.</summary>
     [HttpDelete]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> DeleteAllAlerts(
         [FromQuery] string userId = "default",
         CancellationToken cancellationToken = default)

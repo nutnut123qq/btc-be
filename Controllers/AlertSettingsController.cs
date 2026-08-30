@@ -42,6 +42,7 @@ public class AlertSettingsController : ControllerBase
     }
 
     [HttpPut]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<PriceAlertSettingsDto>> Put(
         [FromBody] UpdatePriceAlertSettingsDto body,
         [FromQuery] string userId = "default",

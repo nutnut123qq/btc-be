@@ -61,12 +61,12 @@ public class EnsemblePaperTraderService : IEnsemblePaperTraderService
 
             if (openTrade.Side == "LONG")
             {
-                if (currentPrice >= vp.PocPrice && currentPrice > entryPriceValue * 1.015)
+                if (vp is not null && currentPrice >= vp.PocPrice && currentPrice > entryPriceValue * 1.015)
                     hitTpSl = true;
             }
             else if (openTrade.Side == "SHORT")
             {
-                if (currentPrice <= vp.PocPrice && currentPrice < entryPriceValue * 0.985)
+                if (vp is not null && currentPrice <= vp.PocPrice && currentPrice < entryPriceValue * 0.985)
                     hitTpSl = true;
             }
 
@@ -77,15 +77,21 @@ public class EnsemblePaperTraderService : IEnsemblePaperTraderService
                 openTrade.Status = "closed";
                 openTrade.ClosedAtUtc = DateTimeOffset.UtcNow;
 
-                double rawReturn = openTrade.Side == "LONG"
-                    ? (currentPrice - entryPriceValue) / entryPriceValue * 100
-                    : (entryPriceValue - currentPrice) / entryPriceValue * 100;
+                double grossReturn = openTrade.Side == "LONG"
+                    ? (currentPrice - entryPriceValue) / entryPriceValue
+                    : (entryPriceValue - currentPrice) / entryPriceValue;
+                const double feeAndSlippageRate = 0.0015;
+                var positionSize = openTrade.PositionSizeUsdt ?? 2000.0;
 
-                openTrade.NetReturn = rawReturn - 0.15; // subtract fee & slippage
+                // NetReturn is canonicalized as a fraction everywhere (0.01 == 1%).
+                openTrade.PositionSizeUsdt = positionSize;
+                openTrade.RealizedPnL = grossReturn * positionSize;
+                openTrade.Commission = feeAndSlippageRate * positionSize;
+                openTrade.NetReturn = grossReturn - feeAndSlippageRate;
                 await _db.SaveChangesAsync(ct);
 
                 actionTaken = "CLOSED_POSITION";
-                summaryText = $"Đã đóng vị thế {openTrade.Side} tại giá ${currentPrice:N2} | Net PnL: {openTrade.NetReturn:F2}%";
+                summaryText = $"Đã đóng vị thế {openTrade.Side} tại giá ${currentPrice:N2} | Net PnL: {openTrade.NetReturn * 100:F2}%";
             }
             else
             {
@@ -111,6 +117,7 @@ public class EnsemblePaperTraderService : IEnsemblePaperTraderService
                     ProbSideways = ensemble.ProbSideways,
                     ProbUp = ensemble.ProbUp,
                     EntryPrice = currentPrice,
+                    PositionSizeUsdt = 2000.0,
                     Status = "open",
                     ModelVersion = "Ensemble-5Layer",
                     CreatedAtUtc = DateTimeOffset.UtcNow

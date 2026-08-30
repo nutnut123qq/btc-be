@@ -55,6 +55,7 @@ public class TransitionsController : ControllerBase
     }
 
     [HttpPost("build")]
+    [Backend.Filters.AdminGuard]
     public ActionResult BuildMatrix()
     {
         // Trigger rebuild (just returns accepted, actual build done by Python)

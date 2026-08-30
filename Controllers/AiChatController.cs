@@ -24,6 +24,7 @@ public class AiChatController : ControllerBase
     }
 
     [HttpPost("query")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("expensive")]
     public async Task<IActionResult> QueryAi([FromBody] AiChatQueryDto request, CancellationToken ct)
     {
         string symbol = request.Symbol ?? "BTCUSDT";
@@ -77,6 +78,7 @@ public class AiChatController : ControllerBase
     }
 
     [HttpPost("stream")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("expensive")]
     public async Task StreamAi([FromBody] AiChatQueryDto request, CancellationToken ct)
     {
         string symbol = request.Symbol ?? "BTCUSDT";

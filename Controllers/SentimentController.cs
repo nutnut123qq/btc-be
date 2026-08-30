@@ -29,6 +29,7 @@ public class SentimentController : ControllerBase
     }
 
     [HttpPost("refresh")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> RefreshSentiment([FromQuery] string symbol = "BTCUSDT", CancellationToken ct = default)
     {
         var result = await _sentimentService.CalculateAndSaveSnapshotAsync(symbol, ct);

@@ -176,64 +176,75 @@ public class EnsembleService : IEnsembleService
             .ToListAsync(ct);
     }
 
-    public async Task<PredictionEvaluationSummaryDto> EvaluatePredictionsAsync(string symbol = "BTCUSDT", CancellationToken ct = default)
+    public async Task<PredictionEvaluationSummaryDto> EvaluatePredictionsAsync(
+        string symbol = "BTCUSDT",
+        int itemLimit = 100,
+        CancellationToken ct = default)
     {
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        const long horizonMs = 24 * 60 * 60 * 1000L;
         var records = await _db.EnsemblePredictionRecords
-            .Where(r => r.Symbol == symbol)
+            .Where(r => r.Symbol == symbol
+                && r.EvaluationStatus == "N"
+                && r.TimeMs <= nowMs - horizonMs)
             .OrderByDescending(r => r.TimeMs)
             .ToListAsync(ct);
 
-        long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        long horizonMs = 24 * 60 * 60 * 1000L;
-
-        var recentKlines = await _binance.GetKlinesAsync(symbol, "1h", 1, cancellationToken: ct);
-        double latestPrice = recentKlines.Count > 0 ? (double)recentKlines[^1].Close : 65000.0;
-
-        bool updated = false;
-
-        foreach (var r in records)
+        foreach (var group in records.GroupBy(r => r.Timeframe))
         {
-            if (r.EvaluationStatus == "N" && (nowMs - r.TimeMs >= horizonMs))
+            var minTarget = group.Min(r => r.TimeMs + horizonMs);
+            var maxTarget = group.Max(r => r.TimeMs + horizonMs);
+            var candles = await _db.Klines.AsNoTracking()
+                .Where(k => k.Symbol == symbol
+                    && k.Timeframe == group.Key
+                    && k.OpenTimeMs >= minTarget
+                    && k.OpenTimeMs <= maxTarget + horizonMs)
+                .OrderBy(k => k.OpenTimeMs)
+                .ToListAsync(ct);
+
+            foreach (var record in group)
             {
-                double evalPrice = latestPrice;
-                double retPct = r.EntryPrice > 0 ? ((evalPrice - r.EntryPrice) / r.EntryPrice) * 100.0 : 0.0;
+                var targetMs = record.TimeMs + horizonMs;
+                var candle = FindCandleAtOrAfter(candles, targetMs);
+                if (candle is null) continue;
 
-                r.ActualPrice24h = evalPrice;
-                r.ActualReturnPct = retPct;
-                r.EvaluatedAtMs = nowMs;
+                var evalPrice = (double)candle.Open;
+                var returnPct = record.EntryPrice > 0
+                    ? (evalPrice - record.EntryPrice) / record.EntryPrice * 100.0
+                    : 0.0;
 
-                if (r.FinalDirection == "Bullish" && retPct > 0.05)
+                record.ActualPrice24h = evalPrice;
+                record.ActualReturnPct = returnPct;
+                record.EvaluatedAtMs = candle.OpenTimeMs;
+                record.EvaluationStatus = record.FinalDirection switch
                 {
-                    r.EvaluationStatus = "T";
-                }
-                else if (r.FinalDirection == "Bearish" && retPct < -0.05)
-                {
-                    r.EvaluationStatus = "T";
-                }
-                else if (r.FinalDirection == "Sideways" && Math.Abs(retPct) <= 0.5)
-                {
-                    r.EvaluationStatus = "T";
-                }
-                else
-                {
-                    r.EvaluationStatus = "F";
-                }
-
-                updated = true;
+                    "Bullish" when returnPct > 0.05 => "T",
+                    "Bearish" when returnPct < -0.05 => "T",
+                    "Sideways" when Math.Abs(returnPct) <= 0.5 => "T",
+                    _ => "F"
+                };
             }
         }
 
-        if (updated)
-        {
-            await _db.SaveChangesAsync(ct);
-        }
+        if (records.Count > 0) await _db.SaveChangesAsync(ct);
+        return await GetPredictionEvaluationSummaryAsync(symbol, itemLimit, ct);
+    }
 
-        int total = records.Count;
-        int trueCount = records.Count(r => r.EvaluationStatus == "T");
-        int falseCount = records.Count(r => r.EvaluationStatus == "F");
-        int pendingCount = records.Count(r => r.EvaluationStatus == "N");
-        int evalCount = trueCount + falseCount;
-        double winRate = evalCount > 0 ? ((double)trueCount / evalCount) * 100.0 : 0.0;
+    public async Task<PredictionEvaluationSummaryDto> GetPredictionEvaluationSummaryAsync(
+        string symbol = "BTCUSDT",
+        int itemLimit = 100,
+        CancellationToken ct = default)
+    {
+        itemLimit = Math.Clamp(itemLimit, 1, 500);
+        var query = _db.EnsemblePredictionRecords.AsNoTracking().Where(r => r.Symbol == symbol);
+        var total = await query.CountAsync(ct);
+        var trueCount = await query.CountAsync(r => r.EvaluationStatus == "T", ct);
+        var falseCount = await query.CountAsync(r => r.EvaluationStatus == "F", ct);
+        var pendingCount = await query.CountAsync(r => r.EvaluationStatus == "N", ct);
+        var items = await query.OrderByDescending(r => r.TimeMs).Take(itemLimit).ToListAsync(ct);
+
+        var evalCount = trueCount + falseCount;
+        var winRate = evalCount > 0 ? (double)trueCount / evalCount * 100.0 : 0.0;
 
         return new PredictionEvaluationSummaryDto
         {
@@ -243,8 +254,30 @@ public class EnsembleService : IEnsembleService
             FalseCount = falseCount,
             PendingCount = pendingCount,
             WinRatePct = Math.Round(winRate, 2),
-            Items = records
+            Items = items
         };
+    }
+
+    private static Kline? FindCandleAtOrAfter(IReadOnlyList<Kline> candles, long targetMs)
+    {
+        var low = 0;
+        var high = candles.Count - 1;
+        var resultIndex = -1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            if (candles[middle].OpenTimeMs >= targetMs)
+            {
+                resultIndex = middle;
+                high = middle - 1;
+            }
+            else
+            {
+                low = middle + 1;
+            }
+        }
+
+        return resultIndex >= 0 ? candles[resultIndex] : null;
     }
 
     public async Task<BatchReplayResultDto> BatchReplayAsync(

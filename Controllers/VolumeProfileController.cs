@@ -1,4 +1,5 @@
 using Backend.Services;
+using Backend.Services.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Backend.Controllers;
@@ -33,31 +34,16 @@ public class VolumeProfileController : ControllerBase
 
     private static object MapToDto(Backend.Data.VolumeProfileSnapshot result)
     {
-        var rawBins = System.Text.Json.JsonSerializer.Deserialize<double[]>(result.ProfileBinsJson) ?? Array.Empty<double>();
-        var maxVol = rawBins.Length > 0 ? rawBins.Max() : 0;
-        int pocIndex = Array.IndexOf(rawBins, maxVol);
-        int lower = pocIndex, upper = pocIndex;
-        double currentVol = maxVol, targetVol = rawBins.Sum() * 0.70;
-
-        while (currentVol < targetVol && (lower > 0 || upper < rawBins.Length - 1))
+        VolumeProfileBinDto[] bins;
+        try
         {
-            double leftVol = lower > 0 ? rawBins[lower - 1] : -1;
-            double rightVol = upper < rawBins.Length - 1 ? rawBins[upper + 1] : -1;
-            if (leftVol >= rightVol && leftVol != -1)
-                currentVol += rawBins[--lower];
-            else if (rightVol != -1)
-                currentVol += rawBins[++upper];
-            else break;
+            bins = System.Text.Json.JsonSerializer.Deserialize<VolumeProfileBinDto[]>(result.ProfileBinsJson)
+                ?? Array.Empty<VolumeProfileBinDto>();
         }
-
-        var bins = rawBins.Select((vol, i) => new
+        catch (System.Text.Json.JsonException)
         {
-            priceLevel = 0,
-            volume = vol,
-            volumePct = maxVol > 0 ? (vol / maxVol) * 100 : 0,
-            isPoc = i == pocIndex,
-            isValueArea = i >= lower && i <= upper
-        }).ToList();
+            bins = Array.Empty<VolumeProfileBinDto>();
+        }
 
         return new
         {
@@ -67,7 +53,7 @@ public class VolumeProfileController : ControllerBase
             result.PocPrice,
             result.VahPrice,
             result.ValPrice,
-            bins = bins,
+            bins,
             result.CreatedAtUtc
         };
     }

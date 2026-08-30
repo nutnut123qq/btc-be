@@ -179,8 +179,8 @@ public static class CandleRuleDiscoveryEngine
         {
             "consecutive_bars" => $"{c.Count}{c.Direction}",
             "volume_compare" => $"Vol>{c.Multiplier}x",
-            "range_compare" => $"Range{(c.Operator == "lt" ? "<" : ">")}{(int)(c.Multiplier * 100)}",
-            "body_ratio" => $"Body{(c.Operator == "lt" ? "<" : ">")}{(int)(c.Value * 100)}",
+            "range_compare" => $"Range{(c.Operator == "lt" ? "<" : ">")}{(int)(c.Multiplier.GetValueOrDefault() * 100)}",
+            "body_ratio" => $"Body{(c.Operator == "lt" ? "<" : ">")}{(int)(c.Value.GetValueOrDefault() * 100)}",
             "shadow_ratio" => $"{c.Side}Wick>{c.Multiplier}x",
             "close_position" => $"Close{c.Position}",
             _ => c.Type

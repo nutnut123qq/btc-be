@@ -157,14 +157,15 @@ public class TechnicalIndicatorIndexer
                 continue;
 
             var atr = atr14[i];
-            var macdNorm = macd.MacdLine[i].HasValue && atr.HasValue && atr.Value > 0
-                ? (double?)(macd.MacdLine[i].Value / atr.Value)
+            var atrValue = atr.GetValueOrDefault();
+            var macdNorm = macd.MacdLine[i].HasValue && atrValue > 0
+                ? (double?)(macd.MacdLine[i].GetValueOrDefault() / atrValue)
                 : null;
-            var macdSignalNorm = macd.SignalLine[i].HasValue && atr.HasValue && atr.Value > 0
-                ? (double?)(macd.SignalLine[i].Value / atr.Value)
+            var macdSignalNorm = macd.SignalLine[i].HasValue && atrValue > 0
+                ? (double?)(macd.SignalLine[i].GetValueOrDefault() / atrValue)
                 : null;
-            var macdHistogramNorm = macd.Histogram[i].HasValue && atr.HasValue && atr.Value > 0
-                ? (double?)(macd.Histogram[i].Value / atr.Value)
+            var macdHistogramNorm = macd.Histogram[i].HasValue && atrValue > 0
+                ? (double?)(macd.Histogram[i].GetValueOrDefault() / atrValue)
                 : null;
 
             batch.Add(new TechnicalIndicator
@@ -190,7 +191,7 @@ public class TechnicalIndicatorIndexer
                 BollingerLower = bb.Lower[i],
                 Atr14 = atr,
                 Obv = obv[i],
-                ObvEma50 = obvEma50[i].HasValue ? (double?)obvEma50[i].Value : null,
+                ObvEma50 = obvEma50[i].HasValue ? (double?)obvEma50[i].GetValueOrDefault() : null,
                 Vwap = vwap[i],
                 RollingVwap24 = rollingVwap[i]
             });

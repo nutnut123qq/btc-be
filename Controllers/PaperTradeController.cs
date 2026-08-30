@@ -37,6 +37,7 @@ public class PaperTradeController : ControllerBase
     }
 
     [HttpPost("evaluate-ensemble")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> EvaluateEnsemble([FromBody] EvaluateEnsembleRequest request, CancellationToken ct)
     {
         var result = await _ensemblePaperTraderService.EvaluateAndTradeAsync(request.Symbol, request.Timeframe, ct);
@@ -129,8 +130,8 @@ public class PaperTradeController : ControllerBase
             double posSize = t.PositionSizeUsdt ?? 2000.0;
             double entryP = t.EntryPrice ?? 1.0;
             double executedQty = entryP > 0 ? posSize / entryP : 0.0;
-            double? netRet = t.NetReturn;
-            double? realizedPnL = netRet.HasValue ? posSize * netRet.Value : null;
+            double? netRet = PaperTradeMetrics.NetReturn(t);
+            double? realizedPnL = PaperTradeMetrics.RealizedPnlUsdt(t);
             double? netRetPct = netRet.HasValue ? netRet.Value * 100.0 : null;
 
             return new
@@ -195,17 +196,19 @@ public class PaperTradeController : ControllerBase
         var openTrades = allTrades.Where(t => t.Status == "open").ToList();
         var closedTrades = allTrades.Where(t => t.Status == "closed").ToList();
 
-        var winCount = closedTrades.Count(t => t.NetReturn > 0);
-        var lossCount = closedTrades.Count(t => t.NetReturn <= 0);
-        var winRatePct = closedTrades.Count > 0 ? Math.Round((double)winCount / closedTrades.Count * 100.0, 1) : 0.0;
+        var closedWithReturns = closedTrades
+            .Select(t => new { Trade = t, NetReturn = PaperTradeMetrics.NetReturn(t) })
+            .Where(x => x.NetReturn.HasValue)
+            .ToList();
+        var winCount = closedWithReturns.Count(x => x.NetReturn > 0);
+        var lossCount = closedWithReturns.Count - winCount;
+        var winRatePct = closedWithReturns.Count > 0
+            ? Math.Round((double)winCount / closedWithReturns.Count * 100.0, 1)
+            : 0.0;
 
         double totalRealizedPnLUsdt = 0.0;
         foreach (var t in closedTrades)
-        {
-            double posSize = t.PositionSizeUsdt ?? 2000.0;
-            double netRet = t.NetReturn ?? 0.0;
-            totalRealizedPnLUsdt += posSize * netRet;
-        }
+            totalRealizedPnLUsdt += PaperTradeMetrics.RealizedPnlUsdt(t) ?? 0;
 
         double currentBalance = initialBalance + totalRealizedPnLUsdt;
         double totalRealizedPnLPct = initialBalance > 0 ? (totalRealizedPnLUsdt / initialBalance) * 100.0 : 0.0;
@@ -218,20 +221,18 @@ public class PaperTradeController : ControllerBase
                 g =>
                 {
                     var closed = g.Where(x => x.Status == "closed").ToList();
-                    var wins = closed.Count(x => x.NetReturn > 0);
-                    var losses = closed.Count(x => x.NetReturn <= 0);
-                    var wr = closed.Count > 0 ? Math.Round((double)wins / closed.Count * 100.0, 1) : 0.0;
+                    var returns = closed.Select(PaperTradeMetrics.NetReturn).Where(x => x.HasValue).Select(x => x!.Value).ToList();
+                    var wins = returns.Count(x => x > 0);
+                    var losses = returns.Count - wins;
+                    var wr = returns.Count > 0 ? Math.Round((double)wins / returns.Count * 100.0, 1) : 0.0;
 
                     double symPnLUsdt = 0.0;
                     foreach (var ct in closed)
-                    {
-                        double pSize = ct.PositionSizeUsdt ?? 2000.0;
-                        symPnLUsdt += pSize * (ct.NetReturn ?? 0.0);
-                    }
+                        symPnLUsdt += PaperTradeMetrics.RealizedPnlUsdt(ct) ?? 0;
 
-                    double avgRetPct = closed.Count > 0 ? closed.Average(x => x.NetReturn ?? 0.0) * 100.0 : 0.0;
-                    double bestRetPct = closed.Count > 0 ? closed.Max(x => x.NetReturn ?? 0.0) * 100.0 : 0.0;
-                    double worstRetPct = closed.Count > 0 ? closed.Min(x => x.NetReturn ?? 0.0) * 100.0 : 0.0;
+                    double avgRetPct = returns.Count > 0 ? returns.Average() * 100.0 : 0.0;
+                    double bestRetPct = returns.Count > 0 ? returns.Max() * 100.0 : 0.0;
+                    double worstRetPct = returns.Count > 0 ? returns.Min() * 100.0 : 0.0;
 
                     return new
                     {
@@ -259,6 +260,7 @@ public class PaperTradeController : ControllerBase
             TotalTrades = totalTrades,
             OpenTrades = openTrades.Count,
             ClosedTrades = closedTrades.Count,
+            InvalidClosedTrades = closedTrades.Count - closedWithReturns.Count,
             WinCount = winCount,
             LossCount = lossCount,
             WinRatePct = winRatePct,
@@ -271,17 +273,19 @@ public class PaperTradeController : ControllerBase
 
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary(
-        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string? symbol = null,
         [FromQuery] string? timeframe = null)
     {
-        var cacheKey = $"paper:summary:{symbol}:{timeframe}";
+        var cacheKey = $"paper:summary:{symbol ?? "all"}:{timeframe}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {
             return Ok(cached);
         }
 
-        var query = _db.PaperTrades.AsNoTracking().Where(t => t.Symbol == symbol);
-        
+        var query = _db.PaperTrades.AsNoTracking();
+        if (!string.IsNullOrEmpty(symbol))
+            query = query.Where(t => t.Symbol == symbol);
+
         if (!string.IsNullOrEmpty(timeframe))
             query = query.Where(t => t.Timeframe == timeframe);
 
@@ -291,25 +295,27 @@ public class PaperTradeController : ControllerBase
         var openTrades = allTrades.Count(t => t.Status == "open");
         var closedTrades = allTrades.Where(t => t.Status == "closed").ToList();
         
-        var winCount = closedTrades.Count(t => t.NetReturn > 0);
-        var winRate = closedTrades.Count > 0 ? (double)winCount / closedTrades.Count : 0;
-        
-        var totalNetReturnPct = closedTrades.Sum(t => t.NetReturn ?? 0) * 100;
-        var avgReturnPct = closedTrades.Count > 0 ? closedTrades.Average(t => t.NetReturn ?? 0) * 100 : 0;
-        
-        var bestTradePct = closedTrades.Count > 0 ? closedTrades.Max(t => t.NetReturn ?? 0) * 100 : 0;
-        var worstTradePct = closedTrades.Count > 0 ? closedTrades.Min(t => t.NetReturn ?? 0) * 100 : 0;
+        var returns = closedTrades.Select(PaperTradeMetrics.NetReturn).Where(x => x.HasValue).Select(x => x!.Value).ToList();
+        var winCount = returns.Count(t => t > 0);
+        var winRate = returns.Count > 0 ? (double)winCount / returns.Count : 0;
 
-        var longCount = allTrades.Count(t => t.Side == "long");
-        var shortCount = allTrades.Count(t => t.Side == "short");
+        var totalNetReturnPct = returns.Sum() * 100;
+        var avgReturnPct = returns.Count > 0 ? returns.Average() * 100 : 0;
+
+        var bestTradePct = returns.Count > 0 ? returns.Max() * 100 : 0;
+        var worstTradePct = returns.Count > 0 ? returns.Min() * 100 : 0;
+
+        var longCount = allTrades.Count(t => string.Equals(t.Side, "long", StringComparison.OrdinalIgnoreCase));
+        var shortCount = allTrades.Count(t => string.Equals(t.Side, "short", StringComparison.OrdinalIgnoreCase));
 
         double maxDrawdownPct = 0;
         double peak = 1;
         double currentEquity = 1;
 
-        foreach (var t in closedTrades.OrderBy(t => t.ExitTimeMs))
+        foreach (var netReturn in closedTrades.OrderBy(t => t.ExitTimeMs).Select(PaperTradeMetrics.NetReturn))
         {
-            currentEquity *= (1 + (t.NetReturn ?? 0));
+            if (!netReturn.HasValue) continue;
+            currentEquity *= 1 + netReturn.Value;
             if (currentEquity > peak)
             {
                 peak = currentEquity;
@@ -326,6 +332,7 @@ public class PaperTradeController : ControllerBase
             totalTrades,
             openTrades,
             closedTrades = closedTrades.Count,
+            invalidClosedTrades = closedTrades.Count - returns.Count,
             winRate,
             totalNetReturnPct,
             avgReturnPct,
@@ -342,25 +349,23 @@ public class PaperTradeController : ControllerBase
 
     [HttpGet("equity-curve")]
     public async Task<IActionResult> GetEquityCurve(
-        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string? symbol = null,
         [FromQuery] string? timeframe = null)
     {
-        var cacheKey = $"paper:equity-curve:{symbol}:{timeframe}";
+        var cacheKey = $"paper:equity-curve:{symbol ?? "all"}:{timeframe}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {
             return Ok(cached);
         }
 
-        var query = _db.PaperTrades.AsNoTracking()
-            .Where(t => t.Symbol == symbol && t.Status == "closed");
-        
+        var query = _db.PaperTrades.AsNoTracking().Where(t => t.Status == "closed");
+        if (!string.IsNullOrEmpty(symbol))
+            query = query.Where(t => t.Symbol == symbol);
+
         if (!string.IsNullOrEmpty(timeframe))
             query = query.Where(t => t.Timeframe == timeframe);
 
-        var closedTrades = await query
-            .OrderBy(t => t.ExitTimeMs)
-            .Select(t => new { t.ExitTimeMs, t.NetReturn })
-            .ToListAsync();
+        var closedTrades = await query.OrderBy(t => t.ExitTimeMs).ToListAsync();
 
         var result = new List<object>();
         double cumulativeProduct = 1;
@@ -368,7 +373,9 @@ public class PaperTradeController : ControllerBase
 
         foreach (var t in closedTrades)
         {
-            cumulativeProduct *= (1 + (t.NetReturn ?? 0));
+            var netReturn = PaperTradeMetrics.NetReturn(t);
+            if (!netReturn.HasValue) continue;
+            cumulativeProduct *= 1 + netReturn.Value;
             tradeCount++;
             result.Add(new
             {
@@ -378,20 +385,24 @@ public class PaperTradeController : ControllerBase
             });
         }
 
-        _cache.Set(cacheKey, result, SummaryTtl);
-        return Ok(result);
+        var response = new { symbol = symbol ?? "all", points = result };
+        _cache.Set(cacheKey, response, SummaryTtl);
+        return Ok(response);
     }
 
     [HttpGet("open")]
     public async Task<IActionResult> GetOpen(
-        [FromQuery] string symbol = "BTCUSDT")
+        [FromQuery] string? symbol = null)
     {
-        var items = await _db.PaperTrades.AsNoTracking()
-            .Where(t => t.Symbol == symbol && t.Status == "open")
+        var query = _db.PaperTrades.AsNoTracking().Where(t => t.Status == "open");
+        if (!string.IsNullOrEmpty(symbol))
+            query = query.Where(t => t.Symbol == symbol);
+
+        var items = await query
             .OrderByDescending(t => t.EntryTimeMs)
             .ToListAsync();
 
-        return Ok(items);
+        return Ok(new { symbol = symbol ?? "all", count = items.Count, items });
     }
 }
 

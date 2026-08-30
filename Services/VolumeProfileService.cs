@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Backend.Data;
+using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Services;
@@ -90,6 +91,13 @@ public class VolumeProfileService : IVolumeProfileService
         double valPrice = minPrice + ((lowerBin + 1) * binSize);
         double vahPrice = minPrice + (upperBin * binSize);
 
+        var profileBins = bins.Select((volume, index) => new VolumeProfileBinDto(
+            PriceLevel: minPrice + (index * binSize) + (binSize / 2),
+            Volume: volume,
+            VolumePct: maxBinVol > 0 ? volume / maxBinVol * 100 : 0,
+            IsPoc: index == pocBin,
+            IsValueArea: index > lowerBin && index < upperBin)).ToArray();
+
         var snapshot = new VolumeProfileSnapshot
         {
             Symbol = symbol,
@@ -99,7 +107,7 @@ public class VolumeProfileService : IVolumeProfileService
             PocPrice = pocPrice,
             VahPrice = vahPrice,
             ValPrice = valPrice,
-            ProfileBinsJson = JsonSerializer.Serialize(bins),
+            ProfileBinsJson = JsonSerializer.Serialize(profileBins),
             CreatedAtUtc = DateTime.UtcNow
         };
 

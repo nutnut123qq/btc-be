@@ -31,6 +31,7 @@ public class RuleDiscoveryController : ControllerBase
     /// Chạy Rule Discovery — tự động quét dữ liệu lịch sử để tìm rules có win rate cao.
     /// </summary>
     [HttpPost("run")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> RunDiscovery(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
@@ -153,6 +154,7 @@ public class RuleDiscoveryController : ControllerBase
     /// Pre-compute volume stats cho chuỗi nến.
     /// </summary>
     [HttpPost("index-volume")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> IndexVolume(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
@@ -189,6 +191,7 @@ public class RuleDiscoveryController : ControllerBase
     /// Evaluate discovered rules trên dữ liệu nến hiện tại.
     /// </summary>
     [HttpPost("evaluate")]
+    [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> Evaluate(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
@@ -209,6 +212,7 @@ public class RuleDiscoveryController : ControllerBase
     /// Xóa tất cả discovered rules.
     /// </summary>
     [HttpPost("clear")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> ClearDiscoveredRules(CancellationToken cancellationToken)
     {
         var rules = await _db.CandleSequenceRules.Where(r => r.IsAutoDiscovered).ToListAsync(cancellationToken);

@@ -5,6 +5,7 @@ using Backend.Services.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.Tests;
@@ -58,6 +59,7 @@ public class MarketControllerIntegrationTests : IClassFixture<TestWebApplication
     {
         // Arrange
         var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Admin-Key", TestWebApplicationFactory.AdminApiKey);
 
         // Act
         var response = await client.PostAsync(
@@ -75,9 +77,16 @@ public class MarketControllerIntegrationTests : IClassFixture<TestWebApplication
 
 public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    public const string AdminApiKey = "test-admin-key";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.ConfigureAppConfiguration((_, configuration) =>
+            configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AdminApiKey"] = AdminApiKey,
+            }));
 
         builder.ConfigureServices(services =>
         {

@@ -21,6 +21,7 @@ public class TelegramController : ControllerBase
     }
 
     [HttpPost("test")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> TestMessage()
     {
         var success = await _telegramService.SendMessageAsync("🔔 *Test Message*\nThis is a test notification from Bitcoin AI Analyst.");

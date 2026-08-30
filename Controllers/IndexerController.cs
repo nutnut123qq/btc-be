@@ -8,6 +8,7 @@ namespace Backend.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Backend.Filters.AdminGuard]
 public class IndexerController : ControllerBase
 {
     private readonly TechnicalIndicatorIndexer _techIndexer;

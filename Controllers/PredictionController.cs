@@ -48,6 +48,7 @@ public class PredictionController : ControllerBase
     }
 
     [HttpGet("latest")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("expensive")]
     public async Task<ActionResult<object>> GetLatestPrediction(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",

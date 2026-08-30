@@ -22,6 +22,7 @@ public class SmartMoneyController : ControllerBase
     }
 
     [HttpPost("detect")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> Detect([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int lookbackBars = 100)
     {
         var result = await _service.GetSmartMoneyStructuresAsync(symbol, timeframe, lookbackBars);

@@ -1,5 +1,6 @@
 using Backend.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace Backend.Controllers;
 
@@ -30,9 +31,9 @@ public class EnsembleController : ControllerBase
 
     [HttpPost("evaluate")]
     [Backend.Filters.AdminGuard]
-    public async Task<IActionResult> EvaluatePredictions([FromQuery] string symbol = "BTCUSDT", CancellationToken ct = default)
+    public async Task<IActionResult> EvaluatePredictions([FromQuery] string symbol = "BTCUSDT", [FromQuery] int limit = 100, CancellationToken ct = default)
     {
-        var result = await _ensembleService.EvaluatePredictionsAsync(symbol, ct);
+        var result = await _ensembleService.EvaluatePredictionsAsync(symbol, limit, ct);
         return Ok(new
         {
             result.Symbol,
@@ -46,9 +47,9 @@ public class EnsembleController : ControllerBase
     }
 
     [HttpGet("evaluations")]
-    public async Task<IActionResult> GetEvaluations([FromQuery] string symbol = "BTCUSDT", CancellationToken ct = default)
+    public async Task<IActionResult> GetEvaluations([FromQuery] string symbol = "BTCUSDT", [FromQuery] int limit = 100, CancellationToken ct = default)
     {
-        var result = await _ensembleService.EvaluatePredictionsAsync(symbol, ct);
+        var result = await _ensembleService.GetPredictionEvaluationSummaryAsync(symbol, limit, ct);
         return Ok(new
         {
             result.Symbol,
@@ -71,7 +72,7 @@ public class EnsembleController : ControllerBase
 
     private static object MapToDto(Backend.Data.EnsemblePredictionRecord r)
     {
-        var layerBreakdown = System.Text.Json.JsonSerializer.Deserialize<List<object>>(r.LayerBreakdownJson) ?? new List<object>();
+        var layers = ParseLayers(r.LayerBreakdownJson);
         return new
         {
             r.Id,
@@ -89,7 +90,87 @@ public class EnsembleController : ControllerBase
             r.EvaluationStatus,
             r.EvaluatedAtMs,
             r.CreatedAtUtc,
-            layerBreakdown
+            layers
         };
     }
+
+    internal sealed record EnsembleLayerDto(
+        string LayerName,
+        double Weight,
+        string Direction,
+        double ProbUp,
+        double ProbDown,
+        double ProbSideways,
+        string Summary);
+
+    internal static EnsembleLayerDto[] ParseLayers(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            var layers = root.ValueKind == JsonValueKind.Array
+                ? root
+                : root.ValueKind == JsonValueKind.Object
+                    && root.TryGetProperty("layers", out var nested)
+                    && nested.ValueKind == JsonValueKind.Array
+                        ? nested
+                        : default;
+
+            if (layers.ValueKind != JsonValueKind.Array) return [];
+
+            return layers.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.Object)
+                .Select(item =>
+                {
+                    var probUp = ReadDouble(item, "probUp");
+                    var probDown = ReadDouble(item, "probDown");
+                    var probSideways = HasNumber(item, "probSideways")
+                        ? ReadDouble(item, "probSideways")
+                        : Math.Max(0, 1 - probUp - probDown);
+                    var direction = ReadString(item, "direction");
+                    if (string.IsNullOrWhiteSpace(direction))
+                    {
+                        direction = probUp > probDown && probUp > probSideways
+                            ? "Bullish"
+                            : probDown > probUp && probDown > probSideways
+                                ? "Bearish"
+                                : "Sideways";
+                    }
+
+                    var weight = HasNumber(item, "weight")
+                        ? ReadDouble(item, "weight")
+                        : HasNumber(item, "normalizedWeight")
+                            ? ReadDouble(item, "normalizedWeight")
+                            : ReadDouble(item, "baseWeight");
+
+                    return new EnsembleLayerDto(
+                        ReadString(item, "layerName") ?? "Layer",
+                        weight,
+                        direction,
+                        probUp,
+                        probDown,
+                        probSideways,
+                        ReadString(item, "summary") ?? string.Empty);
+                })
+                .ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static bool HasNumber(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Number;
+
+    private static double ReadDouble(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) && value.TryGetDouble(out var number) ? number : 0;
+
+    private static string? ReadString(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 }

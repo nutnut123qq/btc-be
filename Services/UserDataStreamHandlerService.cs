@@ -85,13 +85,13 @@ public class UserDataStreamHandlerService : IUserDataStreamHandlerService
                 openTrade.OrderId = orderId;
                 openTrade.ClientOrderId = clientOrderId;
 
-                // Tính toán Net Return %
+                // NetReturn is stored as a fraction (0.01 == 1%).
                 double entryPrice = openTrade.EntryPrice ?? 1.0;
                 double exitPrice = openTrade.ExitPrice ?? entryPrice;
 
-                if (openTrade.PositionSizeUsdt.HasValue && openTrade.PositionSizeUsdt.Value > 0 && Math.Abs(realizedProfit) > 0.00001)
+                if (openTrade.PositionSizeUsdt.HasValue && openTrade.PositionSizeUsdt.Value > 0 && Math.Abs(openTrade.RealizedPnL ?? 0) > 0.00001)
                 {
-                    openTrade.NetReturn = (realizedProfit - commission) / openTrade.PositionSizeUsdt.Value;
+                    openTrade.NetReturn = ((openTrade.RealizedPnL ?? 0) - (openTrade.Commission ?? 0)) / openTrade.PositionSizeUsdt.Value;
                 }
                 else
                 {
@@ -115,7 +115,7 @@ public class UserDataStreamHandlerService : IUserDataStreamHandlerService
 
                 _logger.LogInformation(
                     "[UserDataStreamHandler] Đã đóng vị thế PaperTrade #{Id} ({Side}): ExitPrice=${ExitPrice:N2}, NetReturn={Return:F2}%, RealizedPnL=${PnL:N2}, ExitReason={Reason}",
-                    openTrade.Id, openTrade.Side, openTrade.ExitPrice, openTrade.NetReturn, openTrade.RealizedPnL, openTrade.ExitReason);
+                    openTrade.Id, openTrade.Side, openTrade.ExitPrice, openTrade.NetReturn * 100, openTrade.RealizedPnL, openTrade.ExitReason);
             }
             else
             {

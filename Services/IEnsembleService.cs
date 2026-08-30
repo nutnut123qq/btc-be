@@ -6,7 +6,8 @@ public interface IEnsembleService
 {
     Task<EnsemblePredictionRecord> PredictEnsembleAsync(string symbol, string timeframe, CancellationToken ct = default);
     Task<List<EnsemblePredictionRecord>> GetEnsembleHistoryAsync(string symbol, string timeframe, int limit, CancellationToken ct = default);
-    Task<PredictionEvaluationSummaryDto> EvaluatePredictionsAsync(string symbol = "BTCUSDT", CancellationToken ct = default);
+    Task<PredictionEvaluationSummaryDto> EvaluatePredictionsAsync(string symbol = "BTCUSDT", int itemLimit = 100, CancellationToken ct = default);
+    Task<PredictionEvaluationSummaryDto> GetPredictionEvaluationSummaryAsync(string symbol = "BTCUSDT", int itemLimit = 100, CancellationToken ct = default);
     Task<BatchReplayResultDto> BatchReplayAsync(
         int sampleCount = 2000,
         double minConfidence = 0.60,

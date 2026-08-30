@@ -33,6 +33,7 @@ public class AnalysisController : ControllerBase
     [HttpGet]
     [HttpGet("analyze")]
     [HttpGet("bitcoin")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("expensive")]
     public async Task<IActionResult> GetAnalysis([FromQuery] string symbol = "BTCUSDT", CancellationToken cancellationToken = default)
     {
         try

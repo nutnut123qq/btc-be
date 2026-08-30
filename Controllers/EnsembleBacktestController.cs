@@ -69,7 +69,7 @@ public class EnsembleBacktestController : ControllerBase
                 equityCurve
             });
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("INSUFFICIENT_POINT_IN_TIME_DATA"))
+        catch (InvalidOperationException ex) when (ex.Message.StartsWith("INSUFFICIENT_POINT_IN_TIME_", StringComparison.Ordinal))
         {
             _logger.LogWarning(ex, "Rejected fake backtest");
             return BadRequest(new { message = "INSUFFICIENT_POINT_IN_TIME_DATA", detail = ex.Message });
@@ -92,6 +92,11 @@ public class EnsembleBacktestController : ControllerBase
         {
             var result = await _backtestService.OptimizeWeightsAsync(symbol, timeframe, ct);
             return Ok(result);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.StartsWith("INSUFFICIENT_POINT_IN_TIME_", StringComparison.Ordinal))
+        {
+            _logger.LogWarning(ex, "Rejected weight optimization without point-in-time layer data");
+            return BadRequest(new { message = "INSUFFICIENT_POINT_IN_TIME_LAYER_DATA", detail = ex.Message });
         }
         catch (Exception ex)
         {

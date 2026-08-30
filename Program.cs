@@ -46,11 +46,22 @@ builder.Services.AddRateLimiter(options =>
         var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
         return RateLimitPartition.GetSlidingWindowLimiter(clientIp, _ => new SlidingWindowRateLimiterOptions
         {
-            PermitLimit = 1500,
-            Window = TimeSpan.FromSeconds(10),
-            SegmentsPerWindow = 5,
+            PermitLimit = 300,
+            Window = TimeSpan.FromMinutes(1),
+            SegmentsPerWindow = 6,
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-            QueueLimit = 200
+            QueueLimit = 20
+        });
+    });
+    options.AddPolicy("expensive", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
         });
     });
 });
@@ -145,22 +156,24 @@ builder.Services.AddSingleton<BinanceUserDataStreamService>(sp =>
     return new BinanceUserDataStreamService(http, options, logger, scopeFactory);
 });
 builder.Services.AddSingleton<IBinanceUserDataStreamService>(sp => sp.GetRequiredService<BinanceUserDataStreamService>());
-builder.Services.AddHostedService(sp => sp.GetRequiredService<BinanceUserDataStreamService>());
 
 // FullReindexService and MlDatasetRebuildService are kept as scoped helpers
 // (used by tests / manual triggers). The queue/worker/controller glue has been removed.
 builder.Services.AddScoped<FullReindexService>();
 builder.Services.AddScoped<MlDatasetRebuildService>();
 
-builder.Services.AddHostedService<KlinesIngestionWorker>();
-builder.Services.AddHostedService<IndexingBackgroundWorker>();
-
-// Các worker khác tạm tắt khi chạy backfill thủ công để tránh xung đột DB/log noise.
-builder.Services.AddHostedService<RssIngestionService>();
-builder.Services.AddHostedService<PriceAlertWorker>();
-builder.Services.AddHostedService<EmbeddingBackfillWorker>();
-builder.Services.AddHostedService<MlDatasetBuilder>();
-builder.Services.AddHostedService<WindowDatasetBuilder>();
+// Maintenance/smoke-test mode can start the API without mutating background jobs.
+if (builder.Configuration.GetValue("BackgroundWorkers:Enabled", true))
+{
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<BinanceUserDataStreamService>());
+    builder.Services.AddHostedService<KlinesIngestionWorker>();
+    builder.Services.AddHostedService<IndexingBackgroundWorker>();
+    builder.Services.AddHostedService<RssIngestionService>();
+    builder.Services.AddHostedService<PriceAlertWorker>();
+    builder.Services.AddHostedService<EmbeddingBackfillWorker>();
+    builder.Services.AddHostedService<MlDatasetBuilder>();
+    builder.Services.AddHostedService<WindowDatasetBuilder>();
+}
 
 // CORS: Next (3000), Flutter web (port ngẫu nhiên ví dụ 58340), Swagger — cùng máy thì origin hay đổi port.
 // Tránh chỉ WithOrigins("http://localhost:3000"): Production mặc định sẽ chặn Flutter web.

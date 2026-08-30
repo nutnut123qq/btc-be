@@ -78,7 +78,7 @@ public class RegimeDetectionService : IRegimeDetectionService
             int countAtr = 0;
             for(int j=i-49; j<=i; j++) {
                 if(atrResults[j].Atr.HasValue) {
-                    sumAtr += atrResults[j].Atr.Value;
+                    sumAtr += atrResults[j].Atr.GetValueOrDefault();
                     countAtr++;
                 }
             }
@@ -88,9 +88,9 @@ public class RegimeDetectionService : IRegimeDetectionService
 
             var bb = bbResults[i];
             double bbWidth = 0;
-            if (bb.Sma.HasValue && bb.Sma.Value != 0)
+            if (bb.Sma.HasValue && bb.Sma.GetValueOrDefault() != 0)
             {
-                bbWidth = (double)((bb.UpperBand - bb.LowerBand) / bb.Sma);
+                bbWidth = (double)((bb.UpperBand.GetValueOrDefault() - bb.LowerBand.GetValueOrDefault()) / bb.Sma.GetValueOrDefault());
             }
 
             var volSma = volSmaResults[i].Sma ?? 1;

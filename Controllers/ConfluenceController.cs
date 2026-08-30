@@ -67,7 +67,16 @@ public class ConfluenceController : ControllerBase
 
     private static object MapToDto(ConfluenceSnapshot snapshot)
     {
-        var alignments = System.Text.Json.JsonSerializer.Deserialize<List<object>>(snapshot.TimeframeAlignmentsJson) ?? new List<object>();
+        System.Text.Json.JsonElement[] alignments;
+        try
+        {
+            alignments = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(snapshot.TimeframeAlignmentsJson)
+                ?? Array.Empty<System.Text.Json.JsonElement>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            alignments = Array.Empty<System.Text.Json.JsonElement>();
+        }
         return new
         {
             snapshot.Id,

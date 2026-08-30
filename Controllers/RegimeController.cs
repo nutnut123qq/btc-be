@@ -73,6 +73,7 @@ public class RegimeController : ControllerBase
     }
 
     [HttpPost("build")]
+    [Backend.Filters.AdminGuard]
     public async Task<IActionResult> BuildRegimes([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int lookbackBars = 1000, CancellationToken ct = default)
     {
         await _regimeService.BuildRegimesAsync(symbol, timeframe, lookbackBars, ct);
