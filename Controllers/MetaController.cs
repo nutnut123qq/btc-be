@@ -7,9 +7,9 @@ namespace Backend.Controllers;
 [Route("api/meta")]
 public sealed class MetaController : ControllerBase
 {
-    internal const string ApiContractVersion = "2026-08-phase1";
-    internal const string DataPipelineVersion = "legacy-unversioned";
-    internal const string EvaluationVersion = "legacy-unversioned";
+    internal const string ApiContractVersion = Data.ResearchVersions.ApiContract;
+    internal const string DataPipelineVersion = Data.ResearchVersions.DataPipeline;
+    internal const string EvaluationVersion = Data.ResearchVersions.Evaluation;
 
     [HttpGet]
     public ActionResult<MetaResponse> Get() => Ok(new MetaResponse

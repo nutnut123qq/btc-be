@@ -135,6 +135,9 @@ public class PredictionController : ControllerBase
                     prob_sideways = prediction.ProbSideways,
                     prob_up = prediction.ProbUp,
                     model_version = prediction.ModelVersion,
+                    pipelineVersion = prediction.PipelineVersion,
+                    evaluationVersion = prediction.EvaluationVersion,
+                    validityStatus = prediction.ValidityStatus,
                     inference_ms = root.GetProperty("inference_ms").GetDouble(),
                 }
             };
@@ -154,12 +157,14 @@ public class PredictionController : ControllerBase
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
         [FromQuery] int take = 100,
+        [FromQuery] bool includeLegacy = false,
         CancellationToken cancellationToken = default)
     {
         take = Math.Clamp(take, 1, 1000);
         var items = await _db.ModelPredictions
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && (includeLegacy || (x.ValidityStatus == ValidityStatuses.Valid && x.ArchivedAtUtc == null)))
             .OrderByDescending(x => x.CreatedAtUtc)
             .Take(take)
             .ToListAsync(cancellationToken);
@@ -189,6 +194,11 @@ public class PredictionController : ControllerBase
                 IsCorrect = isCorrect,
                 x.ModelVersion,
                 x.WindowEndMs,
+                x.PipelineVersion,
+                x.EvaluationVersion,
+                x.ValidityStatus,
+                x.InvalidReason,
+                x.ArchivedAtUtc,
                 x.CreatedAtUtc
             };
         });
@@ -201,10 +211,12 @@ public class PredictionController : ControllerBase
     public async Task<ActionResult<object>> AuditPredictions(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
+        [FromQuery] bool includeLegacy = false,
         CancellationToken cancellationToken = default)
     {
         var pending = await _db.ModelPredictions
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.TargetReturn == null)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.TargetReturn == null
+                && (includeLegacy || (x.ValidityStatus == ValidityStatuses.Valid && x.ArchivedAtUtc == null)))
             .ToListAsync(cancellationToken);
 
         int evaluatedCount = 0;
@@ -257,9 +269,10 @@ public class PredictionController : ControllerBase
     public async Task<ActionResult<object>> GetModelAccuracy(
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] string timeframe = "1h",
+        [FromQuery] bool includeLegacy = false,
         CancellationToken cancellationToken = default)
     {
-        var cacheKey = $"pred:accuracy:{symbol.ToUpperInvariant()}:{timeframe}";
+        var cacheKey = $"pred:accuracy:{symbol.ToUpperInvariant()}:{timeframe}:{includeLegacy}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {
             return Ok(cached);
@@ -267,7 +280,8 @@ public class PredictionController : ControllerBase
 
         var items = await _db.ModelPredictions
             .AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && (includeLegacy || (x.ValidityStatus == ValidityStatuses.Valid && x.ArchivedAtUtc == null)))
             .ToListAsync(cancellationToken);
 
         int total = items.Count;
@@ -287,6 +301,18 @@ public class PredictionController : ControllerBase
 
         int pendingCount = total - evaluated.Count;
         double winRatePct = evaluated.Count > 0 ? Math.Round((double)trueCount / evaluated.Count * 100.0, 1) : 0;
+        var canonical = items
+            .Where(x => x.ValidityStatus != ValidityStatuses.Invalid)
+            .Where(ResearchRecordClassifier.IsStructurallyValid)
+            .GroupBy(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Horizon, x.WindowEndMs, x.ModelVersion })
+            .Select(group => group.OrderBy(x => x.Id).First())
+            .ToList();
+        var canonicalEvaluated = canonical.Where(x => x.TargetReturn.HasValue).ToList();
+        var canonicalTrue = canonicalEvaluated.Count(x =>
+        {
+            var actual = x.TargetReturn!.Value > 0.15 ? 1 : x.TargetReturn.Value < -0.15 ? -1 : 0;
+            return x.PredictedLabel == actual;
+        });
 
         var result = new
         {
@@ -297,7 +323,18 @@ public class PredictionController : ControllerBase
             trueCount,
             falseCount,
             pendingCount,
-            winRatePct
+            winRatePct,
+            canonicalPredictionCount = canonical.Count,
+            canonicalEvaluatedCount = canonicalEvaluated.Count,
+            canonicalTrueCount = canonicalTrue,
+            canonicalFalseCount = canonicalEvaluated.Count - canonicalTrue,
+            canonicalWinRatePct = canonicalEvaluated.Count > 0
+                ? Math.Round((double)canonicalTrue / canonicalEvaluated.Count * 100.0, 1)
+                : 0,
+            validated = false,
+            maturity = "Experimental",
+            promotionEligible = false,
+            promotionReason = "Prediction evidence has not passed the timeframe promotion gates."
         };
 
         _cache.Set(cacheKey, result, AccuracyTtl);

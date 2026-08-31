@@ -23,17 +23,17 @@ public class EnsembleController : ControllerBase
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> GetEnsembleHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int limit = 100, CancellationToken ct = default)
+    public async Task<IActionResult> GetEnsembleHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int limit = 100, [FromQuery] bool includeLegacy = false, CancellationToken ct = default)
     {
-        var result = await _ensembleService.GetEnsembleHistoryAsync(symbol, timeframe, limit, ct);
+        var result = await _ensembleService.GetEnsembleHistoryAsync(symbol, timeframe, limit, includeLegacy, ct);
         return Ok(result.Select(MapToDto));
     }
 
     [HttpPost("evaluate")]
     [Backend.Filters.AdminGuard]
-    public async Task<IActionResult> EvaluatePredictions([FromQuery] string symbol = "BTCUSDT", [FromQuery] int limit = 100, CancellationToken ct = default)
+    public async Task<IActionResult> EvaluatePredictions([FromQuery] string symbol = "BTCUSDT", [FromQuery] int limit = 100, [FromQuery] bool includeLegacy = false, CancellationToken ct = default)
     {
-        var result = await _ensembleService.EvaluatePredictionsAsync(symbol, limit, ct);
+        var result = await _ensembleService.EvaluatePredictionsAsync(symbol, limit, includeLegacy, ct);
         return Ok(new
         {
             result.Symbol,
@@ -42,14 +42,29 @@ public class EnsembleController : ControllerBase
             result.FalseCount,
             result.PendingCount,
             result.WinRatePct,
-            Items = result.Items.Select(MapToDto)
+            result.CanonicalEvaluatedCount,
+            result.CanonicalTrueCount,
+            result.CanonicalFalseCount,
+            result.CanonicalPendingCount,
+            result.CanonicalWinRatePct,
+            result.ReevaluatedCount,
+            result.ReevaluatedTrueCount,
+            result.ReevaluatedFalseCount,
+            result.ReevaluatedPendingCount,
+            result.ReevaluatedWinRatePct,
+            Validated = false,
+            Maturity = "Experimental",
+            PromotionEligible = false,
+            PromotionReason = "The ensemble has not passed promotion gates; historical accuracy remains visible for review.",
+            Items = result.Items.Select(MapToDto),
+            ReevaluatedItems = result.ReevaluatedItems.Select(MapToDto)
         });
     }
 
     [HttpGet("evaluations")]
-    public async Task<IActionResult> GetEvaluations([FromQuery] string symbol = "BTCUSDT", [FromQuery] int limit = 100, CancellationToken ct = default)
+    public async Task<IActionResult> GetEvaluations([FromQuery] string symbol = "BTCUSDT", [FromQuery] int limit = 100, [FromQuery] bool includeLegacy = false, CancellationToken ct = default)
     {
-        var result = await _ensembleService.GetPredictionEvaluationSummaryAsync(symbol, limit, ct);
+        var result = await _ensembleService.GetPredictionEvaluationSummaryAsync(symbol, limit, includeLegacy, ct);
         return Ok(new
         {
             result.Symbol,
@@ -58,7 +73,22 @@ public class EnsembleController : ControllerBase
             result.FalseCount,
             result.PendingCount,
             result.WinRatePct,
-            Items = result.Items.Select(MapToDto)
+            result.CanonicalEvaluatedCount,
+            result.CanonicalTrueCount,
+            result.CanonicalFalseCount,
+            result.CanonicalPendingCount,
+            result.CanonicalWinRatePct,
+            result.ReevaluatedCount,
+            result.ReevaluatedTrueCount,
+            result.ReevaluatedFalseCount,
+            result.ReevaluatedPendingCount,
+            result.ReevaluatedWinRatePct,
+            Validated = false,
+            Maturity = "Experimental",
+            PromotionEligible = false,
+            PromotionReason = "The ensemble has not passed promotion gates; historical accuracy remains visible for review.",
+            Items = result.Items.Select(MapToDto),
+            ReevaluatedItems = result.ReevaluatedItems.Select(MapToDto)
         });
     }
 
@@ -89,6 +119,16 @@ public class EnsembleController : ControllerBase
             r.ActualReturnPct,
             r.EvaluationStatus,
             r.EvaluatedAtMs,
+            r.SourcePredictionId,
+            r.PipelineVersion,
+            r.EvaluationVersion,
+            r.ValidityStatus,
+            r.InvalidReason,
+            r.ArchivedAtUtc,
+            Validated = false,
+            Maturity = "Experimental",
+            PromotionEligible = false,
+            PromotionReason = "This record is research-only and has not passed ensemble promotion gates.",
             r.CreatedAtUtc,
             layers
         };

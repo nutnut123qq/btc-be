@@ -2,6 +2,7 @@ using Backend.Data;
 using Backend.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Backend.Services;
 
@@ -74,6 +75,8 @@ public class PriceAlertWorker : BackgroundService
 
         var userId = string.IsNullOrWhiteSpace(opts.DefaultUserId) ? "default" : opts.DefaultUserId.Trim();
 
+        await ArchiveExpiredReadAlertsAsync(db, opts.ReadRetentionDays, cancellationToken);
+
         var settings = await db.PriceAlertSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.UserId == userId, cancellationToken);
 
@@ -88,7 +91,6 @@ public class PriceAlertWorker : BackgroundService
 
         var interval = string.IsNullOrWhiteSpace(settings.KlineInterval) ? "1m" : settings.KlineInterval.Trim();
         var cooldown = Math.Max(1, settings.CooldownMinutes);
-
         // --- Classic price alerts ---
         if (settings.PriceAboveUsd.HasValue || settings.PriceBelowUsd.HasValue)
         {
@@ -98,13 +100,15 @@ public class PriceAlertWorker : BackgroundService
                 var close = priceKlines[^1].Close;
                 if (settings.PriceAboveUsd.HasValue && close > settings.PriceAboveUsd.Value)
                 {
+                    var sourceKey = BuildPriceSourceKey(userId, "above", settings.PriceAboveUsd.Value, interval, priceKlines[^1].OpenTimeMs);
                     await TryCreateAlertAsync(db, telegram, userId, "price_above", "BTC vượt ngưỡng giá",
-                        $"Giá đóng nến ({interval}) {close:F2} USDT > {settings.PriceAboveUsd.Value:F2} USDT.", close, cooldown, cancellationToken);
+                        $"Giá đóng nến ({interval}) {close:F2} USDT > {settings.PriceAboveUsd.Value:F2} USDT.", close, sourceKey, cooldown, cancellationToken);
                 }
                 if (settings.PriceBelowUsd.HasValue && close < settings.PriceBelowUsd.Value)
                 {
+                    var sourceKey = BuildPriceSourceKey(userId, "below", settings.PriceBelowUsd.Value, interval, priceKlines[^1].OpenTimeMs);
                     await TryCreateAlertAsync(db, telegram, userId, "price_below", "BTC dưới ngưỡng giá",
-                        $"Giá đóng nến ({interval}) {close:F2} USDT < {settings.PriceBelowUsd.Value:F2} USDT.", close, cooldown, cancellationToken);
+                        $"Giá đóng nến ({interval}) {close:F2} USDT < {settings.PriceBelowUsd.Value:F2} USDT.", close, sourceKey, cooldown, cancellationToken);
                 }
             }
         }
@@ -134,7 +138,9 @@ public class PriceAlertWorker : BackgroundService
                 var signals = await seqEngine.EvaluateAsync("BTCUSDT", tf, klines, cancellationToken);
                 foreach (var signal in signals)
                 {
-                    await TryCreateAlertAsync(db, telegram, userId, "sequence_rule", signal.RuleName, signal.Message, signal.TriggerClose, cooldown, cancellationToken);
+                    var sourceKey = BuildSequenceSourceKey(userId, signal.RuleId, signal.Symbol, signal.Timeframe, signal.TriggerTimeMs);
+                    var created = await TryCreateAlertAsync(db, telegram, userId, "sequence_rule", signal.RuleName, signal.Message, signal.TriggerClose, sourceKey, cooldown, cancellationToken);
+                    if (!created) continue;
 
                     db.CandleSequenceSignals.Add(new CandleSequenceSignal
                     {
@@ -161,7 +167,29 @@ public class PriceAlertWorker : BackgroundService
         }
     }
 
-    private static async Task TryCreateAlertAsync(
+    internal static string BuildSequenceSourceKey(string userId, long ruleId, string symbol, string timeframe, long candleOpenTimeMs) =>
+        $"sequence:{userId.Trim()}:{ruleId}:{symbol.Trim().ToUpperInvariant()}:{timeframe.Trim().ToLowerInvariant()}:{candleOpenTimeMs}";
+
+    internal static string BuildPriceSourceKey(string userId, string direction, decimal threshold, string timeframe, long candleOpenTimeMs) =>
+        $"price:{userId.Trim()}:{direction.Trim().ToLowerInvariant()}:{threshold.ToString("G29", System.Globalization.CultureInfo.InvariantCulture)}:{timeframe.Trim().ToLowerInvariant()}:{candleOpenTimeMs}";
+
+    private static async Task ArchiveExpiredReadAlertsAsync(
+        AppDbContext db,
+        int retentionDays,
+        CancellationToken cancellationToken)
+    {
+        if (retentionDays <= 0) return;
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(retentionDays, 1, 3650));
+        var expired = await db.AppAlerts
+            .Where(a => a.IsRead && a.ArchivedAtUtc == null && a.CreatedAt < cutoff)
+            .ToListAsync(cancellationToken);
+        if (expired.Count == 0) return;
+        var archivedAt = DateTime.UtcNow;
+        foreach (var alert in expired) alert.ArchivedAtUtc = archivedAt;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    internal static async Task<bool> TryCreateAlertAsync(
         AppDbContext db,
         ITelegramNotificationService? telegram,
         string userId,
@@ -169,16 +197,19 @@ public class PriceAlertWorker : BackgroundService
         string title,
         string message,
         decimal priceSnapshot,
+        string sourceKey,
         int cooldownMinutes,
         CancellationToken cancellationToken)
     {
-        var since = DateTimeOffset.UtcNow.AddMinutes(-cooldownMinutes);
+        var since = DateTimeOffset.UtcNow.AddMinutes(-Math.Max(1, cooldownMinutes));
         var recent = await db.AppAlerts.AnyAsync(
-            a => a.UserId == userId && a.Type == type && a.CreatedAt >= since,
+            a => a.UserId == userId
+                && (a.SourceKey == sourceKey
+                    || (a.Type == type && a.ArchivedAtUtc == null && a.CreatedAt >= since)),
             cancellationToken);
 
         if (recent)
-            return;
+            return false;
 
         var alert = new AppAlert
         {
@@ -189,11 +220,20 @@ public class PriceAlertWorker : BackgroundService
             Message = message,
             PriceSnapshot = priceSnapshot,
             CreatedAt = DateTimeOffset.UtcNow,
-            IsRead = false
+            IsRead = false,
+            SourceKey = sourceKey
         };
         db.AppAlerts.Add(alert);
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            db.Entry(alert).State = EntityState.Detached;
+            return false;
+        }
 
         if (telegram != null)
         {
@@ -202,5 +242,7 @@ public class PriceAlertWorker : BackgroundService
             var tgMsg = $"🔔 <b>Cảnh báo BTC</b>\n📍 Giá: ${alert.PriceSnapshot:N0}\n⚡ {encTitle}\n📝 {encMsg}";
             await telegram.SendMessageAsync(tgMsg, cancellationToken);
         }
+
+        return true;
     }
 }

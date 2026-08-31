@@ -14,5 +14,10 @@ public class ModelPrediction
     public double? TargetReturn { get; set; }
     public string ModelVersion { get; set; } = string.Empty;
     public long WindowEndMs { get; set; }
+    public string PipelineVersion { get; set; } = ResearchVersions.DataPipeline;
+    public string EvaluationVersion { get; set; } = ResearchVersions.Evaluation;
+    public string ValidityStatus { get; set; } = ValidityStatuses.Valid;
+    public string? InvalidReason { get; set; }
+    public DateTime? ArchivedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }

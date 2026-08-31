@@ -1,5 +1,6 @@
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Text.Json;
 
 namespace Backend.Services;
@@ -158,6 +159,10 @@ public class EnsembleService : IEnsembleService
             EnsembleConfidence = confidence,
             LayerBreakdownJson = JsonSerializer.Serialize(breakdown),
             EvaluationStatus = "N", // Pending
+            PipelineVersion = ResearchVersions.DataPipeline,
+            EvaluationVersion = ResearchVersions.Legacy,
+            ValidityStatus = ValidityStatuses.Legacy,
+            InvalidReason = "Experimental ensemble has not passed promotion evaluation.",
             CreatedAtUtc = DateTime.UtcNow
         };
 
@@ -167,10 +172,11 @@ public class EnsembleService : IEnsembleService
         return record;
     }
 
-    public async Task<List<EnsemblePredictionRecord>> GetEnsembleHistoryAsync(string symbol, string timeframe, int limit, CancellationToken ct = default)
+    public async Task<List<EnsemblePredictionRecord>> GetEnsembleHistoryAsync(string symbol, string timeframe, int limit, bool includeLegacy = false, CancellationToken ct = default)
     {
         return await _db.EnsemblePredictionRecords
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && (includeLegacy || (x.ValidityStatus == ValidityStatuses.Valid && x.ArchivedAtUtc == null)))
             .OrderByDescending(x => x.TimeMs)
             .Take(limit)
             .ToListAsync(ct);
@@ -179,16 +185,121 @@ public class EnsembleService : IEnsembleService
     public async Task<PredictionEvaluationSummaryDto> EvaluatePredictionsAsync(
         string symbol = "BTCUSDT",
         int itemLimit = 100,
+        bool includeLegacy = false,
         CancellationToken ct = default)
     {
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         const long horizonMs = 24 * 60 * 60 * 1000L;
-        var records = await _db.EnsemblePredictionRecords
-            .Where(r => r.Symbol == symbol
-                && r.TimeMs <= nowMs - horizonMs)
-            .OrderByDescending(r => r.TimeMs)
-            .ToListAsync(ct);
+        if (includeLegacy)
+        {
+            await CreateLegacyReevaluationsAsync(symbol, nowMs, horizonMs, ct);
+        }
+        else
+        {
+            var records = await _db.EnsemblePredictionRecords
+                .Where(r => r.Symbol == symbol
+                    && r.TimeMs <= nowMs - horizonMs
+                    && r.SourcePredictionId == null
+                    && r.ValidityStatus == ValidityStatuses.Valid
+                    && r.ArchivedAtUtc == null)
+                .OrderByDescending(r => r.TimeMs)
+                .ToListAsync(ct);
+            await EvaluateInPlaceAsync(records, symbol, horizonMs, ct);
+        }
 
+        return await GetPredictionEvaluationSummaryAsync(symbol, itemLimit, includeLegacy, ct);
+    }
+
+    private async Task CreateLegacyReevaluationsAsync(string symbol, long nowMs, long horizonMs, CancellationToken ct)
+    {
+        var candidates = await _db.EnsemblePredictionRecords.AsNoTracking()
+            .Where(r => r.Symbol == symbol
+                && r.TimeMs <= nowMs - horizonMs
+                && r.SourcePredictionId == null
+                && r.ValidityStatus != ValidityStatuses.Invalid)
+            .OrderBy(r => r.Id)
+            .ToListAsync(ct);
+        var sources = candidates
+            .Where(ResearchRecordClassifier.IsStructurallyValid)
+            .GroupBy(r => new { r.Symbol, r.Timeframe, r.TimeMs })
+            .Select(group => group.OrderBy(r => r.Id).First())
+            .ToList();
+        var sourceIds = sources.Select(r => r.Id).ToArray();
+        var existingSourceIds = (await _db.EnsemblePredictionRecords.AsNoTracking()
+            .Where(r => r.SourcePredictionId.HasValue
+                && sourceIds.Contains(r.SourcePredictionId.Value)
+                && r.EvaluationVersion == ResearchVersions.Evaluation)
+            .Select(r => r.SourcePredictionId!.Value)
+            .ToListAsync(ct)).ToHashSet();
+        var pendingSources = sources.Where(r => !existingSourceIds.Contains(r.Id)).ToList();
+        var reevaluated = new List<EnsemblePredictionRecord>(pendingSources.Count);
+
+        foreach (var group in pendingSources.GroupBy(r => r.Timeframe))
+        {
+            var minTarget = group.Min(r => r.TimeMs + horizonMs);
+            var maxTarget = group.Max(r => r.TimeMs + horizonMs);
+            var candles = await _db.Klines.AsNoTracking()
+                .Where(k => k.Symbol == symbol
+                    && k.Timeframe == group.Key
+                    && k.OpenTimeMs >= minTarget
+                    && k.OpenTimeMs <= maxTarget + horizonMs)
+                .OrderBy(k => k.OpenTimeMs)
+                .ToListAsync(ct);
+
+            foreach (var source in group)
+            {
+                var targetMs = source.TimeMs + horizonMs;
+                var candle = FindCandleAtOrAfter(candles, targetMs);
+                if (candle is null) continue;
+
+                var evalPrice = (double)candle.Open;
+                var returnPct = source.EntryPrice > 0
+                    ? (evalPrice - source.EntryPrice) / source.EntryPrice * 100.0
+                    : 0.0;
+
+                reevaluated.Add(new EnsemblePredictionRecord
+                {
+                    Symbol = source.Symbol,
+                    Timeframe = source.Timeframe,
+                    TimeMs = source.TimeMs,
+                    EntryPrice = source.EntryPrice,
+                    FinalDirection = source.FinalDirection,
+                    ProbUp = source.ProbUp,
+                    ProbDown = source.ProbDown,
+                    ProbSideways = source.ProbSideways,
+                    EnsembleConfidence = source.EnsembleConfidence,
+                    LayerBreakdownJson = source.LayerBreakdownJson,
+                    ActualPrice24h = evalPrice,
+                    ActualReturnPct = returnPct,
+                    EvaluationStatus = EvaluateDirection(source.FinalDirection, returnPct),
+                    EvaluatedAtMs = candle.OpenTimeMs,
+                    SourcePredictionId = source.Id,
+                    PipelineVersion = source.PipelineVersion,
+                    EvaluationVersion = ResearchVersions.Evaluation,
+                    ValidityStatus = ValidityStatuses.Legacy,
+                    InvalidReason = "Versioned re-evaluation of a legacy source; experimental and not eligible for promotion.",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+            }
+        }
+
+        if (reevaluated.Count > 0)
+        {
+            _db.EnsemblePredictionRecords.AddRange(reevaluated);
+            try
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                foreach (var record in reevaluated)
+                    _db.Entry(record).State = EntityState.Detached;
+            }
+        }
+    }
+
+    private async Task EvaluateInPlaceAsync(List<EnsemblePredictionRecord> records, string symbol, long horizonMs, CancellationToken ct)
+    {
         foreach (var group in records.GroupBy(r => r.Timeframe))
         {
             var minTarget = group.Min(r => r.TimeMs + horizonMs);
@@ -203,47 +314,60 @@ public class EnsembleService : IEnsembleService
 
             foreach (var record in group)
             {
-                var targetMs = record.TimeMs + horizonMs;
-                var candle = FindCandleAtOrAfter(candles, targetMs);
+                var candle = FindCandleAtOrAfter(candles, record.TimeMs + horizonMs);
                 if (candle is null) continue;
-
                 var evalPrice = (double)candle.Open;
-                var returnPct = record.EntryPrice > 0
-                    ? (evalPrice - record.EntryPrice) / record.EntryPrice * 100.0
-                    : 0.0;
-
+                var returnPct = (evalPrice - record.EntryPrice) / record.EntryPrice * 100.0;
                 record.ActualPrice24h = evalPrice;
                 record.ActualReturnPct = returnPct;
                 record.EvaluatedAtMs = candle.OpenTimeMs;
-                record.EvaluationStatus = record.FinalDirection switch
-                {
-                    "Bullish" when returnPct > 0.05 => "T",
-                    "Bearish" when returnPct < -0.05 => "T",
-                    "Sideways" when Math.Abs(returnPct) <= 0.5 => "T",
-                    _ => "F"
-                };
+                record.EvaluationStatus = EvaluateDirection(record.FinalDirection, returnPct);
+                record.EvaluationVersion = ResearchVersions.Evaluation;
             }
         }
 
         if (records.Count > 0) await _db.SaveChangesAsync(ct);
-        return await GetPredictionEvaluationSummaryAsync(symbol, itemLimit, ct);
     }
 
     public async Task<PredictionEvaluationSummaryDto> GetPredictionEvaluationSummaryAsync(
         string symbol = "BTCUSDT",
         int itemLimit = 100,
+        bool includeLegacy = false,
         CancellationToken ct = default)
     {
         itemLimit = Math.Clamp(itemLimit, 1, 500);
-        var query = _db.EnsemblePredictionRecords.AsNoTracking().Where(r => r.Symbol == symbol);
-        var total = await query.CountAsync(ct);
-        var trueCount = await query.CountAsync(r => r.EvaluationStatus == "T", ct);
-        var falseCount = await query.CountAsync(r => r.EvaluationStatus == "F", ct);
-        var pendingCount = await query.CountAsync(r => r.EvaluationStatus == "N", ct);
-        var items = await query.OrderByDescending(r => r.TimeMs).Take(itemLimit).ToListAsync(ct);
+        var query = _db.EnsemblePredictionRecords.AsNoTracking()
+            .Where(r => r.Symbol == symbol
+                && (includeLegacy || (r.ValidityStatus == ValidityStatuses.Valid && r.ArchivedAtUtc == null)));
+        var allRecords = await query.OrderByDescending(r => r.TimeMs).ThenBy(r => r.Id).ToListAsync(ct);
+        var records = includeLegacy
+            ? allRecords.Where(r => r.SourcePredictionId == null
+                && r.PipelineVersion == ResearchVersions.Legacy
+                && r.EvaluationVersion == ResearchVersions.Legacy).ToList()
+            : allRecords;
+        var reevaluated = allRecords.Where(r => r.SourcePredictionId.HasValue && r.EvaluationVersion == ResearchVersions.Evaluation).ToList();
+        var total = records.Count;
+        var trueCount = records.Count(r => r.EvaluationStatus == "T");
+        var falseCount = records.Count(r => r.EvaluationStatus == "F");
+        var pendingCount = records.Count(r => r.EvaluationStatus == "N");
+        var items = records.Take(itemLimit).ToList();
 
         var evalCount = trueCount + falseCount;
         var winRate = evalCount > 0 ? (double)trueCount / evalCount * 100.0 : 0.0;
+        var canonical = records
+            .Where(r => r.ValidityStatus != ValidityStatuses.Invalid)
+            .Where(ResearchRecordClassifier.IsStructurallyValid)
+            .GroupBy(r => new { r.Symbol, r.Timeframe, r.TimeMs })
+            .Select(group => group.OrderBy(r => r.Id).First())
+            .ToList();
+        var canonicalTrue = canonical.Count(r => r.EvaluationStatus == "T");
+        var canonicalFalse = canonical.Count(r => r.EvaluationStatus == "F");
+        var canonicalPending = canonical.Count(r => r.EvaluationStatus == "N");
+        var canonicalEvaluated = canonicalTrue + canonicalFalse;
+        var reevaluatedTrue = reevaluated.Count(r => r.EvaluationStatus == "T");
+        var reevaluatedFalse = reevaluated.Count(r => r.EvaluationStatus == "F");
+        var reevaluatedPending = reevaluated.Count(r => r.EvaluationStatus == "N");
+        var reevaluatedEvaluated = reevaluatedTrue + reevaluatedFalse;
 
         return new PredictionEvaluationSummaryDto
         {
@@ -253,9 +377,32 @@ public class EnsembleService : IEnsembleService
             FalseCount = falseCount,
             PendingCount = pendingCount,
             WinRatePct = Math.Round(winRate, 2),
-            Items = items
+            CanonicalEvaluatedCount = canonicalEvaluated,
+            CanonicalTrueCount = canonicalTrue,
+            CanonicalFalseCount = canonicalFalse,
+            CanonicalPendingCount = canonicalPending,
+            CanonicalWinRatePct = canonicalEvaluated > 0
+                ? Math.Round((double)canonicalTrue / canonicalEvaluated * 100.0, 2)
+                : 0,
+            ReevaluatedCount = reevaluated.Count,
+            ReevaluatedTrueCount = reevaluatedTrue,
+            ReevaluatedFalseCount = reevaluatedFalse,
+            ReevaluatedPendingCount = reevaluatedPending,
+            ReevaluatedWinRatePct = reevaluatedEvaluated > 0
+                ? Math.Round((double)reevaluatedTrue / reevaluatedEvaluated * 100.0, 2)
+                : 0,
+            Items = items,
+            ReevaluatedItems = reevaluated.Take(itemLimit).ToList()
         };
     }
+
+    private static string EvaluateDirection(string direction, double returnPct) => direction switch
+    {
+        "Bullish" when returnPct > 0.05 => "T",
+        "Bearish" when returnPct < -0.05 => "T",
+        "Sideways" when Math.Abs(returnPct) <= 0.5 => "T",
+        _ => "F"
+    };
 
     private static Kline? FindCandleAtOrAfter(IReadOnlyList<Kline> candles, long targetMs)
     {
@@ -583,6 +730,10 @@ public class EnsembleService : IEnsembleService
                     ActualReturnPct = Math.Round(kellyTradeReturn, 2),
                     EvaluationStatus = status,
                     EvaluatedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    PipelineVersion = ResearchVersions.DataPipeline,
+                    EvaluationVersion = ResearchVersions.Evaluation,
+                    ValidityStatus = ValidityStatuses.Invalid,
+                    InvalidReason = "Batch replay is experimental and is not eligible for promotion evidence.",
                     CreatedAtUtc = DateTime.UtcNow
                 });
             }

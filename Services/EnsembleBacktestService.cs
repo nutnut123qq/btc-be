@@ -38,7 +38,9 @@ public class EnsembleBacktestService : IEnsembleBacktestService
         var klineQuery = _db.Klines.AsNoTracking()
             .Where(k => k.Symbol == symbol && k.Timeframe == timeframe);
         var predictionQuery = _db.EnsemblePredictionRecords.AsNoTracking()
-            .Where(p => p.Symbol == symbol && p.Timeframe == timeframe);
+            .Where(p => p.Symbol == symbol && p.Timeframe == timeframe
+                && p.ValidityStatus == ValidityStatuses.Valid
+                && p.ArchivedAtUtc == null);
 
         if (startTimeMs.HasValue)
         {
@@ -202,6 +204,11 @@ public class EnsembleBacktestService : IEnsembleBacktestService
                 minConfidence
             }),
             EquityCurveJson = JsonSerializer.Serialize(equityCurve),
+            PipelineVersion = ResearchVersions.DataPipeline,
+            EvaluationVersion = ResearchVersions.Evaluation,
+            ValidityStatus = ValidityStatuses.Invalid,
+            InvalidReason = "Experimental ensemble backtest is not eligible for promotion evidence.",
+            ArchivedAtUtc = DateTime.UtcNow,
             CreatedAtUtc = DateTime.UtcNow
         };
 
@@ -230,18 +237,22 @@ public class EnsembleBacktestService : IEnsembleBacktestService
         long? endTimeMs,
         double initialCapital,
         double feeBps) => new()
-    {
-        Symbol = symbol,
-        Timeframe = timeframe,
-        WindowSize = 5,
-        Horizon = timeframe,
-        ModelName = "Ensemble-5Layer-PointInTime",
-        StartTimeMs = startTimeMs ?? 0,
-        EndTimeMs = endTimeMs ?? 0,
-        FeeBps = feeBps,
-        FinalEquity = initialCapital,
-        CreatedAtUtc = DateTime.UtcNow
-    };
+        {
+            Symbol = symbol,
+            Timeframe = timeframe,
+            WindowSize = 5,
+            Horizon = timeframe,
+            ModelName = "Ensemble-5Layer-PointInTime",
+            StartTimeMs = startTimeMs ?? 0,
+            EndTimeMs = endTimeMs ?? 0,
+            FeeBps = feeBps,
+            FinalEquity = initialCapital,
+            PipelineVersion = ResearchVersions.DataPipeline,
+            EvaluationVersion = ResearchVersions.Evaluation,
+            ValidityStatus = ValidityStatuses.Invalid,
+            InvalidReason = "Experimental ensemble backtest is not eligible for promotion evidence.",
+            CreatedAtUtc = DateTime.UtcNow
+        };
 
     private static double CalculateSharpe(IReadOnlyList<double> returns)
     {

@@ -75,10 +75,14 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserId, x.CreatedAt });
             e.HasIndex(x => new { x.UserId, x.Type, x.CreatedAt });
+            e.HasIndex(x => new { x.UserId, x.SourceKey })
+                .IsUnique()
+                .HasFilter("\"SourceKey\" IS NOT NULL AND \"ArchivedAtUtc\" IS NULL");
             e.Property(x => x.UserId).HasMaxLength(128);
             e.Property(x => x.Type).HasMaxLength(64);
             e.Property(x => x.Title).HasMaxLength(512);
             e.Property(x => x.Message).HasMaxLength(4000);
+            e.Property(x => x.SourceKey).HasMaxLength(512);
         });
 
         modelBuilder.Entity<PriceAlertSettings>(e =>
@@ -214,8 +218,13 @@ public class AppDbContext : DbContext
             e.Property(x => x.Timeframe).HasMaxLength(16);
             e.Property(x => x.Horizon).HasMaxLength(16);
             e.Property(x => x.ModelVersion).HasMaxLength(256);
+            e.Property(x => x.PipelineVersion).HasMaxLength(128);
+            e.Property(x => x.EvaluationVersion).HasMaxLength(128);
+            e.Property(x => x.ValidityStatus).HasMaxLength(16);
+            e.Property(x => x.InvalidReason).HasMaxLength(1000);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowSize, x.Horizon, x.WindowEndMs });
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.ValidityStatus, x.ArchivedAtUtc });
         });
 
         modelBuilder.Entity<BacktestRun>(e =>
@@ -225,7 +234,12 @@ public class AppDbContext : DbContext
             e.Property(x => x.Timeframe).HasMaxLength(16);
             e.Property(x => x.Horizon).HasMaxLength(16);
             e.Property(x => x.ModelName).HasMaxLength(256);
+            e.Property(x => x.PipelineVersion).HasMaxLength(128);
+            e.Property(x => x.EvaluationVersion).HasMaxLength(128);
+            e.Property(x => x.ValidityStatus).HasMaxLength(16);
+            e.Property(x => x.InvalidReason).HasMaxLength(1000);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.ValidityStatus, x.ArchivedAtUtc });
         });
 
         modelBuilder.Entity<BacktestTrade>(e =>
@@ -372,7 +386,15 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<EnsemblePredictionRecord>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.PipelineVersion).HasMaxLength(128);
+            e.Property(x => x.EvaluationVersion).HasMaxLength(128);
+            e.Property(x => x.ValidityStatus).HasMaxLength(16);
+            e.Property(x => x.InvalidReason).HasMaxLength(1000);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TimeMs });
+            e.HasIndex(x => new { x.ValidityStatus, x.ArchivedAtUtc });
+            e.HasIndex(x => new { x.SourcePredictionId, x.EvaluationVersion })
+                .IsUnique()
+                .HasFilter("\"SourcePredictionId\" IS NOT NULL");
         });
 
         modelBuilder.Entity<LiquidationSnapshot>(e =>

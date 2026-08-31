@@ -53,6 +53,13 @@ public class EnsembleBacktestController : ControllerBase
                 run.SharpeRatio,
                 run.ProfitFactor,
                 run.FinalEquity,
+                run.PipelineVersion,
+                run.EvaluationVersion,
+                run.ValidityStatus,
+                run.InvalidReason,
+                run.ArchivedAtUtc,
+                Validated = false,
+                Maturity = "Experimental",
                 run.CreatedAtUtc,
                 trades = trades.Select(t => new
                 {

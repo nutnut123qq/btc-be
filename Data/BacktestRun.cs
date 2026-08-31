@@ -25,6 +25,11 @@ public class BacktestRun
     public double FinalEquity { get; set; }
     public string MetricsJson { get; set; } = string.Empty;
     public string EquityCurveJson { get; set; } = string.Empty;
+    public string PipelineVersion { get; set; } = ResearchVersions.DataPipeline;
+    public string EvaluationVersion { get; set; } = ResearchVersions.Evaluation;
+    public string ValidityStatus { get; set; } = ValidityStatuses.Valid;
+    public string? InvalidReason { get; set; }
+    public DateTime? ArchivedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 
     public List<BacktestTrade> Trades { get; set; } = new();

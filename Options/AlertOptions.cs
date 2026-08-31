@@ -13,4 +13,7 @@ public class AlertOptions
 
     /// <summary>User id whose <see cref="Data.PriceAlertSettings"/> row the worker evaluates.</summary>
     public string DefaultUserId { get; set; } = "default";
+
+    /// <summary>Read alerts older than this are archived. Set to 0 to disable.</summary>
+    public int ReadRetentionDays { get; set; } = 90;
 }

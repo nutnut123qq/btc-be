@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260831054139_AddResearchValidityAndAlertDeduplication")]
+    partial class AddResearchValidityAndAlertDeduplication
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -70,7 +73,7 @@ namespace Backend.Migrations
 
                     b.HasIndex("UserId", "SourceKey")
                         .IsUnique()
-                        .HasFilter("\"SourceKey\" IS NOT NULL AND \"ArchivedAtUtc\" IS NULL");
+                        .HasFilter("\"SourceKey\" IS NOT NULL");
 
                     b.HasIndex("UserId", "Type", "CreatedAt");
 
@@ -897,9 +900,6 @@ namespace Backend.Migrations
                     b.Property<double>("ProbUp")
                         .HasColumnType("double precision");
 
-                    b.Property<long?>("SourcePredictionId")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("Symbol")
                         .IsRequired()
                         .HasColumnType("text");
@@ -917,10 +917,6 @@ namespace Backend.Migrations
                         .HasColumnType("character varying(16)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("SourcePredictionId", "EvaluationVersion")
-                        .IsUnique()
-                        .HasFilter("\"SourcePredictionId\" IS NOT NULL");
 
                     b.HasIndex("ValidityStatus", "ArchivedAtUtc");
 

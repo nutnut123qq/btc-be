@@ -11,4 +11,6 @@ public class AppAlert
     public decimal? PriceSnapshot { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public bool IsRead { get; set; }
+    public string? SourceKey { get; set; }
+    public DateTime? ArchivedAtUtc { get; set; }
 }
