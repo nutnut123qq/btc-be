@@ -3,6 +3,7 @@ using Backend.Options;
 using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using OptionsFactory = Microsoft.Extensions.Options.Options;
@@ -29,6 +30,30 @@ public class KlinesIngestionWorkerTests
     }
 
     [Fact]
+    public async Task RunCycleAsync_ReservesBudgetForLatestRequests()
+    {
+        var fakeBinance = new CountingFakeBinance("1h");
+        var services = new ServiceCollection()
+            .AddSingleton<IBinanceKlinesService>(fakeBinance)
+            .AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(Guid.NewGuid().ToString()))
+            .BuildServiceProvider();
+        var worker = new KlinesIngestionWorker(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<KlinesIngestionWorker>.Instance,
+            OptionsFactory.Create(new KlinesIngestionOptions
+            {
+                BackfillStartDate = DateTime.UnixEpoch,
+                MaxRequestsPerCycle = 2,
+                MaxGapsPerTimeframe = 1
+            }));
+
+        await worker.RunCycleAsync(default);
+
+        Assert.Equal(2, fakeBinance.CallCount);
+        Assert.All(fakeBinance.Calls, call => Assert.Null(call.start));
+    }
+
+    [Fact]
     public async Task FindGapsAsync_NoData_ReturnsSingleGap()
     {
         await using var db = CreateInMemoryDb();
@@ -40,6 +65,19 @@ public class KlinesIngestionWorkerTests
         Assert.Equal(0, gaps[0].StartMs);
         Assert.Equal(3_600_000 * 5, gaps[0].EndMs);
         Assert.Equal(6, gaps[0].MissingCount);
+    }
+
+    [Fact]
+    public async Task FindGapsAsync_PartialTailInterval_DoesNotReturnEmptyGap()
+    {
+        await using var db = CreateInMemoryDb();
+        var worker = CreateWorker();
+        db.Klines.Add(CreateKline("1h", 0));
+        await db.SaveChangesAsync();
+
+        var gaps = await worker.FindGapsAsync(db, "BTCUSDT", "1h", 0, 1, 50, default);
+
+        Assert.Empty(gaps);
     }
 
     [Fact]
@@ -164,6 +202,20 @@ public class KlinesIngestionWorkerTests
         Assert.Equal(1_000, inserted);
     }
 
+    [Fact]
+    public async Task BackfillGapAsync_EmptyResponseStopsCurrentAttempt()
+    {
+        await using var db = CreateInMemoryDb();
+        var worker = CreateWorker();
+        var fakeBinance = new CountingFakeBinance("1h", returnEmpty: true);
+
+        var first = await worker.BackfillGapAsync(
+            fakeBinance, db, "BTCUSDT", "1h", 3_600_000,
+            0, 3_600_000 * 5, requestBudget: 10, default);
+        Assert.Equal((0, 1), first);
+        Assert.Equal(1, fakeBinance.CallCount);
+    }
+
     private static Kline CreateKline(string timeframe, long openTimeMs) => new()
     {
         Symbol = "BTCUSDT",
@@ -199,13 +251,15 @@ public class KlinesIngestionWorkerTests
     private class CountingFakeBinance : IBinanceKlinesService
     {
         private readonly string _interval;
+        private readonly bool _returnEmpty;
 
         public int CallCount { get; private set; }
         public List<(long? start, long? end, int limit)> Calls { get; } = new();
 
-        public CountingFakeBinance(string interval)
+        public CountingFakeBinance(string interval, bool returnEmpty = false)
         {
             _interval = interval;
+            _returnEmpty = returnEmpty;
         }
 
         public Task<IReadOnlyList<KlineDto>> GetKlinesAsync(
@@ -218,6 +272,9 @@ public class KlinesIngestionWorkerTests
         {
             CallCount++;
             Calls.Add((startTimeMs, endTimeMs, limit));
+
+            if (_returnEmpty)
+                return Task.FromResult<IReadOnlyList<KlineDto>>([]);
 
             var intervalMs = _interval switch
             {

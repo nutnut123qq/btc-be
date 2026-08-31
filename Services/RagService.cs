@@ -31,6 +31,11 @@ public class RagService : IRagService
             return await BuildFallbackLatestAsync(topK, cancellationToken);
         }
 
+        if (!_embedder.IsConfigured)
+        {
+            return await BuildFallbackLatestAsync(topK, cancellationToken);
+        }
+
         var qvec = await _embedder.EmbedAsync(query, cancellationToken);
         if (qvec == null)
         {

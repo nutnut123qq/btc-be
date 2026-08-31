@@ -160,11 +160,14 @@ public class RssIngestionService : BackgroundService
                     EmbeddedAt = null
                 };
 
-                var vec = await embedder.EmbedAsync(chunk.Text, cancellationToken);
-                if (vec != null)
+                if (embedder.IsConfigured)
                 {
-                    chunk.Embedding = vec;
-                    chunk.EmbeddedAt = DateTimeOffset.UtcNow;
+                    var vec = await embedder.EmbedAsync(chunk.Text, cancellationToken);
+                    if (vec != null)
+                    {
+                        chunk.Embedding = vec;
+                        chunk.EmbeddedAt = DateTimeOffset.UtcNow;
+                    }
                 }
 
                 db.NewsChunks.Add(chunk);

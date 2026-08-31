@@ -10,8 +10,10 @@ namespace Backend.Services;
 public class GeminiEmbeddingClient : IGeminiEmbeddingClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
+    private readonly string? _apiKey;
     private readonly ILogger<GeminiEmbeddingClient> _logger;
+
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
 
     public GeminiEmbeddingClient(
         IHttpClientFactory httpClientFactory,
@@ -19,25 +21,24 @@ public class GeminiEmbeddingClient : IGeminiEmbeddingClient
         ILogger<GeminiEmbeddingClient> logger)
     {
         _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
+        var configuredKey = configuration["Gemini:ApiKey"];
+        var geminiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+        _apiKey = !string.IsNullOrWhiteSpace(configuredKey)
+            ? configuredKey
+            : !string.IsNullOrWhiteSpace(geminiKey)
+                ? geminiKey
+                : Environment.GetEnvironmentVariable("GOOGLE_API_KEY");
         _logger = logger;
     }
 
     public async Task<float[]?> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
-        var apiKey = _configuration["Gemini:ApiKey"]
-            ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY")
-            ?? Environment.GetEnvironmentVariable("GOOGLE_API_KEY");
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            _logger.LogWarning("Gemini API key not configured; skipping embedding.");
+        if (!IsConfigured)
             return null;
-        }
 
         var client = _httpClientFactory.CreateClient("GeminiEmbedding");
         var url =
-            $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={Uri.EscapeDataString(apiKey)}";
+            $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={Uri.EscapeDataString(_apiKey!)}";
 
         var body = new EmbedRequest
         {

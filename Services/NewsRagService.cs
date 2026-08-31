@@ -27,6 +27,9 @@ public class NewsRagService : INewsRagService, IRagService
         int topK = 8,
         CancellationToken cancellationToken = default)
     {
+        if (!_embedder.IsConfigured)
+            return new List<NewsChunkSearchResult>();
+
         var qvec = await _embedder.EmbedAsync(query, cancellationToken);
         if (qvec == null || qvec.Length == 0)
         {

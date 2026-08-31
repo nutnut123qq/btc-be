@@ -10,6 +10,7 @@ public class EmbeddingBackfillWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EmbeddingBackfillWorker> _logger;
+    private bool _reportedDisabled;
 
     public EmbeddingBackfillWorker(
         IServiceScopeFactory scopeFactory,
@@ -45,11 +46,21 @@ public class EmbeddingBackfillWorker : BackgroundService
         }
     }
 
-    private async Task RunCycleAsync(CancellationToken cancellationToken)
+    internal async Task RunCycleAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var embedder = scope.ServiceProvider.GetRequiredService<IGeminiEmbeddingClient>();
+        if (!embedder.IsConfigured)
+        {
+            if (!_reportedDisabled)
+            {
+                _logger.LogInformation("Embedding backfill disabled because no Gemini API key is configured.");
+                _reportedDisabled = true;
+            }
+            return;
+        }
+
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var chunks = await db.NewsChunks
             .Where(c => c.Embedding == null || c.Embedding.Length == 0)

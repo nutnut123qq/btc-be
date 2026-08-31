@@ -63,7 +63,7 @@ public class KlinesIngestionWorker : BackgroundService
         }
     }
 
-    private async Task RunCycleAsync(CancellationToken cancellationToken)
+    internal async Task RunCycleAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var binance = scope.ServiceProvider.GetRequiredService<IBinanceKlinesService>();
@@ -74,6 +74,7 @@ public class KlinesIngestionWorker : BackgroundService
 
         var maxRequests = Math.Max(1, _options.MaxRequestsPerCycle);
         var remainingRequests = maxRequests;
+        var pendingLatestRequests = DefaultSymbols.Length * DefaultTimeframes.Length;
         var totalInserted = 0;
 
         _logger.LogInformation(
@@ -109,6 +110,7 @@ public class KlinesIngestionWorker : BackgroundService
                     var latestLimit = GetLatestLimit(tf);
                     var latest = await binance.GetKlinesAsync(symbol, tf, latestLimit, cancellationToken: cancellationToken);
                     remainingRequests--;
+                    pendingLatestRequests--;
 
                     var latestInserted = await InsertBatchAsync(db, symbol, tf, latest, cancellationToken);
                     totalInserted += latestInserted;
@@ -138,13 +140,14 @@ public class KlinesIngestionWorker : BackgroundService
                     // 3. Backfill gaps cho đến khi hết budget.
                     foreach (var gap in gaps)
                     {
-                        if (remainingRequests <= 0 || cancellationToken.IsCancellationRequested)
+                        var backfillBudget = remainingRequests - pendingLatestRequests;
+                        if (backfillBudget <= 0 || cancellationToken.IsCancellationRequested)
                             break;
 
                         var (inserted, requestsUsed) = await BackfillGapAsync(
                             binance, db, symbol, tf, intervalMs,
                             gap.StartMs, Math.Min(gap.EndMs, endMs),
-                            remainingRequests, cancellationToken);
+                            backfillBudget, cancellationToken);
 
                         remainingRequests -= requestsUsed;
                         totalInserted += inserted;
@@ -221,7 +224,7 @@ public class KlinesIngestionWorker : BackgroundService
             if (batch.Count == 0)
             {
                 _logger.LogInformation(
-                    "Empty batch for {Symbol} {Timeframe} gap at cursor {CursorIso}; stopping gap backfill",
+                    "Empty batch for {Symbol} {Timeframe} gap at cursor {CursorIso}; stopping this backfill attempt",
                     symbol, timeframe,
                     DateTimeOffset.FromUnixTimeMilliseconds(cursor).UtcDateTime.ToString("O"));
                 break;
@@ -268,7 +271,7 @@ public class KlinesIngestionWorker : BackgroundService
         CancellationToken cancellationToken)
     {
         var intervalMs = Timeframes.IntervalToMs(timeframe);
-        if (intervalMs <= 0)
+        if (intervalMs <= 0 || startMs > endMs)
             return Array.Empty<Gap>();
 
         var stats = await db.Klines
@@ -280,9 +283,6 @@ public class KlinesIngestionWorker : BackgroundService
 
         if (stats is null)
         {
-            if (startMs >= endMs)
-                return Array.Empty<Gap>();
-
             var missing = ((endMs - startMs) / intervalMs) + 1;
             return new List<Gap> { new(startMs, endMs, missing) };
         }
@@ -290,14 +290,14 @@ public class KlinesIngestionWorker : BackgroundService
         var gaps = new List<Gap>();
 
         // Gap đầu: từ startMs đến nến đầu tiên trong DB.
-        if (stats.Min > startMs)
+        if (stats.Min - startMs >= intervalMs)
         {
             var missing = (stats.Min - startMs) / intervalMs;
             gaps.Add(new Gap(startMs, stats.Min - intervalMs, missing));
         }
 
         // Gap cuối: từ nến cuối trong DB đến endMs.
-        if (stats.Max < endMs)
+        if (endMs - stats.Max >= intervalMs)
         {
             var missing = (endMs - stats.Max) / intervalMs;
             gaps.Add(new Gap(stats.Max + intervalMs, endMs, missing));
