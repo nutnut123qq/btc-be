@@ -148,6 +148,31 @@ public class KlinesBackfillServiceTests
         }, times);
     }
 
+    [Fact]
+    public async Task StartAsync_FillingUnavailableRangeReconcilesPersistentGap()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var start = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end = new DateTime(2024, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+        await using (var seed = CreateInMemoryDb(dbName))
+        {
+            seed.KlineGapStates.Add(new KlineGapState
+            {
+                Symbol = "BTCUSDT", Timeframe = "1d",
+                StartOpenTimeMs = new DateTimeOffset(start).ToUnixTimeMilliseconds(),
+                EndOpenTimeMs = new DateTimeOffset(end).ToUnixTimeMilliseconds(),
+                MissingBars = 2, AttemptCount = 3, Status = KlineGapStatuses.Unavailable
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await CreateService(dbName, new RangeFakeBinance())
+            .StartAsync("BTCUSDT", ["1d"], start, end, wait: true);
+
+        await using var db = CreateInMemoryDb(dbName);
+        Assert.Equal(KlineGapStatuses.Filled, (await db.KlineGapStates.SingleAsync()).Status);
+    }
+
     private static Kline CreateKline(string timeframe, long openTimeMs, long intervalMs) => new()
     {
         Symbol = "BTCUSDT",

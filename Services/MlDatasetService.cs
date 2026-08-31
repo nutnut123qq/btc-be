@@ -14,15 +14,18 @@ public class MlDatasetService : IMlDatasetService
     private readonly AppDbContext _db;
     private readonly ILogger<MlDatasetService> _logger;
     private readonly IndexingOptions _options;
+    private readonly DataAuditCache? _auditCache;
 
     public MlDatasetService(
         AppDbContext db,
         ILogger<MlDatasetService> logger,
-        IOptions<IndexingOptions> options)
+        IOptions<IndexingOptions> options,
+        DataAuditCache? auditCache = null)
     {
         _db = db;
         _logger = logger;
         _options = options.Value;
+        _auditCache = auditCache;
     }
 
     public async Task<int> BuildAsync(string symbol, string timeframe, CancellationToken cancellationToken = default)
@@ -215,6 +218,8 @@ public class MlDatasetService : IMlDatasetService
             "ML dataset built for {Symbol} {Timeframe}: {FeatureAdds} feature adds, {TargetAdds} target adds",
             symbol, timeframe, totalFeatureAdds, totalTargetAdds);
 
+        if (totalFeatureAdds + totalTargetAdds > 0)
+            _auditCache?.Invalidate(symbol);
         return totalFeatureAdds + totalTargetAdds;
     }
 

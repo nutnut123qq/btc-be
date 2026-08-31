@@ -14,6 +14,8 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<DataAuditCache>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 
 // Response Compression (Brotli + Gzip) for High Concurrency Payload Optimization
@@ -215,6 +217,7 @@ using (var scope = app.Services.CreateScope())
     {
         try
         {
+            db.Database.SetCommandTimeout(TimeSpan.FromMinutes(5));
             db.Database.Migrate();
         }
         catch (Exception ex)

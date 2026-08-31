@@ -14,6 +14,7 @@ public class KlinesBackfillService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<KlinesBackfillService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     // Chỉ cho phép một backfill chạy đồng thởi trên toàn process để tránh
     // duplicate resource usage khi ngườ dùng gọi lại endpoint nhiều lần.
@@ -26,11 +27,12 @@ public class KlinesBackfillService
     // Thứ tự ưu tiên: lớn → nhỏ, phù hợp với yêu cầu.
     private static readonly string[] PriorityTimeframes = { "1d", "4h", "1h", "15m", "5m", "1m" };
 
-    public KlinesBackfillService(IServiceScopeFactory scopeFactory, IHostApplicationLifetime lifetime, ILogger<KlinesBackfillService> logger)
+    public KlinesBackfillService(IServiceScopeFactory scopeFactory, IHostApplicationLifetime lifetime, ILogger<KlinesBackfillService> logger, TimeProvider? timeProvider = null)
     {
         _scopeFactory = scopeFactory;
         _lifetime = lifetime;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public bool IsRunning => Interlocked.CompareExchange(ref _isRunning, 0, 0) == 1;
@@ -558,6 +560,7 @@ public class KlinesBackfillService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var auditCache = scope.ServiceProvider.GetService<DataAuditCache>();
 
         var openTimes = batch.Select(x => x.OpenTimeMs).ToList();
         var existing = await db.Klines
@@ -594,6 +597,30 @@ public class KlinesBackfillService
         {
             db.Klines.AddRange(toAdd);
             await db.SaveChangesAsync(cancellationToken);
+            var minInserted = toAdd.Min(x => x.OpenTimeMs);
+            var maxInserted = toAdd.Max(x => x.OpenTimeMs);
+            var intervalMs = Timeframes.IntervalToMs(timeframe);
+            var affectedGaps = await db.KlineGapStates
+                .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                    && (x.Status == KlineGapStatuses.Pending || x.Status == KlineGapStatuses.Unavailable)
+                    && x.StartOpenTimeMs <= maxInserted && x.EndOpenTimeMs >= minInserted)
+                .ToListAsync(cancellationToken);
+            foreach (var gap in affectedGaps)
+            {
+                var expected = ((gap.EndOpenTimeMs - gap.StartOpenTimeMs) / intervalMs) + 1;
+                var present = await db.Klines.LongCountAsync(k => k.Symbol == symbol && k.Timeframe == timeframe
+                    && k.OpenTimeMs >= gap.StartOpenTimeMs && k.OpenTimeMs <= gap.EndOpenTimeMs, cancellationToken);
+                if (present < expected)
+                    continue;
+                gap.Status = KlineGapStatuses.Filled;
+                gap.MissingBars = 0;
+                gap.NextRetryAtUtc = null;
+                gap.Reason = null;
+                gap.UpdatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            }
+            if (affectedGaps.Count > 0)
+                await db.SaveChangesAsync(cancellationToken);
+            auditCache?.Invalidate(symbol);
         }
 
         return toAdd.Count;

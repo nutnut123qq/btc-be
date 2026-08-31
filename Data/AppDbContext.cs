@@ -44,6 +44,8 @@ public class AppDbContext : DbContext
     public DbSet<FuturesMetric> FuturesMetrics => Set<FuturesMetric>();
     public DbSet<LiquidationSnapshot> LiquidationSnapshots => Set<LiquidationSnapshot>();
     public DbSet<WalletBalanceSnapshot> WalletBalanceSnapshots => Set<WalletBalanceSnapshot>();
+    public DbSet<KlineGapState> KlineGapStates => Set<KlineGapState>();
+    public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -155,6 +157,25 @@ public class AppDbContext : DbContext
             e.Property(x => x.Timeframe).HasMaxLength(16);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.OpenTimeMs }).IsUnique();
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CloseTimeMs });
+        });
+
+        modelBuilder.Entity<KlineGapState>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.Reason).HasMaxLength(1000);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.StartOpenTimeMs, x.EndOpenTimeMs }).IsUnique();
+            e.HasIndex(x => new { x.Status, x.NextRetryAtUtc });
+        });
+
+        modelBuilder.Entity<WorkerHeartbeat>(e =>
+        {
+            e.HasKey(x => x.WorkerName);
+            e.Property(x => x.WorkerName).HasMaxLength(128);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.LastError).HasMaxLength(1000);
         });
 
         modelBuilder.Entity<TechnicalIndicator>(e =>

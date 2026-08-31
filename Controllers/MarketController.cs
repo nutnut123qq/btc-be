@@ -20,6 +20,7 @@ public class MarketController : ControllerBase
     private readonly IDataAuditService _dataAudit;
     private readonly AppDbContext _db;
     private readonly ILogger<MarketController> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public MarketController(
         IBinanceKlinesService binance,
@@ -31,7 +32,8 @@ public class MarketController : ControllerBase
         IMlDatasetService mlDataset,
         IDataAuditService dataAudit,
         AppDbContext db,
-        ILogger<MarketController> logger)
+        ILogger<MarketController> logger,
+        TimeProvider? timeProvider = null)
     {
         _binance = binance;
         _backfill = backfill;
@@ -43,6 +45,7 @@ public class MarketController : ControllerBase
         _dataAudit = dataAudit;
         _db = db;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -381,6 +384,7 @@ public class MarketController : ControllerBase
         }
         var started = DateTime.UtcNow;
         var upserted = await _vectorIndexer.BuildFullAsync(symbol, timeframe, featureType, lookbackBars, windowSize, cancellationToken);
+        _dataAudit.Invalidate(symbol);
         return Ok(new
         {
             requestId = HttpContext.TraceIdentifier,
@@ -412,6 +416,7 @@ public class MarketController : ControllerBase
                 total += await _vectorIndexer.BuildFullAsync(symbol, timeframe, f, lookbackBars, ws, cancellationToken);
             }
         }
+        _dataAudit.Invalidate(symbol);
         return Ok(new
         {
             requestId = HttpContext.TraceIdentifier,
@@ -635,6 +640,7 @@ public class MarketController : ControllerBase
         lookbackBars = Math.Clamp(lookbackBars, 10, 5_000);
         var started = DateTime.UtcNow;
         var indexed = await _patternIndexer.BuildFullAsync(symbol, timeframe, lookbackBars, cancellationToken);
+        _dataAudit.Invalidate(symbol);
         return Ok(new
         {
             requestId = HttpContext.TraceIdentifier,
@@ -652,13 +658,36 @@ public class MarketController : ControllerBase
     [HttpGet("data-audit")]
     public async Task<ActionResult<DataAuditResponse>> GetDataAudit(
         [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] bool includeInventory = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(symbol))
             return BadRequest(new ApiErrorEnvelope { Code = "INVALID_SYMBOL", Message = "symbol is required.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
 
-        var result = await _dataAudit.AuditAsync(symbol, cancellationToken);
+        var result = await _dataAudit.AuditAsync(symbol, includeInventory, cancellationToken);
         return Ok(result);
     }
 
+    [HttpPost("data-gaps/{id:long}/retry")]
+    [Backend.Filters.AdminGuard]
+    public async Task<IActionResult> RetryDataGap(long id, CancellationToken cancellationToken = default)
+    {
+        var gap = await _db.KlineGapStates.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (gap is null)
+            return NotFound(new ApiErrorEnvelope { Code = "GAP_NOT_FOUND", Message = $"Data gap {id} was not found.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
+        if (gap.Status == KlineGapStatuses.Filled)
+            return Conflict(new ApiErrorEnvelope { Code = "GAP_ALREADY_FILLED", Message = "The data gap is already filled.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
+
+        gap.Status = KlineGapStatuses.Pending;
+        gap.AttemptCount = 0;
+        gap.NextRetryAtUtc = null;
+        gap.Reason = "Manual retry requested.";
+        gap.UpdatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        await _db.SaveChangesAsync(cancellationToken);
+        _dataAudit.Invalidate(gap.Symbol);
+        return Ok(new GapRetryResponse(gap.Id, gap.Status, gap.AttemptCount, gap.NextRetryAtUtc, gap.UpdatedAtUtc));
+    }
+
 }
+
+public sealed record GapRetryResponse(long Id, string Status, int AttemptCount, DateTime? NextRetryAtUtc, DateTime UpdatedAtUtc);

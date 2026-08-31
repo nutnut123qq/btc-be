@@ -24,6 +24,7 @@ public class FullReindexService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IndexingOptions _options;
     private readonly ILogger<FullReindexService> _logger;
+    private readonly DataAuditCache? _cache;
 
     public static readonly string[] DefaultTimeframes = { "1m", "5m", "15m", "30m", "1h", "4h", "1d" };
     public static readonly string[] FeatureTypes = { "open", "high", "low", "close", "all", "returns_shape", "returns_log", "volume_norm", "volatility", "trend" };
@@ -38,7 +39,8 @@ public class FullReindexService
         CandlePatternSequenceIndexer sequenceIndexer,
         IServiceScopeFactory scopeFactory,
         IOptions<IndexingOptions> options,
-        ILogger<FullReindexService> logger)
+        ILogger<FullReindexService> logger,
+        DataAuditCache? cache = null)
     {
         _db = db;
         _patternIndexer = patternIndexer;
@@ -49,6 +51,7 @@ public class FullReindexService
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _cache = cache;
     }
 
     /// <summary>
@@ -130,6 +133,8 @@ public class FullReindexService
             + result.Totals.VolumeStats
             + result.Totals.TechnicalIndicators
             + result.Totals.PatternSequences;
+
+        _cache?.Invalidate(symbol);
 
         return result;
     }

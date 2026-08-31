@@ -14,12 +14,14 @@ public class IndexerController : ControllerBase
     private readonly TechnicalIndicatorIndexer _techIndexer;
     private readonly IMlDatasetService _mlDatasetService;
     private readonly ILogger<IndexerController> _logger;
+    private readonly DataAuditCache? _auditCache;
 
-    public IndexerController(TechnicalIndicatorIndexer techIndexer, IMlDatasetService mlDatasetService, ILogger<IndexerController> logger)
+    public IndexerController(TechnicalIndicatorIndexer techIndexer, IMlDatasetService mlDatasetService, ILogger<IndexerController> logger, DataAuditCache? auditCache = null)
     {
         _techIndexer = techIndexer;
         _mlDatasetService = mlDatasetService;
         _logger = logger;
+        _auditCache = auditCache;
     }
 
     /// <summary>
@@ -52,6 +54,7 @@ public class IndexerController : ControllerBase
             }
         }
 
+        _auditCache?.Invalidate(symbol);
         return Ok(new { symbol, timeframes = results.Keys, results });
     }
 
@@ -84,6 +87,7 @@ public class IndexerController : ControllerBase
             }
         }
 
+        _auditCache?.Invalidate(symbol);
         return Ok(new { symbol, timeframes = results.Keys, results });
     }
 }

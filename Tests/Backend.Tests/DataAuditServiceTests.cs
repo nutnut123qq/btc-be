@@ -2,6 +2,7 @@ using Backend.Data;
 using Backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Backend.Tests;
 
@@ -65,14 +66,14 @@ public class DataAuditServiceTests
         await db.SaveChangesAsync();
 
         var service = CreateService(db);
-        var result = await service.AuditAsync("BTCUSDT");
+        var result = await service.AuditAsync("BTCUSDT", includeInventory: true);
 
         var tf = result.Timeframes.Single(t => t.Timeframe == "1h");
         Assert.Equal(3, tf.TotalKlines);
-        Assert.Equal(1, tf.CandlePatternsCount);
-        Assert.Equal(1, tf.TechnicalIndicatorsCount);
-        Assert.Equal(1, tf.WindowVectorsCount);
-        Assert.Equal(0, tf.GapsCount);
+        Assert.Equal(1, tf.CandlePatterns);
+        Assert.Equal(1, tf.TechnicalIndicators);
+        Assert.Equal(1, tf.WindowVectors);
+        Assert.Equal(0, tf.MissingBars);
     }
 
     [Fact]
@@ -93,14 +94,16 @@ public class DataAuditServiceTests
 
         var tf = result.Timeframes.Single(t => t.Timeframe == "1h");
         Assert.Equal(3, tf.TotalKlines);
-        Assert.Equal(4, tf.ExpectedCount);
-        Assert.Equal(1, tf.GapsCount);
-        Assert.Single(tf.Gaps);
+        Assert.Equal(4, tf.ExpectedBars);
+        Assert.Equal(1, tf.MissingBars);
+        Assert.Equal(1, tf.GapRangeCount);
+        Assert.Single(tf.TopGaps);
 
-        var gap = tf.Gaps[0];
-        Assert.Equal(7_200_000L, gap.StartMs);
-        Assert.Equal(7_200_000L, gap.EndMs);
-        Assert.Equal(1, gap.MissingCount);
+        var gap = tf.TopGaps[0];
+        Assert.Equal(7_200_000L, gap.StartOpenTimeMs);
+        Assert.Equal(7_200_000L, gap.EndOpenTimeMs);
+        Assert.Equal(1, gap.MissingBars);
+        Assert.Equal(3_600_000L, tf.LargestGapMs);
     }
 
     [Fact]
@@ -118,15 +121,95 @@ public class DataAuditServiceTests
         foreach (var tf in result.Timeframes)
         {
             Assert.Equal(0, tf.TotalKlines);
-            Assert.Equal(0, tf.CandlePatternsCount);
-            Assert.Equal(0, tf.TechnicalIndicatorsCount);
-            Assert.Equal(0, tf.WindowVectorsCount);
-            Assert.Equal(0, tf.GapsCount);
-            Assert.Empty(tf.Gaps);
+            Assert.Null(tf.CandlePatterns);
+            Assert.Null(tf.TechnicalIndicators);
+            Assert.Null(tf.WindowVectors);
+            Assert.Equal(0, tf.MissingBars);
+            Assert.Empty(tf.TopGaps);
             Assert.Null(tf.MinOpenTimeMs);
             Assert.Null(tf.MaxOpenTimeMs);
-            Assert.Null(tf.ExpectedCount);
+            Assert.Null(tf.ExpectedBars);
         }
+    }
+
+    [Fact]
+    public async Task AuditAsync_CachesForFiveMinutesAndCanBeInvalidated()
+    {
+        await using var db = CreateInMemoryDb(Guid.NewGuid().ToString());
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var service = new DataAuditService(db, NullLogger<DataAuditService>.Instance, new DataAuditCache(cache));
+
+        var first = await service.AuditAsync("BTCUSDT");
+        db.Klines.Add(CreateKline("1h", 0));
+        await db.SaveChangesAsync();
+        var cached = await service.AuditAsync("BTCUSDT");
+        Assert.Same(first, cached);
+        Assert.Equal(0, cached.Timeframes.Single(x => x.Timeframe == "1h").TotalKlines);
+
+        var inventoryVariant = await service.AuditAsync("BTCUSDT", includeInventory: true);
+        Assert.NotSame(first, inventoryVariant);
+        Assert.Equal(1, inventoryVariant.Timeframes.Single(x => x.Timeframe == "1h").TotalKlines);
+        Assert.Equal(0, inventoryVariant.Timeframes.Single(x => x.Timeframe == "1h").CandlePatterns);
+
+        service.Invalidate("BTCUSDT");
+        var refreshed = await service.AuditAsync("BTCUSDT");
+        Assert.Equal(1, refreshed.Timeframes.Single(x => x.Timeframe == "1h").TotalKlines);
+        var refreshedInventory = await service.AuditAsync("BTCUSDT", includeInventory: true);
+        Assert.NotSame(inventoryVariant, refreshedInventory);
+    }
+
+    [Fact]
+    public void CalculateExpectedRange_EmptyTimeframeReportsEntireConfiguredRangeMissing()
+    {
+        var result = DataAuditService.CalculateExpectedRange(0, 0, 10_800_000, 3_600_000);
+
+        Assert.Equal(4, result.ExpectedBars);
+        Assert.Equal(4, result.MissingBars);
+    }
+
+    [Fact]
+    public void ShouldUseLiveFallback_PartialLedgerCannotValidateEmptyTimeframe()
+    {
+        Assert.True(DataAuditService.ShouldUseLiveFallback(
+            ledgerInitialized: true, minOpenTimeMs: null, maxOpenTimeMs: null, overlapsLatest: false));
+        Assert.False(DataAuditService.ShouldUseLiveFallback(
+            ledgerInitialized: true, minOpenTimeMs: 0, maxOpenTimeMs: 10, overlapsLatest: false));
+    }
+
+    [Fact]
+    public void CanExtendTrailingGap_OnlyAllowsEvidenceFreePendingBootstrapTail()
+    {
+        var bootstrap = new KlineGapState
+        {
+            Status = KlineGapStatuses.Pending,
+            AttemptCount = 0,
+            Reason = "BOOTSTRAP_DISCOVERY"
+        };
+
+        Assert.True(DataAuditService.CanExtendTrailingGap(bootstrap));
+        Assert.False(DataAuditService.CanExtendTrailingGap(new KlineGapState
+        {
+            Status = KlineGapStatuses.Pending,
+            AttemptCount = 1,
+            NextRetryAtUtc = DateTime.UtcNow.AddHours(24),
+            Reason = "BOOTSTRAP_DISCOVERY"
+        }));
+        Assert.False(DataAuditService.CanExtendTrailingGap(new KlineGapState
+        {
+            Status = KlineGapStatuses.Unavailable,
+            Reason = "BOOTSTRAP_DISCOVERY"
+        }));
+    }
+
+    [Fact]
+    public void CalculateTrailingExtension_StartsAfterEvidenceBearingTailWithoutOverlap()
+    {
+        var extension = DataAuditService.CalculateTrailingExtension(100, 160, 10);
+
+        Assert.NotNull(extension);
+        Assert.Equal(110, extension.Value.StartOpenTimeMs);
+        Assert.Equal(6, extension.Value.MissingBars);
+        Assert.True(extension.Value.StartOpenTimeMs > 100);
     }
 
     private static Kline CreateKline(string timeframe, long openTimeMs) => new()

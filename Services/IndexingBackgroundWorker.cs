@@ -17,6 +17,7 @@ public class IndexingBackgroundWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<IndexingBackgroundWorker> _logger;
     private readonly IndexingOptions _options;
+    private readonly TimeProvider _timeProvider;
 
     private static readonly string[] Timeframes = { "1m", "5m", "15m", "30m", "1h", "4h", "1d" };
     private static readonly string[] FeatureTypes = { "open", "high", "low", "close", "all", "returns_shape", "returns_log", "volume_norm", "volatility", "trend" };
@@ -26,11 +27,13 @@ public class IndexingBackgroundWorker : BackgroundService
     public IndexingBackgroundWorker(
         IServiceScopeFactory scopeFactory,
         ILogger<IndexingBackgroundWorker> logger,
-        IOptions<IndexingOptions> options)
+        IOptions<IndexingOptions> options,
+        TimeProvider? timeProvider = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _options = options.Value;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -40,6 +43,7 @@ public class IndexingBackgroundWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var startedAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
             try
             {
                 await RunCycleAsync(stoppingToken);
@@ -47,6 +51,17 @@ public class IndexingBackgroundWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Indexing background cycle failed");
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    await WorkerHeartbeatStore.MarkFailedAsync(
+                        scope.ServiceProvider.GetRequiredService<AppDbContext>(),
+                        nameof(IndexingBackgroundWorker), startedAtUtc, _timeProvider.GetUtcNow().UtcDateTime, ex, stoppingToken);
+                }
+                catch (Exception heartbeatException)
+                {
+                    _logger.LogWarning(heartbeatException, "Could not persist failed indexing heartbeat");
+                }
             }
 
             try
@@ -62,6 +77,14 @@ public class IndexingBackgroundWorker : BackgroundService
 
     private async Task RunCycleAsync(CancellationToken cancellationToken)
     {
+        var cycleStartedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        var failures = 0;
+        using (var heartbeatScope = _scopeFactory.CreateScope())
+        {
+            await WorkerHeartbeatStore.MarkStartedAsync(
+                heartbeatScope.ServiceProvider.GetRequiredService<AppDbContext>(),
+                nameof(IndexingBackgroundWorker), cycleStartedAt, cancellationToken);
+        }
         _logger.LogInformation("Starting indexing cycle for {Symbol} across timeframes: {Timeframes}", Symbol, string.Join(", ", Timeframes));
 
         if (_options.EnableParallelTimeframes && Timeframes.Length > 1)
@@ -76,10 +99,12 @@ public class IndexingBackgroundWorker : BackgroundService
             {
                 try
                 {
-                    await IndexTimeframeAsync(Symbol, tf, ct);
+                    if (!await IndexTimeframeAsync(Symbol, tf, ct))
+                        Interlocked.Increment(ref failures);
                 }
                 catch (Exception ex)
                 {
+                    Interlocked.Increment(ref failures);
                     _logger.LogWarning(ex, "Failed to index timeframe {Symbol} {Timeframe}", Symbol, tf);
                 }
             });
@@ -90,22 +115,36 @@ public class IndexingBackgroundWorker : BackgroundService
             {
                 try
                 {
-                    await IndexTimeframeAsync(Symbol, tf, cancellationToken);
+                    if (!await IndexTimeframeAsync(Symbol, tf, cancellationToken))
+                        failures++;
                 }
                 catch (Exception ex)
                 {
+                    failures++;
                     _logger.LogWarning(ex, "Failed to index timeframe {Symbol} {Timeframe}", Symbol, tf);
                 }
             }
         }
 
         // Market metrics (funding rate, open interest, liquidations) — không phụ thuộc timeframe chính
-        await IndexMarketMetricsAsync(cancellationToken);
+        if (!await IndexMarketMetricsAsync(cancellationToken))
+            failures++;
+
+        using (var heartbeatScope = _scopeFactory.CreateScope())
+        {
+            var heartbeatDb = heartbeatScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (failures == 0)
+                await WorkerHeartbeatStore.MarkSucceededAsync(heartbeatDb, nameof(IndexingBackgroundWorker), cycleStartedAt,
+                    _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            else
+                await WorkerHeartbeatStore.MarkFailedAsync(heartbeatDb, nameof(IndexingBackgroundWorker), cycleStartedAt,
+                    _timeProvider.GetUtcNow().UtcDateTime, new InvalidOperationException($"{failures} indexing operation(s) failed."), cancellationToken);
+        }
 
         _logger.LogInformation("Completed indexing cycle for {Symbol}", Symbol);
     }
 
-    private async Task IndexTimeframeAsync(string symbol, string timeframe, CancellationToken cancellationToken)
+    private async Task<bool> IndexTimeframeAsync(string symbol, string timeframe, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -114,29 +153,31 @@ public class IndexingBackgroundWorker : BackgroundService
         var volumeIndexer = scope.ServiceProvider.GetRequiredService<CandleVolumeIndexer>();
         var techIndexer = scope.ServiceProvider.GetRequiredService<TechnicalIndicatorIndexer>();
         var patternSeqIndexer = scope.ServiceProvider.GetRequiredService<CandlePatternSequenceIndexer>();
+        var cache = scope.ServiceProvider.GetRequiredService<DataAuditCache>();
 
         var stopwatch = Stopwatch.StartNew();
+        var succeeded = true;
 
         // Load Klines từ DB một lần cho cả indexer trong timeframe.
-        var allKlines = await LoadKlinesAsync(db, symbol, timeframe, cancellationToken);
+        var (klines, totalKlines) = await LoadKlinesAsync(
+            db, symbol, timeframe,
+            _options.EnableStreamingIndexing ? _options.MaxInMemoryKlines : null,
+            cancellationToken);
 
-        if (allKlines.Count == 0)
+        if (klines.Count == 0)
         {
             _logger.LogWarning("No klines in DB for {Symbol} {Timeframe}; skipping indexing", symbol, timeframe);
-            return;
+            return true;
         }
 
         // Giới hạn số nến trong memory nếu vượt quá cấu hình.
-        var isStreaming = _options.EnableStreamingIndexing && allKlines.Count > _options.MaxInMemoryKlines;
-        var klines = isStreaming
-            ? IndexingRangeHelper.ApplyLookback(allKlines, _options.MaxInMemoryKlines)
-            : allKlines;
+        var isStreaming = totalKlines > klines.Count;
 
         if (isStreaming)
         {
             _logger.LogWarning(
                 "Timeframe {Symbol} {Timeframe} has {Total} klines, limiting in-memory processing to {Limit} most recent bars",
-                symbol, timeframe, allKlines.Count, klines.Count);
+                symbol, timeframe, totalKlines, klines.Count);
         }
 
         // 1. Candle patterns
@@ -147,6 +188,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
+            succeeded = false;
             _logger.LogWarning(ex, "Failed to auto-index candle patterns for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -162,6 +204,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
+            succeeded = false;
             _logger.LogWarning(ex, "Failed to auto-build window vectors for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -174,6 +217,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
+            succeeded = false;
             _logger.LogWarning(ex, "Failed to auto-index volume stats for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -194,6 +238,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
+            succeeded = false;
             _logger.LogWarning(ex, "Failed to auto-index technical indicators for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -206,28 +251,38 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
+            succeeded = false;
             _logger.LogWarning(ex, "Failed to auto-index pattern sequences for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
         stopwatch.Stop();
+        cache.Invalidate(symbol);
         ReleaseMemory();
         _logger.LogInformation(
             "Finished indexing {Symbol} {Timeframe} in {ElapsedMs}ms (processed {Bars} bars, streaming={Streaming})",
             symbol, timeframe, stopwatch.ElapsedMilliseconds, klines.Count, isStreaming);
+        return succeeded;
     }
 
-    private static async Task<IReadOnlyList<KlineDto>> LoadKlinesAsync(
+    private static async Task<(IReadOnlyList<KlineDto> Klines, long Total)> LoadKlinesAsync(
         AppDbContext db,
         string symbol,
         string timeframe,
+        int? maxRows,
         CancellationToken cancellationToken)
     {
-        return await db.Klines
+        var baseQuery = db.Klines
             .AsNoTracking()
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)
-            .OrderBy(k => k.OpenTimeMs)
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe);
+        var total = await baseQuery.LongCountAsync(cancellationToken);
+        IQueryable<Kline> query = baseQuery.OrderByDescending(k => k.OpenTimeMs);
+        if (maxRows is > 0)
+            query = query.Take(maxRows.Value);
+        var rows = await query
             .Select(k => KlineMapper.ToDto(k))
             .ToListAsync(cancellationToken);
+        rows.Reverse();
+        return (rows, total);
     }
 
     private void ReleaseMemory()
@@ -245,7 +300,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
     }
 
-    private async Task IndexMarketMetricsAsync(CancellationToken cancellationToken)
+    private async Task<bool> IndexMarketMetricsAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var marketIndexer = scope.ServiceProvider.GetRequiredService<MarketMetricsIndexer>();
@@ -257,10 +312,12 @@ public class IndexingBackgroundWorker : BackgroundService
             // Liquidations: endpoint /fapi/v1/forceOrders yêu cầu API key (401 Unauthorized) — tắt để tránh log spam.
             // await marketIndexer.IndexLiquidationsAsync(Symbol, cancellationToken);
             _logger.LogInformation("Auto-indexed market metrics for {Symbol}", Symbol);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to auto-index market metrics for {Symbol}", Symbol);
+            return false;
         }
     }
 }

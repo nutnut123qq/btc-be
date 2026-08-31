@@ -3,6 +3,7 @@ using Backend.Options;
 using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Backend.Services;
 
@@ -20,8 +21,10 @@ public class KlinesIngestionWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<KlinesIngestionWorker> _logger;
     private readonly KlinesIngestionOptions _options;
+    private readonly DataAuditCache? _cache;
+    private readonly TimeProvider _timeProvider;
 
-    private static readonly string[] DefaultSymbols = { "BTCUSDT", "ETHUSDT", "SOLUSDT" };
+    private static readonly string[] DefaultSymbols = { "BTCUSDT" };
     private const int BatchLimit = 1000;
 
     // Ưu tiên khung lớn trước: ít request hơn, giảm gapCount nhanh hơn.
@@ -30,11 +33,15 @@ public class KlinesIngestionWorker : BackgroundService
     public KlinesIngestionWorker(
         IServiceScopeFactory scopeFactory,
         ILogger<KlinesIngestionWorker> logger,
-        IOptions<KlinesIngestionOptions> options)
+        IOptions<KlinesIngestionOptions> options,
+        DataAuditCache? cache = null,
+        TimeProvider? timeProvider = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _options = options.Value;
+        _cache = cache;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,6 +50,7 @@ public class KlinesIngestionWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var startedAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
             try
             {
                 await RunCycleAsync(stoppingToken);
@@ -50,6 +58,17 @@ public class KlinesIngestionWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Klines ingestion cycle failed");
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    await WorkerHeartbeatStore.MarkFailedAsync(
+                        scope.ServiceProvider.GetRequiredService<AppDbContext>(),
+                        nameof(KlinesIngestionWorker), startedAtUtc, _timeProvider.GetUtcNow().UtcDateTime, ex, stoppingToken);
+                }
+                catch (Exception heartbeatException)
+                {
+                    _logger.LogWarning(heartbeatException, "Could not persist failed ingestion heartbeat");
+                }
             }
 
             try
@@ -68,115 +87,131 @@ public class KlinesIngestionWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var binance = scope.ServiceProvider.GetRequiredService<IBinanceKlinesService>();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
+        var cycleStartedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        await WorkerHeartbeatStore.MarkStartedAsync(db, nameof(KlinesIngestionWorker), cycleStartedAt, cancellationToken);
         var startMs = ToUtcMs(_options.BackfillStartDate);
-        var endMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
+        var endMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
         var maxRequests = Math.Max(1, _options.MaxRequestsPerCycle);
         var remainingRequests = maxRequests;
-        var pendingLatestRequests = DefaultSymbols.Length * DefaultTimeframes.Length;
+        var maxRequestsPerTimeframe = Math.Max(1,
+            (maxRequests + DefaultTimeframes.Length - 1) / DefaultTimeframes.Length);
         var totalInserted = 0;
+        Exception? firstFailure = null;
 
         _logger.LogInformation(
-            "Klines ingestion cycle started for {SymbolsCount} symbols. Budget={Budget} requests, range={StartIso} to {EndIso}",
+            "Klines ingestion cycle started for {SymbolsCount} symbols. Historical budget={Budget} requests, range={StartIso} to {EndIso}",
             DefaultSymbols.Length,
             maxRequests,
             DateTimeOffset.FromUnixTimeMilliseconds(startMs).UtcDateTime.ToString("O"),
             DateTimeOffset.FromUnixTimeMilliseconds(endMs).UtcDateTime.ToString("O"));
 
+        // Latest ingestion has its own budget: historical gaps can never starve current candles.
         foreach (var symbol in DefaultSymbols)
         {
-            if (remainingRequests <= 0 || cancellationToken.IsCancellationRequested)
-                break;
-
             foreach (var tf in DefaultTimeframes)
             {
-                if (remainingRequests <= 0 || cancellationToken.IsCancellationRequested)
-                {
-                    _logger.LogInformation("Klines ingestion request budget exhausted; skipping remaining symbols/timeframes");
+                if (cancellationToken.IsCancellationRequested)
                     break;
-                }
-
-                var intervalMs = Timeframes.IntervalToMs(tf);
-                if (intervalMs <= 0)
-                {
-                    _logger.LogWarning("Skipping invalid timeframe {Timeframe}", tf);
-                    continue;
-                }
-
                 try
                 {
-                    // 1. Lấy dữ liệu mới nhất.
                     var latestLimit = GetLatestLimit(tf);
                     var latest = await binance.GetKlinesAsync(symbol, tf, latestLimit, cancellationToken: cancellationToken);
-                    remainingRequests--;
-                    pendingLatestRequests--;
-
                     var latestInserted = await InsertBatchAsync(db, symbol, tf, latest, cancellationToken);
                     totalInserted += latestInserted;
-
                     _logger.LogInformation(
-                        "Fetched latest {Count} klines for {Symbol} {Timeframe}, inserted {Inserted}. Budget remaining {Remaining}",
-                        latest.Count, symbol, tf, latestInserted, remainingRequests);
-
-                    // 2. Phát hiện gaps trong khoảng đã cấu hình.
-                    var gaps = await FindGapsAsync(db, symbol, tf, startMs, endMs, _options.MaxGapsPerTimeframe, cancellationToken);
-                    if (gaps.Count == 0)
-                    {
-                        _logger.LogInformation("No gaps detected for {Symbol} {Timeframe}", symbol, tf);
-                        continue;
-                    }
-
-                    var gapDescriptions = string.Join(", ",
-                        gaps.Take(10).Select(g => $"{FormatMs(g.StartMs)}-{FormatMs(g.EndMs)}({g.MissingCount})"));
-
-                    if (gaps.Count > 10)
-                        gapDescriptions += $", ... ({gaps.Count - 10} more)";
-
-                    _logger.LogInformation(
-                        "Detected {GapCount} gaps for {Symbol} {Timeframe}: {Gaps}",
-                        gaps.Count, symbol, tf, gapDescriptions);
-
-                    // 3. Backfill gaps cho đến khi hết budget.
-                    foreach (var gap in gaps)
-                    {
-                        var backfillBudget = remainingRequests - pendingLatestRequests;
-                        if (backfillBudget <= 0 || cancellationToken.IsCancellationRequested)
-                            break;
-
-                        var (inserted, requestsUsed) = await BackfillGapAsync(
-                            binance, db, symbol, tf, intervalMs,
-                            gap.StartMs, Math.Min(gap.EndMs, endMs),
-                            backfillBudget, cancellationToken);
-
-                        remainingRequests -= requestsUsed;
-                        totalInserted += inserted;
-
-                        _logger.LogInformation(
-                            "Backfilled gap {Symbol} {Timeframe} [{StartIso} .. {EndIso}]: inserted {Inserted} in {RequestsUsed} request(s), budget remaining {Remaining}",
-                            symbol, tf,
-                            DateTimeOffset.FromUnixTimeMilliseconds(gap.StartMs).UtcDateTime.ToString("O"),
-                            DateTimeOffset.FromUnixTimeMilliseconds(gap.EndMs).UtcDateTime.ToString("O"),
-                            inserted, requestsUsed, remainingRequests);
-                    }
+                        "Fetched latest {Count} klines for {Symbol} {Timeframe}, inserted {Inserted}",
+                        latest.Count, symbol, tf, latestInserted);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to process klines for {Symbol} {Timeframe}", symbol, tf);
+                    firstFailure ??= ex;
+                    _logger.LogWarning(ex, "Failed latest klines for {Symbol} {Timeframe}", symbol, tf);
                 }
             }
         }
 
+        // Discover every timeframe before spending the separate historical budget.
+        foreach (var symbol in DefaultSymbols)
+        {
+            foreach (var tf in DefaultTimeframes)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+                try
+                {
+                    var gaps = await FindGapsAsync(db, symbol, tf, startMs, endMs, _options.MaxGapsPerTimeframe, cancellationToken);
+                    await PersistDetectedGapsAsync(db, symbol, tf, gaps, cancellationToken);
+                    await ReconcileResolvedGapStatesAsync(db, symbol, tf, Timeframes.IntervalToMs(tf), cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    firstFailure ??= ex;
+                    _logger.LogWarning(ex, "Failed historical gaps for {Symbol} {Timeframe}", symbol, tf);
+                }
+            }
+        }
+
+        var due = await GetDueGapStatesAsync(db, _options.MaxGapsPerTimeframe * DefaultTimeframes.Length, cancellationToken);
+        var usedByTimeframe = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var state in due)
+        {
+            var used = usedByTimeframe.GetValueOrDefault(state.Timeframe);
+            if (remainingRequests <= 0 || cancellationToken.IsCancellationRequested)
+                break;
+            if (used >= maxRequestsPerTimeframe)
+                continue;
+            try
+            {
+                var intervalMs = Timeframes.IntervalToMs(state.Timeframe);
+                var (inserted, requestsUsed, emptyResponse, requestFailed) = await BackfillGapAsync(
+                    binance, db, state.Symbol, state.Timeframe, intervalMs,
+                    state.StartOpenTimeMs, Math.Min(state.EndOpenTimeMs, endMs),
+                    Math.Min(remainingRequests, maxRequestsPerTimeframe - used), cancellationToken);
+                remainingRequests -= requestsUsed;
+                usedByTimeframe[state.Timeframe] = used + requestsUsed;
+                totalInserted += inserted;
+                if (requestFailed)
+                    firstFailure ??= new HttpRequestException("Historical Binance request failed; see backend logs.");
+                await UpdateGapAfterAttemptAsync(db, state.Id, intervalMs, emptyResponse,
+                    cancellationToken, requestFailed ? "Binance request failed" : null);
+            }
+            catch (Exception ex)
+            {
+                firstFailure ??= ex;
+                _logger.LogWarning(ex, "Failed historical gap {GapId}", state.Id);
+            }
+        }
+
+        if (firstFailure is null)
+            await WorkerHeartbeatStore.MarkSucceededAsync(db, nameof(KlinesIngestionWorker), cycleStartedAt,
+                _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+        else
+            await WorkerHeartbeatStore.MarkFailedAsync(db, nameof(KlinesIngestionWorker), cycleStartedAt,
+                _timeProvider.GetUtcNow().UtcDateTime, firstFailure, cancellationToken);
         _logger.LogInformation(
-            "Klines ingestion cycle completed. Total inserted {TotalInserted}, budget remaining {Remaining}/{Budget}",
+            "Klines ingestion cycle completed. Total inserted {TotalInserted}, historical budget remaining {Remaining}/{Budget}",
             totalInserted, remainingRequests, maxRequests);
+    }
+
+    internal Task<List<KlineGapState>> GetDueGapStatesAsync(
+        AppDbContext db, int take, CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        return db.KlineGapStates
+            .Where(x => x.Status == KlineGapStatuses.Pending
+                && (x.NextRetryAtUtc == null || x.NextRetryAtUtc <= now))
+            .OrderBy(x => x.LastAttemptAtUtc.HasValue)
+            .ThenBy(x => x.LastAttemptAtUtc)
+            .ThenBy(x => x.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
     }
 
     /// <summary>
     /// Backfill một khoảng gap từ <paramref name="gapStartMs"/> đến <paramref name="gapEndMs"/>.
     /// Trả về số row đã insert và số request đã dùng.
     /// </summary>
-    internal async Task<(int Inserted, int RequestsUsed)> BackfillGapAsync(
+    internal async Task<(int Inserted, int RequestsUsed, bool EmptyResponse, bool RequestFailed)> BackfillGapAsync(
         IBinanceKlinesService binance,
         AppDbContext db,
         string symbol,
@@ -188,10 +223,12 @@ public class KlinesIngestionWorker : BackgroundService
         CancellationToken cancellationToken)
     {
         if (gapStartMs > gapEndMs || requestBudget <= 0)
-            return (0, 0);
+            return (0, 0, false, false);
 
         var inserted = 0;
         var requestsUsed = 0;
+        var emptyResponse = false;
+        var requestFailed = false;
         var cursor = gapStartMs;
         var delay = ComputeRequestDelay();
 
@@ -213,6 +250,8 @@ public class KlinesIngestionWorker : BackgroundService
             }
             catch (Exception ex)
             {
+                requestsUsed++;
+                requestFailed = true;
                 _logger.LogWarning(
                     ex,
                     "Binance request failed for {Symbol} {Timeframe} gap at cursor {CursorIso}",
@@ -223,6 +262,7 @@ public class KlinesIngestionWorker : BackgroundService
 
             if (batch.Count == 0)
             {
+                emptyResponse = true;
                 _logger.LogInformation(
                     "Empty batch for {Symbol} {Timeframe} gap at cursor {CursorIso}; stopping this backfill attempt",
                     symbol, timeframe,
@@ -254,7 +294,7 @@ public class KlinesIngestionWorker : BackgroundService
             }
         }
 
-        return (inserted, requestsUsed);
+        return (inserted, requestsUsed, emptyResponse, requestFailed);
     }
 
     /// <summary>
@@ -273,6 +313,7 @@ public class KlinesIngestionWorker : BackgroundService
         var intervalMs = Timeframes.IntervalToMs(timeframe);
         if (intervalMs <= 0 || startMs > endMs)
             return Array.Empty<Gap>();
+        endMs -= endMs % intervalMs;
 
         var stats = await db.Klines
             .AsNoTracking()
@@ -307,29 +348,189 @@ public class KlinesIngestionWorker : BackgroundService
         var expectedBetweenMinMax = ((stats.Max - stats.Min) / intervalMs) + 1;
         if (stats.Count < expectedBetweenMinMax)
         {
-            var existingTimes = await db.Klines
-                .AsNoTracking()
-                .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && k.OpenTimeMs >= startMs && k.OpenTimeMs <= endMs)
-                .OrderBy(k => k.OpenTimeMs)
-                .Select(k => k.OpenTimeMs)
-                .ToListAsync(cancellationToken);
-
-            for (var i = 1; i < existingTimes.Count; i++)
-            {
-                var prev = existingTimes[i - 1];
-                var curr = existingTimes[i];
-                if (curr - prev > intervalMs)
-                {
-                    var missing = ((curr - prev) / intervalMs) - 1;
-                    gaps.Add(new Gap(prev + intervalMs, curr - intervalMs, missing));
-                }
-            }
+            var internalGaps = await KlineGapQuery.GetTopInternalGapsAsync(
+                db, symbol, timeframe, intervalMs, maxGaps, startMs, endMs, cancellationToken);
+            gaps.AddRange(internalGaps.Select(x => new Gap(x.StartOpenTimeMs, x.EndOpenTimeMs, x.MissingBars)));
         }
 
         return gaps
             .OrderByDescending(g => g.MissingCount)
             .Take(maxGaps)
             .ToList();
+    }
+
+    internal async Task PersistDetectedGapsAsync(
+        AppDbContext db,
+        string symbol,
+        string timeframe,
+        IReadOnlyList<Gap> gaps,
+        CancellationToken cancellationToken)
+    {
+        if (gaps.Count == 0)
+            return;
+
+        var minStart = gaps.Min(x => x.StartMs);
+        var maxEnd = gaps.Max(x => x.EndMs);
+        var existing = await db.KlineGapStates
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && x.StartOpenTimeMs <= maxEnd && x.EndOpenTimeMs >= minStart)
+            .ToListAsync(cancellationToken);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var assignedMissing = new Dictionary<KlineGapState, long>();
+        foreach (var gap in gaps)
+        {
+            var state = existing
+                .Where(x => x.StartOpenTimeMs <= gap.StartMs && x.EndOpenTimeMs >= gap.EndMs)
+                .OrderBy(x => x.EndOpenTimeMs - x.StartOpenTimeMs)
+                .FirstOrDefault()
+                ?? existing.Where(x => x.StartOpenTimeMs <= gap.EndMs && x.EndOpenTimeMs >= gap.StartMs)
+                    .OrderBy(x => x.Id)
+                    .FirstOrDefault();
+            if (state is not null)
+            {
+                if (state.Status == KlineGapStatuses.Filled)
+                {
+                    state.Status = KlineGapStatuses.Pending;
+                    state.AttemptCount = 0;
+                    state.NextRetryAtUtc = null;
+                    state.Reason = "Previously filled gap was detected again.";
+                }
+                state.StartOpenTimeMs = Math.Min(state.StartOpenTimeMs, gap.StartMs);
+                state.EndOpenTimeMs = Math.Max(state.EndOpenTimeMs, gap.EndMs);
+                assignedMissing[state] = assignedMissing.GetValueOrDefault(state) + gap.MissingCount;
+                state.MissingBars = assignedMissing[state];
+                state.UpdatedAtUtc = now;
+                continue;
+            }
+            var added = new KlineGapState
+            {
+                Symbol = symbol,
+                Timeframe = timeframe,
+                StartOpenTimeMs = gap.StartMs,
+                EndOpenTimeMs = gap.EndMs,
+                MissingBars = gap.MissingCount,
+                Status = KlineGapStatuses.Pending,
+                FirstDetectedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+            db.KlineGapStates.Add(added);
+            existing.Add(added);
+            assignedMissing[added] = gap.MissingCount;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        _cache?.Invalidate(symbol);
+    }
+
+    internal async Task<int> ReconcileResolvedGapStatesAsync(
+        AppDbContext db,
+        string symbol,
+        string timeframe,
+        long intervalMs,
+        CancellationToken cancellationToken)
+    {
+        if (intervalMs <= 0)
+            return 0;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        int updated;
+        if (db.Database.IsRelational())
+        {
+            updated = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE "KlineGapStates" AS g
+                SET "Status" = {KlineGapStatuses.Filled}, "MissingBars" = 0,
+                    "NextRetryAtUtc" = NULL, "Reason" = NULL, "UpdatedAtUtc" = {now}
+                WHERE g."Symbol" = {symbol} AND g."Timeframe" = {timeframe}
+                  AND g."Status" IN ({KlineGapStatuses.Pending}, {KlineGapStatuses.Unavailable})
+                  AND (SELECT COUNT(*) FROM "Klines" AS k
+                       WHERE k."Symbol" = g."Symbol" AND k."Timeframe" = g."Timeframe"
+                         AND k."OpenTimeMs" >= g."StartOpenTimeMs"
+                         AND k."OpenTimeMs" <= g."EndOpenTimeMs")
+                      >= ((g."EndOpenTimeMs" - g."StartOpenTimeMs") / {intervalMs}) + 1
+                """, cancellationToken);
+        }
+        else
+        {
+            updated = 0;
+            var states = await db.KlineGapStates
+                .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                    && (x.Status == KlineGapStatuses.Pending || x.Status == KlineGapStatuses.Unavailable))
+                .ToListAsync(cancellationToken);
+            foreach (var state in states)
+            {
+                var expected = ((state.EndOpenTimeMs - state.StartOpenTimeMs) / intervalMs) + 1;
+                var present = await db.Klines.LongCountAsync(k => k.Symbol == symbol && k.Timeframe == timeframe
+                    && k.OpenTimeMs >= state.StartOpenTimeMs && k.OpenTimeMs <= state.EndOpenTimeMs, cancellationToken);
+                if (present < expected)
+                    continue;
+                state.Status = KlineGapStatuses.Filled;
+                state.MissingBars = 0;
+                state.NextRetryAtUtc = null;
+                state.Reason = null;
+                state.UpdatedAtUtc = now;
+                updated++;
+            }
+            if (updated > 0)
+                await db.SaveChangesAsync(cancellationToken);
+        }
+        if (updated > 0)
+            _cache?.Invalidate(symbol);
+        return updated;
+    }
+
+    internal async Task UpdateGapAfterAttemptAsync(
+        AppDbContext db,
+        long gapStateId,
+        long intervalMs,
+        bool emptyResponse,
+        CancellationToken cancellationToken,
+        string? failureReason = null)
+    {
+        var state = await db.KlineGapStates.SingleAsync(x => x.Id == gapStateId, cancellationToken);
+        var expected = ((state.EndOpenTimeMs - state.StartOpenTimeMs) / intervalMs) + 1;
+        var present = await db.Klines.AsNoTracking().LongCountAsync(k =>
+            k.Symbol == state.Symbol && k.Timeframe == state.Timeframe
+            && k.OpenTimeMs >= state.StartOpenTimeMs && k.OpenTimeMs <= state.EndOpenTimeMs,
+            cancellationToken);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        state.LastAttemptAtUtc = now;
+        state.UpdatedAtUtc = now;
+        state.MissingBars = Math.Max(0, expected - present);
+        if (state.MissingBars == 0)
+        {
+            state.Status = KlineGapStatuses.Filled;
+            state.NextRetryAtUtc = null;
+            state.Reason = null;
+        }
+        else if (emptyResponse)
+        {
+            state.AttemptCount++;
+            if (state.AttemptCount >= 3)
+            {
+                state.Status = KlineGapStatuses.Unavailable;
+                state.NextRetryAtUtc = null;
+                state.Reason = $"{failureReason ?? "Binance returned no data"} in three attempts at least 24 hours apart.";
+            }
+            else
+            {
+                state.Status = KlineGapStatuses.Pending;
+                state.NextRetryAtUtc = now.AddHours(24);
+                state.Reason = $"{failureReason ?? "Binance returned no data"}; retry deferred for 24 hours.";
+            }
+        }
+        else if (failureReason is not null)
+        {
+            state.Status = KlineGapStatuses.Pending;
+            state.NextRetryAtUtc = now.AddHours(24);
+            state.Reason = $"{failureReason}; retry deferred for 24 hours.";
+        }
+        else
+        {
+            state.Status = KlineGapStatuses.Pending;
+            state.AttemptCount = 0;
+            state.NextRetryAtUtc = null;
+            state.Reason = null;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        _cache?.Invalidate(state.Symbol);
     }
 
     /// <summary>Insert một batch nến, bỏ qua các nến đã tồn tại. Xử lý lỗi duplicate key.</summary>
@@ -382,9 +583,10 @@ public class KlinesIngestionWorker : BackgroundService
         try
         {
             await db.SaveChangesAsync(cancellationToken);
+            _cache?.Invalidate(symbol);
             return toAdd.Count;
         }
-        catch (DbUpdateException ex)
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             _logger.LogWarning(
                 ex,
@@ -397,6 +599,9 @@ public class KlinesIngestionWorker : BackgroundService
             db.ChangeTracker.Clear();
         }
     }
+
+    internal static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
     private static int GetLatestLimit(string timeframe) => timeframe switch
     {

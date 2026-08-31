@@ -1,5 +1,11 @@
 namespace Backend.Services.Models;
 
+public static class GapLedgerStatuses
+{
+    public const string Reconciled = "Reconciled";
+    public const string LiveFallback = "LiveFallback";
+}
+
 public record DataAuditResponse(
     string Symbol,
     DateTime GeneratedAtUtc,
@@ -12,22 +18,32 @@ public record TimeframeAudit(
     long TotalKlines,
     long? MinOpenTimeMs,
     long? MaxOpenTimeMs,
-    long? ExpectedCount,
-    long GapsCount,
+    long? ExpectedBars,
+    long MissingBars,
+    long GapRangeCount,
     double DataCoveragePct,
     long LargestGapMs,
-    long CandlePatternsCount,
-    long TechnicalIndicatorsCount,
-    long WindowVectorsCount,
-    long MlFeatureStoresCount,
-    long PriceTargetsCount,
-    long WindowClassificationDatasetsCount,
-    IReadOnlyList<CandleGap> Gaps);
+    long PendingGapCount,
+    long UnavailableGapCount,
+    long? LatestCandleAgeSeconds,
+    string GapLedgerStatus,
+    long? CandlePatterns,
+    long? TechnicalIndicators,
+    long? WindowVectors,
+    long? MlFeatureStores,
+    long? PriceTargets,
+    long? WindowClassificationDatasets,
+    IReadOnlyList<CandleGap> TopGaps);
 
 public record CandleGap(
-    long StartMs,
-    long EndMs,
-    long MissingCount);
+    long? Id,
+    long StartOpenTimeMs,
+    long EndOpenTimeMs,
+    long MissingBars,
+    string? Status,
+    int AttemptCount,
+    DateTime? NextRetryAtUtc,
+    string? Reason);
 
 public record NewsAudit(
     long Articles,

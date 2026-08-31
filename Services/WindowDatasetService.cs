@@ -10,6 +10,7 @@ public class WindowDatasetService : IWindowDatasetService
     private readonly AppDbContext _db;
     private readonly ILogger<WindowDatasetService> _logger;
     private readonly IndexingOptions _options;
+    private readonly DataAuditCache? _auditCache;
 
     private static readonly int[] WindowSizes = { 5, 10, 15, 20, 25 };
     private static readonly string[] Horizons = { "1h", "4h", "1d" };
@@ -55,11 +56,12 @@ public class WindowDatasetService : IWindowDatasetService
         "IsWeekend",
     };
 
-    public WindowDatasetService(AppDbContext db, ILogger<WindowDatasetService> logger, IOptions<IndexingOptions> options)
+    public WindowDatasetService(AppDbContext db, ILogger<WindowDatasetService> logger, IOptions<IndexingOptions> options, DataAuditCache? auditCache = null)
     {
         _db = db;
         _logger = logger;
         _options = options.Value;
+        _auditCache = auditCache;
     }
 
     public async Task<int> BuildAllAsync(string symbol, string timeframe, CancellationToken ct = default)
@@ -244,6 +246,8 @@ public class WindowDatasetService : IWindowDatasetService
             "Window dataset built for {Symbol} {Timeframe} ws={WindowSize} h={Horizon}: {Count} samples",
             symbol, timeframe, windowSize, horizon, totalInserted);
 
+        if (totalInserted > 0)
+            _auditCache?.Invalidate(symbol);
         return totalInserted;
     }
 

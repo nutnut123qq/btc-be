@@ -8,7 +8,7 @@ public class KlinesIngestionOptions
     /// <summary>Ngày bắt đầu (UTC) để kiểm tra và backfill gaps trong bảng Klines.</summary>
     public DateTime BackfillStartDate { get; set; } = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>Số request Binance tối đa trong một chu kỳ worker (latest + backfill).</summary>
+    /// <summary>Số request Binance tối đa cho historical gaps; latest data có budget riêng.</summary>
     public int MaxRequestsPerCycle { get; set; } = 60;
 
     /// <summary>Số lượng gaps tối đa được xử lý cho mỗi timeframe trong một chu kỳ.</summary>

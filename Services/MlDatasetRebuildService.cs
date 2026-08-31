@@ -60,17 +60,20 @@ public class MlDatasetRebuildService
     private readonly IMlDatasetService _mlDatasetService;
     private readonly IWindowDatasetService _windowDatasetService;
     private readonly ILogger<MlDatasetRebuildService> _logger;
+    private readonly DataAuditCache? _auditCache;
 
     public MlDatasetRebuildService(
         AppDbContext db,
         IMlDatasetService mlDatasetService,
         IWindowDatasetService windowDatasetService,
-        ILogger<MlDatasetRebuildService> logger)
+        ILogger<MlDatasetRebuildService> logger,
+        DataAuditCache? auditCache = null)
     {
         _db = db;
         _mlDatasetService = mlDatasetService;
         _windowDatasetService = windowDatasetService;
         _logger = logger;
+        _auditCache = auditCache;
     }
 
     public async Task<MlDatasetRebuildResult> RebuildAsync(
@@ -118,6 +121,7 @@ public class MlDatasetRebuildService
                 Report(tf, i, "deleting_old");
 
                 await DeleteOldDataAsync(symbol, tf, horizons, cancellationToken);
+                _auditCache?.Invalidate(symbol);
 
                 Report(tf, i, "features_targets");
                 _logger.LogInformation("[MlDatasetRebuild] Đang build features/targets {Symbol} {Timeframe}", symbol, tf);
@@ -174,6 +178,7 @@ public class MlDatasetRebuildService
             _db.Database.SetCommandTimeout(null);
         }
 
+        _auditCache?.Invalidate(symbol);
         return result;
     }
 
