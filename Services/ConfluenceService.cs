@@ -39,7 +39,7 @@ public class ConfluenceService : IConfluenceService
             { "15m", 0.10 }
         };
 
-        var timeframeAlignments = new List<object>();
+        var timeframeAlignments = new List<ConfluenceTimeframeAlignmentDto>();
         double totalWeightedScore = 0;
         
         var tfScores = new Dictionary<string, double>();
@@ -49,8 +49,8 @@ public class ConfluenceService : IConfluenceService
             // Get Regime
             var regime = await _regimeDetectionService.GetCurrentRegimeAsync(symbol, tf, ct);
             
-            // Get Archetype Match (assuming default window size 24)
-            var match = await _archetypeService.MatchCurrentWindowAsync(symbol, tf, 24, ct);
+            // Window size 20 is supported by the indexed archetype pipeline.
+            var match = await _archetypeService.MatchCurrentWindowAsync(symbol, tf, 20, ct);
             
             double regimeScore = 0;
             if (regime != null)
@@ -78,12 +78,13 @@ public class ConfluenceService : IConfluenceService
 
             totalWeightedScore += tfScore * weights[tf];
 
-            timeframeAlignments.Add(new
+            timeframeAlignments.Add(new ConfluenceTimeframeAlignmentDto
             {
                 Timeframe = tf,
-                Score = tfScore,
-                Regime = regime?.RegimeType ?? "Unknown",
-                Archetype = match?.Archetype?.ArchetypeCode ?? "Unknown",
+                DirectionalScore = tfScore,
+                Direction = tfScore > 0 ? "Bullish" : tfScore < 0 ? "Bearish" : "Neutral",
+                RegimeType = regime?.RegimeType ?? "Unknown",
+                ArchetypeCode = match?.Archetype?.ArchetypeCode,
                 Weight = weights[tf]
             });
         }
@@ -122,7 +123,7 @@ public class ConfluenceService : IConfluenceService
             TimeMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             ConfluenceScore = Math.Round(confluenceScore, 2),
             OverallDirection = overallDirection,
-            TimeframeAlignmentsJson = JsonSerializer.Serialize(timeframeAlignments),
+            TimeframeAlignmentsJson = JsonSerializer.Serialize(timeframeAlignments, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             HasConflict = hasConflict,
             ConflictDetails = conflictDetails,
             CreatedAtUtc = DateTime.UtcNow

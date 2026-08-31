@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Backend.Services;
@@ -9,6 +10,9 @@ namespace Backend.Controllers;
 [Route("api/ai-chat")]
 public class AiChatController : ControllerBase
 {
+    internal const int MaxBufferedSseChars = 65_536;
+    private static readonly string[] DeterministicEvidenceTags =
+        ["Experimental: Archetype Markov", "Market Regime", "Multi-TF Confluence", "VPVR & SMC", "Experimental: Ensemble"];
     private readonly IAiContextService _contextService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AiChatController> _logger;
@@ -21,6 +25,33 @@ public class AiChatController : ControllerBase
         _contextService = contextService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+    }
+
+    [HttpGet("capabilities")]
+    public async Task<ActionResult<AiCapabilitiesDto>> GetCapabilities(CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(2));
+            var client = _httpClientFactory.CreateClient("AIService");
+            using var response = await client.GetAsync("/api/capabilities", timeout.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AiCapabilitiesDto>(cancellationToken: timeout.Token);
+                if (result != null)
+                {
+                    result.FallbackExplanation = true;
+                    return Ok(result);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _logger.LogInformation("AI capabilities unavailable; deterministic explanation fallback remains active");
+        }
+
+        return Ok(AiCapabilitiesDto.Unavailable("AI service is unavailable."));
     }
 
     [HttpPost("query")]
@@ -51,13 +82,17 @@ public class AiChatController : ControllerBase
                 var responseJson = await response.Content.ReadAsStringAsync(ct);
                 var pyResult = JsonSerializer.Deserialize<JsonElement>(responseJson);
 
-                return Ok(new
+                var answer = pyResult.TryGetProperty("answer", out var ans) ? ans.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(answer))
                 {
-                    prompt = userQuestion,
-                    answer = pyResult.TryGetProperty("answer", out var ans) ? ans.GetString() : "Đã nhận phản hồi từ AI.",
-                    evidenceTags = pyResult.TryGetProperty("evidence_tags", out var ev) ? ev : (object)new[] { "Archetype", "Regime", "VPVR", "SMC", "Confluence" },
-                    timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                });
+                    return Ok(new
+                    {
+                        prompt = userQuestion,
+                        answer,
+                        evidenceTags = ReadEvidenceTags(pyResult),
+                        timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    });
+                }
             }
         }
         catch (Exception ex)
@@ -72,7 +107,7 @@ public class AiChatController : ControllerBase
         {
             prompt = userQuestion,
             answer = fallbackAnswer,
-            evidenceTags = new[] { "Archetype Markov", "Market Regime", "Multi-TF Confluence", "VPVR & SMC", "Master Ensemble" },
+            evidenceTags = DeterministicEvidenceTags,
             timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         });
     }
@@ -90,7 +125,10 @@ public class AiChatController : ControllerBase
         Response.Headers.Append("Connection", "keep-alive");
 
         var context = await _contextService.GetFullMarketContextAsync(symbol, timeframe, ct);
-        bool streamedFromAiService = false;
+        var upstreamTokens = new StringBuilder();
+        string[]? upstreamEvidenceTags = null;
+        bool upstreamCompleted = false;
+        bool upstreamFailed = false;
 
         try
         {
@@ -112,11 +150,41 @@ public class AiChatController : ControllerBase
                 while (!reader.EndOfStream && !ct.IsCancellationRequested)
                 {
                     var line = await reader.ReadLineAsync(ct);
-                    if (line != null)
+                    if (line?.StartsWith("data:", StringComparison.Ordinal) == true)
                     {
-                        await Response.WriteAsync($"{line}\n", ct);
-                        await Response.Body.FlushAsync(ct);
-                        if (line.StartsWith("data:")) streamedFromAiService = true;
+                        var dataPayload = line[5..].Trim();
+                        if (string.IsNullOrEmpty(dataPayload)) continue;
+                        try
+                        {
+                            using var document = JsonDocument.Parse(dataPayload);
+                            var root = document.RootElement;
+                            if (root.TryGetProperty("error", out _))
+                            {
+                                upstreamFailed = true;
+                                break;
+                            }
+                            if (root.TryGetProperty("token", out var token) && token.ValueKind == JsonValueKind.String)
+                            {
+                                var value = token.GetString() ?? "";
+                                if (upstreamTokens.Length + value.Length > MaxBufferedSseChars)
+                                {
+                                    upstreamFailed = true;
+                                    break;
+                                }
+                                upstreamTokens.Append(value);
+                            }
+                            if (root.TryGetProperty("done", out var done) && done.ValueKind == JsonValueKind.True)
+                            {
+                                upstreamCompleted = true;
+                                upstreamEvidenceTags = ReadEvidenceTags(root);
+                                break;
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                            upstreamFailed = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -126,60 +194,89 @@ public class AiChatController : ControllerBase
             _logger.LogWarning(ex, "Python AI Service streaming failed, falling back to C# structured stream");
         }
 
-        if (!streamedFromAiService)
+        if (upstreamCompleted && !upstreamFailed && upstreamTokens.Length > 0)
         {
-            // C# structured streaming fallback
-            string fallbackAnswer = GenerateStructuredExplanation(userQuestion, context);
-            var words = fallbackAnswer.Split(new[] { ' ' }, StringSplitOptions.None);
-            for (int i = 0; i < words.Length; i++)
-            {
-                if (ct.IsCancellationRequested) break;
-                string chunk = words[i] + (i < words.Length - 1 ? " " : "");
-                var tokenPayload = JsonSerializer.Serialize(new { token = chunk, done = false });
-                await Response.WriteAsync($"data: {tokenPayload}\n\n", ct);
-                await Response.Body.FlushAsync(ct);
-                await Task.Delay(15, ct); // smooth typewriter pacing
-            }
-
-            var finalPayload = JsonSerializer.Serialize(new
-            {
-                token = "",
-                done = true,
-                evidence_tags = new[] { "Archetype Markov", "Market Regime", "Multi-TF Confluence", "VPVR & SMC", "Master Ensemble" }
-            });
-            await Response.WriteAsync($"data: {finalPayload}\n\n", ct);
-            await Response.Body.FlushAsync(ct);
+            await WriteStreamAsync(upstreamTokens.ToString(), upstreamEvidenceTags ?? [], ct);
+        }
+        else
+        {
+            await WriteStreamAsync(
+                GenerateStructuredExplanation(userQuestion, context),
+                DeterministicEvidenceTags,
+                ct);
         }
     }
 
-    private static string GenerateStructuredExplanation(string prompt, FullMarketContextDto ctx)
+    private async Task WriteStreamAsync(string answer, string[] evidenceTags, CancellationToken ct)
+    {
+        var tokenPayload = JsonSerializer.Serialize(new { token = answer, done = false });
+        await Response.WriteAsync($"data: {tokenPayload}\n\n", ct);
+        var finalPayload = JsonSerializer.Serialize(new { token = "", done = true, evidence_tags = evidenceTags });
+        await Response.WriteAsync($"data: {finalPayload}\n\n", ct);
+        await Response.Body.FlushAsync(ct);
+    }
+
+    private static string[] ReadEvidenceTags(JsonElement root)
+    {
+        if (!root.TryGetProperty("evidence_tags", out var tags) || tags.ValueKind != JsonValueKind.Array)
+            return DeterministicEvidenceTags;
+        var result = tags.EnumerateArray()
+            .Where(x => x.ValueKind == JsonValueKind.String)
+            .Select(x => x.GetString())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Contains("ensemble", StringComparison.OrdinalIgnoreCase)
+                ? "Experimental: Ensemble"
+                : x.Contains("markov", StringComparison.OrdinalIgnoreCase)
+                    ? "Experimental: Archetype Markov"
+                    : x)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return result.Length > 0 ? result : DeterministicEvidenceTags;
+    }
+
+    internal static string GenerateStructuredExplanation(string prompt, FullMarketContextDto ctx)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"### 🤖 Phân Tích & Giải Thích AI Tự Động ({ctx.Symbol} - {ctx.Timeframe})");
+        sb.AppendLine($"### Giải thích định lượng tự động ({ctx.Symbol} - {ctx.Timeframe})");
         sb.AppendLine($"**Giá hiện tại**: `${ctx.CurrentPrice:N2}`\n");
 
-        sb.AppendLine("#### 1. Master Ensemble AI Forecast");
-        sb.AppendLine($"Dự báo tổng hợp 5 lớp: **{ctx.MasterEnsemblePrediction}**");
+        sb.AppendLine("#### 1. Ensemble (Experimental — chưa qua OOS gate)");
+        sb.AppendLine($"Dự báo tổng hợp: **{RenderValue(ctx.MasterEnsemblePrediction)}**");
         sb.AppendLine();
 
         sb.AppendLine("#### 2. Hội Tụ Đa Khung Thời Gian (Confluence)");
-        sb.AppendLine($"Chỉ số Confluence: **{ctx.MultiTimeframeConfluence}**");
+        sb.AppendLine($"Chỉ số Confluence: **{RenderValue(ctx.MultiTimeframeConfluence)}**");
         sb.AppendLine();
 
         sb.AppendLine("#### 3. Chế Độ Thị Trường (Market Regime)");
-        sb.AppendLine($"Trạng thái thị trường: **{ctx.MarketRegime}**");
+        sb.AppendLine($"Trạng thái thị trường: **{RenderValue(ctx.MarketRegime)}**");
         sb.AppendLine();
 
         sb.AppendLine("#### 4. Khối Lượng VPVR & Cấu Trúc Smart Money (SMC)");
-        sb.AppendLine($"Vùng giá POC / VAH / VAL: **{ctx.VolumeProfile}**");
-        sb.AppendLine($"Cấu trúc nến SMC (BOS/CHoCH/FVG): **{ctx.SmartMoneyStructures}**");
+        sb.AppendLine($"Vùng giá POC / VAH / VAL: **{RenderValue(ctx.VolumeProfile)}**");
+        sb.AppendLine($"Cấu trúc nến SMC (BOS/CHoCH/FVG): **{RenderValue(ctx.SmartMoneyStructures)}**");
         sb.AppendLine();
 
-        sb.AppendLine("#### 5. Mẫu Nến Archetype & Xác Suất Markov");
-        sb.AppendLine($"Mẫu nến cửa sổ hiện tại: **{ctx.ArchetypeMatch}**");
-        sb.AppendLine($"Xác suất chuyển đổi tiếp theo: **{ctx.MarkovTransitions}**");
+        sb.AppendLine("#### 5. Archetype & Markov (Experimental — chưa qua OOS gate)");
+        sb.AppendLine($"Mẫu nến cửa sổ hiện tại: **{RenderValue(ctx.ArchetypeMatch)}**");
+        sb.AppendLine($"Thống kê chuyển đổi: **{RenderValue(ctx.MarkovTransitions)}**");
 
         return sb.ToString();
+    }
+
+    private static string RenderValue(object? value)
+    {
+        if (value == null) return "Không có dữ liệu";
+        if (value is string text) return string.IsNullOrWhiteSpace(text) ? "Không có dữ liệu" : text;
+        if (value is JsonElement element) return element.GetRawText();
+        try
+        {
+            return JsonSerializer.Serialize(value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            return "Dữ liệu không thể hiển thị an toàn";
+        }
     }
 }
 
@@ -188,4 +285,22 @@ public class AiChatQueryDto
     public string? Symbol { get; set; }
     public string? Timeframe { get; set; }
     public string? Prompt { get; set; }
+}
+
+public sealed class AiCapabilitiesDto
+{
+    public bool MlInference { get; set; }
+    public bool LlmExplanation { get; set; }
+    public string Provider { get; set; } = "unavailable";
+    public string? Reason { get; set; }
+    public bool FallbackExplanation { get; set; } = true;
+
+    public static AiCapabilitiesDto Unavailable(string reason) => new()
+    {
+        MlInference = false,
+        LlmExplanation = false,
+        Provider = "unavailable",
+        Reason = reason,
+        FallbackExplanation = true
+    };
 }

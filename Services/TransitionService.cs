@@ -23,60 +23,88 @@ public class TransitionService : ITransitionService
         _logger = logger;
     }
 
-    public async Task<List<ArchetypeTransition>> GetTransitionsFromAsync(long archetypeId, int top, CancellationToken ct)
+    public async Task<ArchetypeTransitionsResponse> GetTransitionsFromAsync(long archetypeId, int top, CancellationToken ct)
     {
-        return await _db.ArchetypeTransitions
+        var transitions = await _db.ArchetypeTransitions
             .AsNoTracking()
+            .Include(x => x.FromArchetype)
             .Include(x => x.ToArchetype)
             .Where(x => x.FromArchetypeId == archetypeId)
             .OrderByDescending(x => x.TransitionProbability)
-            .Take(top)
+            .Take(Math.Clamp(top, 1, 100))
             .ToListAsync(ct);
+
+        return new ArchetypeTransitionsResponse
+        {
+            ArchetypeId = archetypeId,
+            Transitions = transitions.Select(MapTransition).ToList()
+        };
     }
 
-    public async Task<List<ArchetypeTransition>> GetTransitionsToAsync(long archetypeId, int top, CancellationToken ct)
+    public async Task<ArchetypeTransitionsResponse> GetTransitionsToAsync(long archetypeId, int top, CancellationToken ct)
     {
-        return await _db.ArchetypeTransitions
+        var transitions = await _db.ArchetypeTransitions
             .AsNoTracking()
             .Include(x => x.FromArchetype)
+            .Include(x => x.ToArchetype)
             .Where(x => x.ToArchetypeId == archetypeId)
             .OrderByDescending(x => x.TransitionProbability)
-            .Take(top)
+            .Take(Math.Clamp(top, 1, 100))
             .ToListAsync(ct);
+
+        return new ArchetypeTransitionsResponse
+        {
+            ArchetypeId = archetypeId,
+            Transitions = transitions.Select(MapTransition).ToList()
+        };
     }
 
-    public async Task<List<ArchetypeTransition>> PredictNextAsync(string symbol, string timeframe, int windowSize, CancellationToken ct)
+    public async Task<TransitionPredictionDto> PredictNextAsync(string symbol, string timeframe, int windowSize, CancellationToken ct)
     {
         var match = await _archetypeService.MatchCurrentWindowAsync(symbol, timeframe, windowSize, ct);
         if (match == null || match.Archetype == null)
-            return new List<ArchetypeTransition>();
+        {
+            return new TransitionPredictionDto
+            {
+                Validated = false,
+                Reason = "No current archetype match is available for this symbol, timeframe, and window size."
+            };
+        }
 
-        return await GetTransitionsFromAsync(match.Archetype.Id, 10, ct);
+        var response = await GetTransitionsFromAsync(match.Archetype.Id, 10, ct);
+        var entropy = CalculateEntropy(response.Transitions.Select(x => x.TransitionProbability));
+        return new TransitionPredictionDto
+        {
+            CurrentArchetypeId = match.Archetype.Id,
+            CurrentArchetypeCode = match.Archetype.ArchetypeCode,
+            Similarity = match.Similarity,
+            TopTransitions = response.Transitions,
+            EntropyBits = entropy,
+            Predictability = "Unavailable",
+            Validated = false,
+            Reason = response.Transitions.Count == 0
+                ? "Experimental transition statistics have no outgoing observations and have not passed out-of-sample promotion gates."
+                : "Experimental transition statistics have not passed out-of-sample promotion gates."
+        };
     }
 
-    public async Task<List<ArchetypeSequence>> GetSequencePredictionAsync(string symbol, string timeframe, int windowSize, CancellationToken ct)
+    public async Task<SequencePredictionDto> GetSequencePredictionAsync(string symbol, string timeframe, int windowSize, CancellationToken ct)
     {
-        // Simplistic approach for now, normally we'd need to fetch actual last 2 archetypes.
-        // Assuming we just want to return sequences ending with the current matched archetype
         var match = await _archetypeService.MatchCurrentWindowAsync(symbol, timeframe, windowSize, ct);
-        if (match == null || match.Archetype == null)
-            return new List<ArchetypeSequence>();
-
-        return await _db.ArchetypeSequences
-            .AsNoTracking()
-            .Include(x => x.FirstArchetype)
-            .Include(x => x.SecondArchetype)
-            .Include(x => x.ThirdArchetype)
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.WindowSize == windowSize && (x.FirstArchetypeId == match.Archetype.Id || x.SecondArchetypeId == match.Archetype.Id))
-            .OrderByDescending(x => x.OccurrenceCount)
-            .Take(10)
-            .ToListAsync(ct);
+        return new SequencePredictionDto
+        {
+            CurrentArchetypeCode = match?.Archetype?.ArchetypeCode,
+            Validated = false,
+            Reason = "Sequence prediction is unavailable because the pipeline does not persist a validated previous-current archetype state."
+        };
     }
 
-    public async Task<object> GetEntropyRankingAsync(string symbol, string timeframe, int? windowSize, int top, CancellationToken ct)
+    public async Task<EntropyRankingResponse> GetEntropyRankingAsync(string symbol, string timeframe, int? windowSize, int top, CancellationToken ct)
     {
         var query = _db.ArchetypeTransitions
             .AsNoTracking()
+            .Include(x => x.FromArchetype)
+            .Include(x => x.ToArchetype)
             .Where(x => x.Symbol == symbol && x.Timeframe == timeframe);
 
         if (windowSize.HasValue)
@@ -86,30 +114,81 @@ public class TransitionService : ITransitionService
 
         var transitions = await query.ToListAsync(ct);
 
-        var grouped = transitions.GroupBy(x => x.FromArchetypeId);
-        var entropyList = new List<object>();
-
-        foreach (var group in grouped)
-        {
-            double entropy = 0;
-            foreach (var t in group)
+        var ranked = transitions
+            .GroupBy(x => x.FromArchetypeId)
+            .Select(group =>
             {
-                if (t.TransitionProbability > 0)
+                var first = group.First();
+                var best = group.OrderByDescending(x => x.TransitionProbability).First();
+                var entropy = CalculateEntropy(group.Select(x => x.TransitionProbability));
+                return new EntropyRankingItemDto
                 {
-                    entropy -= t.TransitionProbability * Math.Log(t.TransitionProbability, 2);
-                }
-            }
-            entropyList.Add(new { ArchetypeId = group.Key, Entropy = entropy });
-        }
+                    ArchetypeId = group.Key,
+                    ArchetypeCode = first.FromArchetype?.ArchetypeCode ?? "",
+                    Timeframe = first.Timeframe,
+                    WindowSize = first.WindowSize,
+                    MemberCount = first.FromArchetype?.MemberCount ?? 0,
+                    EntropyBits = entropy,
+                    Predictability = "Unavailable",
+                    TopTransitionCode = best.ToArchetype?.ArchetypeCode ?? "",
+                    TopTransitionProb = best.TransitionProbability
+                };
+            })
+            .OrderBy(x => x.EntropyBits)
+            .Take(Math.Clamp(top, 1, 200))
+            .ToList();
 
-        return entropyList.OrderByDescending(x => ((dynamic)x).Entropy).Take(top).ToList();
+        for (var i = 0; i < ranked.Count; i++) ranked[i].Rank = i + 1;
+        return new EntropyRankingResponse { Items = ranked };
     }
 
-    public async Task<List<ArchetypeTransition>> GetTransitionMatrixAsync(string symbol, string timeframe, int windowSize, CancellationToken ct)
+    public async Task<TransitionMatrixDto> GetTransitionMatrixAsync(string symbol, string timeframe, int windowSize, CancellationToken ct)
     {
-        return await _db.ArchetypeTransitions
+        var transitions = await _db.ArchetypeTransitions
             .AsNoTracking()
+            .Include(x => x.FromArchetype)
+            .Include(x => x.ToArchetype)
             .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.WindowSize == windowSize)
             .ToListAsync(ct);
+
+        return new TransitionMatrixDto
+        {
+            Symbol = symbol,
+            Timeframe = timeframe,
+            WindowSize = windowSize,
+            ArchetypeCount = transitions
+                .SelectMany(x => new[] { x.FromArchetypeId, x.ToArchetypeId })
+                .Distinct()
+                .Count(),
+            TotalTransitions = transitions.Sum(x => x.TransitionCount),
+            Cells = transitions.Select(x => new TransitionMatrixCellDto
+            {
+                FromId = x.FromArchetypeId,
+                FromCode = x.FromArchetype?.ArchetypeCode ?? "",
+                ToId = x.ToArchetypeId,
+                ToCode = x.ToArchetype?.ArchetypeCode ?? "",
+                Probability = x.TransitionProbability,
+                Count = x.TransitionCount
+            }).ToList()
+        };
     }
+
+    private static ArchetypeTransitionDto MapTransition(ArchetypeTransition transition) => new()
+    {
+        Id = transition.Id,
+        FromArchetypeId = transition.FromArchetypeId,
+        FromArchetypeCode = transition.FromArchetype?.ArchetypeCode ?? "",
+        ToArchetypeId = transition.ToArchetypeId,
+        ToArchetypeCode = transition.ToArchetype?.ArchetypeCode ?? "",
+        TransitionCount = transition.TransitionCount,
+        TransitionProbability = transition.TransitionProbability,
+        AvgReturnPct = transition.AvgReturnPct,
+        AvgBarsToTransition = transition.AvgBarsToTransition,
+        LastSeenMs = transition.LastSeenMs
+    };
+
+    private static double CalculateEntropy(IEnumerable<double> probabilities) => probabilities
+        .Where(x => x > 0)
+        .Sum(x => -x * Math.Log(x, 2));
+
 }
