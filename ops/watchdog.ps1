@@ -7,7 +7,8 @@ if (-not $mutex.WaitOne(0)) { exit 0 }
 try {
     $logPath = Join-Path $script:LogsDir "watchdog.log"
     Rotate-OpsLog $logPath
-    & pwsh.exe -NoProfile -File "$PSScriptRoot/status.ps1" *> $null
+    $shell = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq "Core") { "pwsh.exe" } else { "powershell.exe" })
+    & $shell -NoProfile -File "$PSScriptRoot/status.ps1" *> $null
     if ($LASTEXITCODE -eq 0) { exit 0 }
 
     Add-Content -LiteralPath $logPath -Value "$([DateTimeOffset]::Now.ToString('O')) stack unhealthy; restarting"

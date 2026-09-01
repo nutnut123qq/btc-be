@@ -62,9 +62,9 @@ if ($generatedVersion -ne $expectedVersion) {
 }
 if ($Check) {
     if (-not (Test-Path -LiteralPath $contractPath)) { throw "Committed contract is missing: $contractPath" }
-    $expected = [IO.File]::ReadAllBytes($contractPath)
-    $actual = [IO.File]::ReadAllBytes($tempContract)
-    if (-not [Linq.Enumerable]::SequenceEqual[byte]($expected, $actual)) {
+    $expectedHash = (Get-FileHash -LiteralPath $contractPath -Algorithm SHA256).Hash
+    $actualHash = (Get-FileHash -LiteralPath $tempContract -Algorithm SHA256).Hash
+    if ($expectedHash -ne $actualHash) {
         throw "OpenAPI contract changed. Run ops/contract.ps1, review contracts/openapi.json, and increment apiContractVersion."
     }
     Write-Host "OpenAPI contract matches contracts/openapi.json."

@@ -47,7 +47,7 @@ if ($manifest.models.archive) {
             if ($null -eq $entry) { throw "Model artifact missing from archive: $($model.name)" }
             $stream = $entry.Open()
             $sha = [Security.Cryptography.SHA256]::Create()
-            try { $entryHash = [Convert]::ToHexString($sha.ComputeHash($stream)).ToLowerInvariant() }
+            try { $entryHash = (ConvertTo-OpsHexString $sha.ComputeHash($stream)).ToLowerInvariant() }
             finally { $sha.Dispose(); $stream.Dispose() }
             if ($entryHash -ne $model.sha256) { throw "Model artifact checksum mismatch: $($model.name)" }
         }

@@ -4,12 +4,13 @@ These PowerShell scripts own the local three-service workflow from the backend r
 
 ## Prerequisites
 
-- Windows PowerShell 7 (`pwsh`), .NET 8, Node.js, and the existing `ai/venv`.
+- Windows PowerShell 5.1 or PowerShell 7, .NET 8, Node.js, and the existing `ai/venv`.
 - Native PostgreSQL 17 client tools on `PATH` or under the standard PostgreSQL 17 installation directory.
 - Native PostgreSQL is the source of truth. These scripts never start Docker or create a replacement PostgreSQL instance.
 - Set `PGDATABASE` and `PGPASSWORD`; optionally set `PGHOST`, `PGPORT`, and `PGUSER`. Keep passwords in the process environment, never in a script.
 - For unattended local operation, run `configure-secrets.ps1` once. It stores the database password and generated admin key as a current-user DPAPI-protected CLIXML file under ignored `.ops/`; `show-admin-key.ps1` reveals the admin key only on demand.
 - `start.ps1` and `migrate.ps1` derive the backend/EF connection from that validated PG target. They do not accept a second independent database target.
+- Windows Scheduled Task actions should use the absolute inbox shell path `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`; a bare `pwsh.exe` is not available on every host or scheduler PATH.
 
 ## Build and run
 
@@ -18,6 +19,7 @@ pwsh ./ops/build.ps1
 pwsh ./ops/configure-secrets.ps1
 pwsh ./ops/start.ps1
 pwsh ./ops/status.ps1
+pwsh ./ops/common-self-test.ps1
 pwsh ./ops/self-test.ps1
 pwsh ./ops/logs.ps1 -Component backend -Stream err -Follow
 pwsh ./ops/stop.ps1

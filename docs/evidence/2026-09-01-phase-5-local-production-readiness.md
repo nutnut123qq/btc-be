@@ -1,5 +1,9 @@
 # Phase 5 local production-readiness evidence — 2026-09-01
 
+> Superseded by `2026-09-01-phase-6-recovery-model-gates-and-host-hardening.md`.
+> In particular, the earlier BTC artifact is no longer active and the earlier
+> full-restore/listener constraints have now been resolved and re-verified.
+
 ## Scope and safety boundary
 
 This release is verified for a single-machine, localhost-only, production-like deployment. Real-money execution remains disabled. It is not evidence for a public Internet deployment or for profitable trading.

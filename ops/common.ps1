@@ -22,7 +22,7 @@ function Import-OpsSecrets {
             if ($secureValue -isnot [Security.SecureString]) { throw "Invalid protected value: $name" }
             [Environment]::SetEnvironmentVariable(
                 $name,
-                (ConvertFrom-SecureString $secureValue -AsPlainText),
+                (ConvertFrom-OpsSecureString $secureValue),
                 "Process"
             )
         }
@@ -32,6 +32,48 @@ function Import-OpsSecrets {
             [Environment]::SetEnvironmentVariable($name, [string]$secrets.$name, "Process")
         }
     }
+}
+
+function ConvertFrom-OpsSecureString([Security.SecureString]$Value) {
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
+
+function ConvertTo-OpsHexString([byte[]]$Bytes) {
+    return ([BitConverter]::ToString($Bytes)).Replace("-", "")
+}
+
+function ConvertTo-OpsNativeArgument([AllowEmptyString()][string]$Value) {
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+
+    $builder = New-Object Text.StringBuilder
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) {
+            $backslashes++
+            continue
+        }
+        if ($character -eq [char]34) {
+            [void]$builder.Append(([string][char]92) * ($backslashes * 2 + 1))
+            [void]$builder.Append($character)
+            $backslashes = 0
+            continue
+        }
+        if ($backslashes -gt 0) {
+            [void]$builder.Append(([string][char]92) * $backslashes)
+            $backslashes = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashes -gt 0) { [void]$builder.Append(([string][char]92) * ($backslashes * 2)) }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Join-OpsNativeArguments([string[]]$ArgumentList) {
+    return (@($ArgumentList | ForEach-Object { ConvertTo-OpsNativeArgument $_ }) -join " ")
 }
 
 function Rotate-OpsLog([string]$Path, [long]$MaximumBytes = 25MB) {
@@ -124,7 +166,7 @@ function Invoke-BoundedProcess {
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
     if ($WorkingDirectory) { $info.WorkingDirectory = $WorkingDirectory }
-    foreach ($argument in $ArgumentList) { $info.ArgumentList.Add($argument) }
+    $info.Arguments = Join-OpsNativeArguments $ArgumentList
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $info
     try {
@@ -132,7 +174,7 @@ function Invoke-BoundedProcess {
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            $process.Kill($true)
+            $process.Kill()
             $process.WaitForExit(5000) | Out-Null
             throw "$([IO.Path]::GetFileName($FilePath)) timed out after $TimeoutSeconds seconds and was terminated."
         }

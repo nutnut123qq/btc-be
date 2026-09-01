@@ -7,7 +7,11 @@ Initialize-OpsDirectories
 
 if ([string]::IsNullOrWhiteSpace($DatabasePassword)) { throw "DatabasePassword or PGPASSWORD is required." }
 if ([string]::IsNullOrWhiteSpace($AdminKey)) {
-    $AdminKey = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    $bytes = New-Object byte[] 32
+    $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $generator.GetBytes($bytes) }
+    finally { $generator.Dispose() }
+    $AdminKey = ConvertTo-OpsHexString $bytes
 }
 
 [pscustomobject]@{

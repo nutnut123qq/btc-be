@@ -38,9 +38,7 @@ try {
     $keeperInfo.RedirectStandardInput = $true
     $keeperInfo.RedirectStandardOutput = $true
     $keeperInfo.RedirectStandardError = $true
-    foreach ($argument in @((Get-PgConnectionArgs) + @("--no-psqlrc", "--quiet", "--tuples-only", "--no-align"))) {
-        $keeperInfo.ArgumentList.Add($argument)
-    }
+    $keeperInfo.Arguments = Join-OpsNativeArguments @((Get-PgConnectionArgs) + @("--no-psqlrc", "--quiet", "--tuples-only", "--no-align"))
 
     $keeper = [Diagnostics.Process]::Start($keeperInfo)
     $snapshotError = $null
@@ -75,7 +73,7 @@ try {
                 $keeper.StandardInput.WriteLine("\q")
                 $keeper.StandardInput.Flush()
                 if (-not $keeper.WaitForExit(10000)) {
-                    $keeper.Kill($true)
+                    $keeper.Kill()
                     $keeper.WaitForExit(5000) | Out-Null
                 }
             }
