@@ -1,0 +1,6073 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Bitcoin AI Analyst Backend",
+    "version": "2026-08-phase3"
+  },
+  "paths": {
+    "/api/ai-chat/capabilities": {
+      "get": {
+        "tags": [
+          "AiChat"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCapabilitiesDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCapabilitiesDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCapabilitiesDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai-chat/query": {
+      "post": {
+        "tags": [
+          "AiChat"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatQueryDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatQueryDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatQueryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/ai-chat/stream": {
+      "post": {
+        "tags": [
+          "AiChat"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatQueryDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatQueryDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatQueryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Alerts": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          },
+          {
+            "name": "unreadOnly",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          },
+          {
+            "name": "includeArchived",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Alerts"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Alerts/unread-count": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Alerts/{id}/read": {
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Alerts/read-all": {
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Alerts/{id}": {
+      "delete": {
+        "tags": [
+          "Alerts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Alerts/deduplicate": {
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "parameters": [
+          {
+            "name": "apply",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/alert-settings": {
+      "get": {
+        "tags": [
+          "AlertSettings"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceAlertSettingsDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceAlertSettingsDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceAlertSettingsDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "AlertSettings"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePriceAlertSettingsDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePriceAlertSettingsDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePriceAlertSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceAlertSettingsDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceAlertSettingsDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceAlertSettingsDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Analysis/analyze": {
+      "get": {
+        "tags": [
+          "Analysis"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Analysis/bitcoin": {
+      "get": {
+        "tags": [
+          "Analysis"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Analysis": {
+      "get": {
+        "tags": [
+          "Analysis"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/archetypes": {
+      "get": {
+        "tags": [
+          "Archetype"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "winRate"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/archetypes/{id}": {
+      "get": {
+        "tags": [
+          "Archetype"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/archetypes/{id}/occurrences": {
+      "get": {
+        "tags": [
+          "Archetype"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "4h"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/archetypes/match": {
+      "get": {
+        "tags": [
+          "Archetype"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 15
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/archetypes/match-multi": {
+      "get": {
+        "tags": [
+          "Archetype"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/archetypes/rankings": {
+      "get": {
+        "tags": [
+          "Archetype"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "winRate"
+            }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Backtest/runs": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Backtest/runs/{id}": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Backtest/classify-records": {
+      "post": {
+        "tags": [
+          "Backtest"
+        ],
+        "parameters": [
+          {
+            "name": "apply",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/market/validate-candles": {
+      "get": {
+        "tags": [
+          "CandleSequence"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/market/market-structure": {
+      "get": {
+        "tags": [
+          "CandleSequence"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 200
+            }
+          },
+          {
+            "name": "swingLookback",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/market/sequence-scenarios": {
+      "get": {
+        "tags": [
+          "CandleSequence"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Confluence/current": {
+      "get": {
+        "tags": [
+          "Confluence"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Confluence/history": {
+      "get": {
+        "tags": [
+          "Confluence"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Confluence/calculate": {
+      "post": {
+        "tags": [
+          "Confluence"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Ensemble/predict": {
+      "get": {
+        "tags": [
+          "Ensemble"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Ensemble/history": {
+      "get": {
+        "tags": [
+          "Ensemble"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Ensemble/evaluate": {
+      "post": {
+        "tags": [
+          "Ensemble"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Ensemble/evaluations": {
+      "get": {
+        "tags": [
+          "Ensemble"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Ensemble/batch-replay": {
+      "post": {
+        "tags": [
+          "Ensemble"
+        ],
+        "parameters": [
+          {
+            "name": "sampleCount",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 2000
+            }
+          },
+          {
+            "name": "minConfidence",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 0.6
+            }
+          },
+          {
+            "name": "enableMtfFilter",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "enableSmcFilter",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "enableAtrRrEngine",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "enableVolumeFilter",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "enableMlClassifier",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "enableKellySizing",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/ensemble-backtest/run": {
+      "post": {
+        "tags": [
+          "EnsembleBacktest"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnsembleBacktestRunRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnsembleBacktestRunRequestDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnsembleBacktestRunRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/ensemble-backtest/optimize": {
+      "post": {
+        "tags": [
+          "EnsembleBacktest"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Execution/stream-status": {
+      "get": {
+        "tags": [
+          "Execution"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamStatusDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamStatusDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamStatusDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Execution/stream/reconnect": {
+      "post": {
+        "tags": [
+          "Execution"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Execution/balance-snapshots": {
+      "get": {
+        "tags": [
+          "Execution"
+        ],
+        "parameters": [
+          {
+            "name": "asset",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "USDT"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Execution/account": {
+      "get": {
+        "tags": [
+          "Execution"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceAccountBalanceResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceAccountBalanceResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceAccountBalanceResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Execution/market-order": {
+      "post": {
+        "tags": [
+          "Execution"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Execution/stop-loss": {
+      "post": {
+        "tags": [
+          "Execution"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Execution/take-profit": {
+      "post": {
+        "tags": [
+          "Execution"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/BinanceOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Execution/orders/{symbol}": {
+      "delete": {
+        "tags": [
+          "Execution"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BinanceOrderResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/live": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/health/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/health/freshness": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/workers": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerHealthResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerHealthResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerHealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Indexer/technical-indicators": {
+      "post": {
+        "tags": [
+          "Indexer"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Indexer/ml-dataset": {
+      "post": {
+        "tags": [
+          "Indexer"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/liquidation/latest": {
+      "get": {
+        "tags": [
+          "Liquidation"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/liquidation/history": {
+      "get": {
+        "tags": [
+          "Liquidation"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/btc/klines": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "interval",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 48
+            }
+          },
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "startTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "endTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KlineDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KlineDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KlineDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/klines": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          },
+          {
+            "name": "startTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "endTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KlineDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KlineDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KlineDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/tickers": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketTickerDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketTickerDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketTickerDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/trades": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketTradeDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketTradeDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketTradeDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/depth": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderBookDepthDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderBookDepthDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderBookDepthDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/klines/backfill": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDateUtc",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "endDateUtc",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "requestsPerMinuteLimit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 400
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "fillGaps",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillStartInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillStartInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillStartInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/candles/around": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "15m"
+            }
+          },
+          {
+            "name": "timeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0
+            }
+          },
+          {
+            "name": "beforeBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          },
+          {
+            "name": "afterBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandlesAroundResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandlesAroundResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandlesAroundResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/pattern-search": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatternSearchRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatternSearchRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatternSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatternSearchResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatternSearchResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatternSearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/pattern-index/rebuild": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "15m"
+            }
+          },
+          {
+            "name": "featureType",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5000
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/pattern-index/warmup": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "15m"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5000
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/pattern-index/status": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "15m"
+            }
+          },
+          {
+            "name": "featureType",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/candle-patterns": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "fromMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "toMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "patternType",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/window-dataset": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1d"
+            }
+          },
+          {
+            "name": "label",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/ml-dataset/build": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/window-dataset/build": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1d"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/candle-patterns/index": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Market/data-audit": {
+      "get": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "includeInventory",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAuditResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAuditResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAuditResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Market/data-gaps/{id}/retry": {
+      "post": {
+        "tags": [
+          "Market"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/market/btc/tech-summary": {
+      "get": {
+        "tags": [
+          "MarketRetrieval"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 48
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/market/tech-summary": {
+      "get": {
+        "tags": [
+          "MarketRetrieval"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 48
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/meta": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/News": {
+      "get": {
+        "tags": [
+          "News"
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/paper-trades/evaluate-ensemble": {
+      "post": {
+        "tags": [
+          "PaperTrade"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateEnsembleRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateEnsembleRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateEnsembleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/paper-trades": {
+      "get": {
+        "tags": [
+          "PaperTrade"
+        ],
+        "parameters": [
+          {
+            "name": "symbols",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "side",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/paper-trades/portfolio-summary": {
+      "get": {
+        "tags": [
+          "PaperTrade"
+        ],
+        "parameters": [
+          {
+            "name": "initialBalance",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 10000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/paper-trades/summary": {
+      "get": {
+        "tags": [
+          "PaperTrade"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/paper-trades/equity-curve": {
+      "get": {
+        "tags": [
+          "PaperTrade"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/paper-trades/open": {
+      "get": {
+        "tags": [
+          "PaperTrade"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Prediction/latest": {
+      "get": {
+        "tags": [
+          "Prediction"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "modelName",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Prediction/history": {
+      "get": {
+        "tags": [
+          "Prediction"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Prediction/audit": {
+      "post": {
+        "tags": [
+          "Prediction"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Prediction/accuracy": {
+      "get": {
+        "tags": [
+          "Prediction"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "includeLegacy",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Prediction/models": {
+      "get": {
+        "tags": [
+          "Prediction"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rag/news-context": {
+      "get": {
+        "tags": [
+          "Rag"
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "topK",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/regime/current": {
+      "get": {
+        "tags": [
+          "Regime"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/regime/history": {
+      "get": {
+        "tags": [
+          "Regime"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/regime/summary": {
+      "get": {
+        "tags": [
+          "Regime"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/regime/build": {
+      "post": {
+        "tags": [
+          "Regime"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/discovery/run": {
+      "post": {
+        "tags": [
+          "RuleDiscovery"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 3000
+            }
+          },
+          {
+            "name": "futureBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 3
+            }
+          },
+          {
+            "name": "minWinRate",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 0.5
+            }
+          },
+          {
+            "name": "minSamples",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            }
+          },
+          {
+            "name": "minAvgReturnPct",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 0.1
+            }
+          },
+          {
+            "name": "saveToDb",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/discovery/rules": {
+      "get": {
+        "tags": [
+          "RuleDiscovery"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/discovery/index-volume": {
+      "post": {
+        "tags": [
+          "RuleDiscovery"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 2000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/discovery/volume-stats": {
+      "get": {
+        "tags": [
+          "RuleDiscovery"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/discovery/evaluate": {
+      "post": {
+        "tags": [
+          "RuleDiscovery"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/discovery/clear": {
+      "post": {
+        "tags": [
+          "RuleDiscovery"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Sentiment/current": {
+      "get": {
+        "tags": [
+          "Sentiment"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Sentiment/history": {
+      "get": {
+        "tags": [
+          "Sentiment"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Sentiment/refresh": {
+      "post": {
+        "tags": [
+          "Sentiment"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/smart-money/structures": {
+      "get": {
+        "tags": [
+          "SmartMoney"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/smart-money/detect": {
+      "post": {
+        "tags": [
+          "SmartMoney"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/telegram/test": {
+      "post": {
+        "tags": [
+          "Telegram"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/telegram/status": {
+      "get": {
+        "tags": [
+          "Telegram"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Transitions/from/{id}": {
+      "get": {
+        "tags": [
+          "Transitions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchetypeTransitionsResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchetypeTransitionsResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchetypeTransitionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Transitions/to/{id}": {
+      "get": {
+        "tags": [
+          "Transitions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchetypeTransitionsResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchetypeTransitionsResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchetypeTransitionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Transitions/predict": {
+      "get": {
+        "tags": [
+          "Transitions"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionPredictionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionPredictionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionPredictionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Transitions/predict-sequence": {
+      "get": {
+        "tags": [
+          "Transitions"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequencePredictionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequencePredictionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequencePredictionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Transitions/entropy-ranking": {
+      "get": {
+        "tags": [
+          "Transitions"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntropyRankingResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntropyRankingResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntropyRankingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Transitions/matrix": {
+      "get": {
+        "tags": [
+          "Transitions"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "windowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionMatrixDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionMatrixDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionMatrixDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Transitions/build": {
+      "post": {
+        "tags": [
+          "Transitions"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/volume-profile/current": {
+      "get": {
+        "tags": [
+          "VolumeProfile"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/volume-profile/calculate": {
+      "post": {
+        "tags": [
+          "VolumeProfile"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "1h"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AiCapabilitiesDto": {
+        "type": "object",
+        "properties": {
+          "mlInference": {
+            "type": "boolean"
+          },
+          "llmExplanation": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "fallbackExplanation": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AiChatQueryDto": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "prompt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArchetypeTransitionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fromArchetypeId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fromArchetypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "toArchetypeId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "toArchetypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "transitionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "transitionProbability": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgReturnPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgBarsToTransition": {
+            "type": "number",
+            "format": "double"
+          },
+          "lastSeenMs": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArchetypeTransitionsResponse": {
+        "type": "object",
+        "properties": {
+          "archetypeId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchetypeTransitionDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BackfillStartInfo": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "startDateUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDateUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "fillGaps": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BinanceAccountBalanceResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "totalWalletBalance": {
+            "type": "number",
+            "format": "double"
+          },
+          "availableBalance": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalUnrealizedProfit": {
+            "type": "number",
+            "format": "double"
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "rawResponseJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "tradingMode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BinanceOrderRequest": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "side": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "price": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "stopPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "reduceOnly": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BinanceOrderResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "orderId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "clientOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "side": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "executedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "rawResponseJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "tradingMode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CandleGap": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "startOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "attemptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextRetryAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CandlesAroundResponse": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "resolvedTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "candles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KlineDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DataAuditResponse": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeframes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimeframeAudit"
+            },
+            "nullable": true
+          },
+          "news": {
+            "$ref": "#/components/schemas/NewsAudit"
+          },
+          "rulesAlerts": {
+            "$ref": "#/components/schemas/RulesAlertsAudit"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EnsembleBacktestRunRequestDto": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "startTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "endTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "initialCapital": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "feeBps": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "minConfidence": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "customWeights": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double",
+              "nullable": true
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntropyRankingItemDto": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "archetypeId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "archetypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "windowSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "memberCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "entropyBits": {
+            "type": "number",
+            "format": "double"
+          },
+          "predictability": {
+            "type": "string",
+            "nullable": true
+          },
+          "topTransitionCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "topTransitionProb": {
+            "type": "number",
+            "format": "double"
+          },
+          "validated": {
+            "type": "boolean"
+          },
+          "maturity": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntropyRankingResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntropyRankingItemDto"
+            },
+            "nullable": true
+          },
+          "validated": {
+            "type": "boolean"
+          },
+          "maturity": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EvaluateEnsembleRequest": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "databaseReachable": {
+            "type": "boolean"
+          },
+          "checkedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "klines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KlineFreshness"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "KlineDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "timeIso": {
+            "type": "string",
+            "nullable": true
+          },
+          "open": {
+            "type": "number",
+            "format": "double"
+          },
+          "high": {
+            "type": "number",
+            "format": "double"
+          },
+          "low": {
+            "type": "number",
+            "format": "double"
+          },
+          "close": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          },
+          "closeTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quoteVolume": {
+            "type": "number",
+            "format": "double"
+          },
+          "tradeCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "takerBuyVolume": {
+            "type": "number",
+            "format": "double"
+          },
+          "takerBuyQuoteVolume": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "KlineFreshness": {
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "latestOpenTimeUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ageSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "maxAgeSeconds": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MarketTickerDto": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "priceChange": {
+            "type": "number",
+            "format": "double"
+          },
+          "priceChangePercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "highPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "lowPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          },
+          "quoteVolume": {
+            "type": "number",
+            "format": "double"
+          },
+          "bidPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "askPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "closeTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MarketTradeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price": {
+            "type": "number",
+            "format": "double"
+          },
+          "qty": {
+            "type": "number",
+            "format": "double"
+          },
+          "quoteQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "timeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isBuyerMaker": {
+            "type": "boolean"
+          },
+          "isBuyer": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MetaResponse": {
+        "type": "object",
+        "properties": {
+          "appVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "apiContractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataPipelineVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluationVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "environment": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "NewsAudit": {
+        "type": "object",
+        "properties": {
+          "articles": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "chunks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "maxDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrderBookDepthDto": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastUpdateId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderBookEntryDto"
+            },
+            "nullable": true
+          },
+          "asks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderBookEntryDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrderBookEntryDto": {
+        "type": "object",
+        "properties": {
+          "price": {
+            "type": "number",
+            "format": "double"
+          },
+          "qty": {
+            "type": "number",
+            "format": "double"
+          },
+          "total": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PatternSearchItem": {
+        "type": "object",
+        "properties": {
+          "windowId": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "featureType": {
+            "type": "string",
+            "nullable": true
+          },
+          "startTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "distance": {
+            "type": "number",
+            "format": "double"
+          },
+          "similarity": {
+            "type": "number",
+            "format": "double"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PatternSearchRequest": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "featureType": {
+            "type": "string",
+            "nullable": true
+          },
+          "lookbackBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "windowSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "topK": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minGapBars": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PatternSearchResponse": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "featureType": {
+            "type": "string",
+            "nullable": true
+          },
+          "windowSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "topK": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "scannedWindows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fromVectorStore": {
+            "type": "boolean"
+          },
+          "latencyMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PatternSearchItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PriceAlertSettingsDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "priceAboveUsd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "priceBelowUsd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "klineInterval": {
+            "type": "string",
+            "nullable": true
+          },
+          "cooldownMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RulesAlertsAudit": {
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "signals": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "alerts": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SequencePredictionDto": {
+        "type": "object",
+        "properties": {
+          "previousArchetypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentArchetypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "topSequences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SequencePredictionItemDto"
+            },
+            "nullable": true
+          },
+          "validated": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SequencePredictionItemDto": {
+        "type": "object",
+        "properties": {
+          "thirdArchetypeId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "thirdArchetypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "occurrenceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "outcomeUpRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "outcomeDownRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "outcomeSidewaysRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgReturnPct": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StreamStatusDto": {
+        "type": "object",
+        "properties": {
+          "isConnected": {
+            "type": "boolean"
+          },
+          "currentListenKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastPingTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "connectedSince": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reconnectCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tradingMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "baseUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "wsUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "streamEnabled": {
+            "type": "boolean"
+          },
+          "lastEventReceivedTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastEventType": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TimeframeAudit": {
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalKlines": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "maxOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "expectedBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "missingBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gapRangeCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "dataCoveragePct": {
+            "type": "number",
+            "format": "double"
+          },
+          "largestGapMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pendingGapCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unavailableGapCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestCandleAgeSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "gapLedgerStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "candlePatterns": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "technicalIndicators": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "windowVectors": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "mlFeatureStores": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "priceTargets": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "windowClassificationDatasets": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "topGaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CandleGap"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TransitionMatrixCellDto": {
+        "type": "object",
+        "properties": {
+          "fromId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fromCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "toId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "toCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "probability": {
+            "type": "number",
+            "format": "double"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TransitionMatrixDto": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "windowSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "archetypeCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalTransitions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransitionMatrixCellDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TransitionPredictionDto": {
+        "type": "object",
+        "properties": {
+          "currentArchetypeId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "currentArchetypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "similarity": {
+            "type": "number",
+            "format": "double"
+          },
+          "topTransitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchetypeTransitionDto"
+            },
+            "nullable": true
+          },
+          "entropyBits": {
+            "type": "number",
+            "format": "double"
+          },
+          "predictability": {
+            "type": "string",
+            "nullable": true
+          },
+          "validated": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdatePriceAlertSettingsDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "priceAboveUsd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "priceBelowUsd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "klineInterval": {
+            "type": "string",
+            "nullable": true
+          },
+          "cooldownMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkerHealth": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastStartedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSucceededAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastFailedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ageSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "maxAgeSeconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastDurationMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkerHealthResponse": {
+        "type": "object",
+        "properties": {
+          "checkedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkerHealth"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

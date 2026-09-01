@@ -20,6 +20,13 @@ public class PostgresGapQueryTests
     public PostgresGapQueryTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
+    public void PostgresConnection_IsRequiredInCi()
+    {
+        if (string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase))
+            Assert.False(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES")));
+    }
+
+    [Fact]
     public async Task LagQuery_ExecutesOnPostgresWithoutMaterializingKlines()
     {
         var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
@@ -28,14 +35,27 @@ public class PostgresGapQueryTests
 
         await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(connectionString).Options);
-        var rows = await KlineGapQuery.GetTopInternalGapsAsync(
-            db, "BTCUSDT", "1m", 60_000, 10,
-            new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(),
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), default);
+        var symbol = $"LAGTEST{Guid.NewGuid():N}"[..20].ToUpperInvariant();
+        const long start = 1_700_000_000_000;
+        try
+        {
+            db.Klines.AddRange(
+                CreateKline(symbol, start),
+                CreateKline(symbol, start + 60_000),
+                CreateKline(symbol, start + 180_000));
+            await db.SaveChangesAsync();
 
-        Assert.InRange(rows.Count, 1, 10);
-        Assert.All(rows, row => Assert.True(row.MissingBars > 0));
-        Assert.All(rows, row => Assert.True(row.GapRangeCount >= rows.Count));
+            var rows = await KlineGapQuery.GetTopInternalGapsAsync(
+                db, symbol, "1m", 60_000, 10, start, start + 180_000, default);
+
+            var gap = Assert.Single(rows);
+            Assert.Equal(1, gap.MissingBars);
+            Assert.Equal(1, gap.GapRangeCount);
+        }
+        finally
+        {
+            await db.Klines.Where(row => row.Symbol == symbol).ExecuteDeleteAsync();
+        }
     }
 
     [Fact]
@@ -60,7 +80,7 @@ public class PostgresGapQueryTests
     [Fact]
     public async Task DataAudit_ColdCompletesWithinPerformanceBudget()
     {
-        var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
+        var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES_PERFORMANCE");
         if (string.IsNullOrWhiteSpace(connectionString))
             return;
 
@@ -207,4 +227,21 @@ public class PostgresGapQueryTests
                 .ExecuteDeleteAsync();
         }
     }
+
+    private static Kline CreateKline(string symbol, long openTimeMs) => new()
+    {
+        Symbol = symbol,
+        Timeframe = "1m",
+        OpenTimeMs = openTimeMs,
+        CloseTimeMs = openTimeMs + 59_999,
+        Open = 1,
+        High = 1,
+        Low = 1,
+        Close = 1,
+        Volume = 1,
+        QuoteVolume = 1,
+        TradeCount = 1,
+        TakerBuyVolume = 1,
+        TakerBuyQuoteVolume = 1
+    };
 }

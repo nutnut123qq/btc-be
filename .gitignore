@@ -19,6 +19,7 @@ build_verify_out*/
 # Publish
 publish/
 out/
+/.ops/
 
 # Logs
 *.log

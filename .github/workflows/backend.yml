@@ -1,0 +1,61 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: bitcoin_analyst_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bitcoin_analyst_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CI: "true"
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=bitcoin_analyst_test;Username=postgres;Password=postgres;Pooling=true;Timeout=5;Command Timeout=30
+      BTC_TEST_POSTGRES: Host=localhost;Port=5432;Database=bitcoin_analyst_test;Username=postgres;Password=postgres;Pooling=true;Timeout=5;Command Timeout=30
+      BTC_TEST_POSTGRES_TIMEOUT: Host=127.0.0.1;Port=1;Database=unreachable;Username=none;Password=none;Pooling=false;Timeout=1;Command Timeout=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: |
+          dotnet restore Backend.csproj
+          dotnet restore Tests/Backend.Tests/Backend.Tests.csproj
+          dotnet tool restore
+      - name: Build
+        run: dotnet build Backend.csproj --configuration Release --no-restore
+      - name: Apply migrations to PostgreSQL 17 test database
+        run: dotnet tool run dotnet-ef database update --project Backend.csproj --startup-project Backend.csproj --configuration Release --no-build
+      - name: Test
+        run: dotnet test Tests/Backend.Tests/Backend.Tests.csproj --configuration Release --no-restore
+      - name: Vulnerability scan
+        shell: pwsh
+        run: ./ops/check-vulnerabilities.ps1
+      - name: Validate migrations
+        run: dotnet tool run dotnet-ef migrations has-pending-model-changes --project Backend.csproj --startup-project Backend.csproj --configuration Release --no-build
+      - name: Check generated OpenAPI
+        shell: pwsh
+        run: ./ops/contract.ps1 -Check -NoBuild
+      - name: Require contract version increment
+        shell: pwsh
+        env:
+          BASE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: ./ops/check-contract-version.ps1 -BaseRevision $env:BASE_REVISION

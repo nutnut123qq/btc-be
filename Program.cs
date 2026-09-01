@@ -5,6 +5,7 @@ using Backend.Services;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 using System.IO.Compression;
 using System.Threading.RateLimiting;
 
@@ -12,7 +13,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiInfo
+{
+    Title = "Bitcoin AI Analyst Backend",
+    Version = ResearchVersions.ApiContract
+}));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<DataAuditCache>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -210,10 +215,13 @@ app.UseResponseCompression();
 app.UseRateLimiter();
 app.UseCors("AllowNextJs");
 
-using (var scope = app.Services.CreateScope())
+// Development keeps the existing convenience behavior. Production-like runs use
+// ops/migrate.ps1 so schema changes stay an explicit, backed-up operation.
+if (app.Environment.IsDevelopment())
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    if (db.Database.IsRelational() && !app.Environment.IsEnvironment("Testing"))
+    if (db.Database.IsRelational())
     {
         try
         {
@@ -229,10 +237,10 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("ContractGeneration"))
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    if (app.Environment.IsDevelopment()) app.UseSwaggerUI();
 }
 else
 {
