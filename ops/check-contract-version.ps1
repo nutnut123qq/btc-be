@@ -3,7 +3,11 @@ param([Parameter(Mandatory)][string]$BaseRevision)
 
 if ($BaseRevision -match '^0+$') {
     $parent = git -C $script:BackendDir rev-parse HEAD^ 2>$null
-    if ($LASTEXITCODE -ne 0) { Write-Host "Initial push has no contract baseline; version comparison skipped."; return }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Initial push has no contract baseline; version comparison skipped."
+        $global:LASTEXITCODE = 0
+        return
+    }
     $BaseRevision = $parent.Trim()
 }
 
@@ -12,6 +16,7 @@ if (-not (Test-Path -LiteralPath $currentPath)) { throw "Current OpenAPI contrac
 $baseText = git -C $script:BackendDir show "$BaseRevision`:contracts/openapi.json" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "No OpenAPI contract exists at $BaseRevision; version comparison skipped."
+    $global:LASTEXITCODE = 0
     return
 }
 $currentText = Get-Content -LiteralPath $currentPath -Raw
