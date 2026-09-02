@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using Backend.Data;
 using Backend.Options;
 using Backend.Services.Models;
@@ -78,7 +79,7 @@ public class IndexingBackgroundWorker : BackgroundService
     private async Task RunCycleAsync(CancellationToken cancellationToken)
     {
         var cycleStartedAt = _timeProvider.GetUtcNow().UtcDateTime;
-        var failures = 0;
+        var failures = new ConcurrentQueue<string>();
         using (var heartbeatScope = _scopeFactory.CreateScope())
         {
             await WorkerHeartbeatStore.MarkStartedAsync(
@@ -99,12 +100,12 @@ public class IndexingBackgroundWorker : BackgroundService
             {
                 try
                 {
-                    if (!await IndexTimeframeAsync(Symbol, tf, ct))
-                        Interlocked.Increment(ref failures);
+                    var failure = await IndexTimeframeAsync(Symbol, tf, ct);
+                    if (failure != null) failures.Enqueue(failure);
                 }
                 catch (Exception ex)
                 {
-                    Interlocked.Increment(ref failures);
+                    failures.Enqueue($"{Symbol} {tf}: {ex.GetType().Name}: {ex.Message}");
                     _logger.LogWarning(ex, "Failed to index timeframe {Symbol} {Timeframe}", Symbol, tf);
                 }
             });
@@ -115,36 +116,36 @@ public class IndexingBackgroundWorker : BackgroundService
             {
                 try
                 {
-                    if (!await IndexTimeframeAsync(Symbol, tf, cancellationToken))
-                        failures++;
+                    var failure = await IndexTimeframeAsync(Symbol, tf, cancellationToken);
+                    if (failure != null) failures.Enqueue(failure);
                 }
                 catch (Exception ex)
                 {
-                    failures++;
+                    failures.Enqueue($"{Symbol} {tf}: {ex.GetType().Name}: {ex.Message}");
                     _logger.LogWarning(ex, "Failed to index timeframe {Symbol} {Timeframe}", Symbol, tf);
                 }
             }
         }
 
         // Market metrics (funding rate, open interest, liquidations) — không phụ thuộc timeframe chính
-        if (!await IndexMarketMetricsAsync(cancellationToken))
-            failures++;
+        var marketMetricsFailure = await IndexMarketMetricsAsync(cancellationToken);
+        if (marketMetricsFailure != null) failures.Enqueue(marketMetricsFailure);
 
         using (var heartbeatScope = _scopeFactory.CreateScope())
         {
             var heartbeatDb = heartbeatScope.ServiceProvider.GetRequiredService<AppDbContext>();
-            if (failures == 0)
+            if (failures.IsEmpty)
                 await WorkerHeartbeatStore.MarkSucceededAsync(heartbeatDb, nameof(IndexingBackgroundWorker), cycleStartedAt,
                     _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
             else
                 await WorkerHeartbeatStore.MarkFailedAsync(heartbeatDb, nameof(IndexingBackgroundWorker), cycleStartedAt,
-                    _timeProvider.GetUtcNow().UtcDateTime, new InvalidOperationException($"{failures} indexing operation(s) failed."), cancellationToken);
+                    _timeProvider.GetUtcNow().UtcDateTime, new InvalidOperationException(string.Join(" | ", failures)), cancellationToken);
         }
 
         _logger.LogInformation("Completed indexing cycle for {Symbol}", Symbol);
     }
 
-    private async Task<bool> IndexTimeframeAsync(string symbol, string timeframe, CancellationToken cancellationToken)
+    private async Task<string?> IndexTimeframeAsync(string symbol, string timeframe, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -156,7 +157,7 @@ public class IndexingBackgroundWorker : BackgroundService
         var cache = scope.ServiceProvider.GetRequiredService<DataAuditCache>();
 
         var stopwatch = Stopwatch.StartNew();
-        var succeeded = true;
+        var failures = new List<string>();
 
         // Load Klines từ DB một lần cho cả indexer trong timeframe.
         var (klines, totalKlines) = await LoadKlinesAsync(
@@ -167,7 +168,7 @@ public class IndexingBackgroundWorker : BackgroundService
         if (klines.Count == 0)
         {
             _logger.LogWarning("No klines in DB for {Symbol} {Timeframe}; skipping indexing", symbol, timeframe);
-            return true;
+            return null;
         }
 
         // Giới hạn số nến trong memory nếu vượt quá cấu hình.
@@ -188,7 +189,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            succeeded = false;
+            failures.Add($"candle patterns {ex.GetType().Name}: {ex.Message}");
             _logger.LogWarning(ex, "Failed to auto-index candle patterns for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -204,7 +205,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            succeeded = false;
+            failures.Add($"window vectors {ex.GetType().Name}: {ex.Message}");
             _logger.LogWarning(ex, "Failed to auto-build window vectors for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -217,7 +218,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            succeeded = false;
+            failures.Add($"volume stats {ex.GetType().Name}: {ex.Message}");
             _logger.LogWarning(ex, "Failed to auto-index volume stats for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -238,7 +239,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            succeeded = false;
+            failures.Add($"technical indicators {ex.GetType().Name}: {ex.Message}");
             _logger.LogWarning(ex, "Failed to auto-index technical indicators for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -251,7 +252,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            succeeded = false;
+            failures.Add($"pattern sequences {ex.GetType().Name}: {ex.Message}");
             _logger.LogWarning(ex, "Failed to auto-index pattern sequences for {Symbol} {Timeframe}", symbol, timeframe);
         }
 
@@ -261,7 +262,7 @@ public class IndexingBackgroundWorker : BackgroundService
         _logger.LogInformation(
             "Finished indexing {Symbol} {Timeframe} in {ElapsedMs}ms (processed {Bars} bars, streaming={Streaming})",
             symbol, timeframe, stopwatch.ElapsedMilliseconds, klines.Count, isStreaming);
-        return succeeded;
+        return failures.Count == 0 ? null : $"{symbol} {timeframe}: {string.Join("; ", failures)}";
     }
 
     private static async Task<(IReadOnlyList<KlineDto> Klines, long Total)> LoadKlinesAsync(
@@ -300,7 +301,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
     }
 
-    private async Task<bool> IndexMarketMetricsAsync(CancellationToken cancellationToken)
+    private async Task<string?> IndexMarketMetricsAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var marketIndexer = scope.ServiceProvider.GetRequiredService<MarketMetricsIndexer>();
@@ -312,12 +313,12 @@ public class IndexingBackgroundWorker : BackgroundService
             // Liquidations: endpoint /fapi/v1/forceOrders yêu cầu API key (401 Unauthorized) — tắt để tránh log spam.
             // await marketIndexer.IndexLiquidationsAsync(Symbol, cancellationToken);
             _logger.LogInformation("Auto-indexed market metrics for {Symbol}", Symbol);
-            return true;
+            return null;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to auto-index market metrics for {Symbol}", Symbol);
-            return false;
+            return $"{Symbol} market metrics: {ex.GetType().Name}: {ex.Message}";
         }
     }
 }

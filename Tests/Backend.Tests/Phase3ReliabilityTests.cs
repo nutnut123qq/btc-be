@@ -212,6 +212,27 @@ public class Phase3ReliabilityTests
     }
 
     [Fact]
+    public async Task FailedHeartbeat_PersistsActionableSingleLineError()
+    {
+        await using var db = CreateDb();
+        var started = DateTime.UtcNow.AddSeconds(-2);
+
+        await WorkerHeartbeatStore.MarkFailedAsync(db, "worker", started, DateTime.UtcNow,
+            new InvalidOperationException("BTCUSDT 1h: technical indicators\nNpgsqlException: timeout"), default);
+
+        var heartbeat = await db.WorkerHeartbeats.SingleAsync();
+        Assert.Equal("InvalidOperationException: BTCUSDT 1h: technical indicators NpgsqlException: timeout", heartbeat.LastError);
+    }
+
+    [Theory]
+    [InlineData("1h", 3_600_000L)]
+    [InlineData("4h", 14_400_000L)]
+    public void PaperTimeframeMilliseconds_UsesExplicitSupportedIntervals(string timeframe, long expected)
+    {
+        Assert.Equal(expected, EnsemblePaperTraderService.TimeframeMilliseconds(timeframe));
+    }
+
+    [Fact]
     public void Model_HasGapUniquenessAndDueRetryIndex()
     {
         using var db = CreateDb();

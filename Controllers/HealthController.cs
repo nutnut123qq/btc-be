@@ -20,7 +20,9 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger)
     private static readonly (string Name, TimeSpan MaxAge)[] ExpectedWorkers =
     [
         (nameof(Services.KlinesIngestionWorker), TimeSpan.FromMinutes(40)),
-        (nameof(Services.IndexingBackgroundWorker), TimeSpan.FromMinutes(70))
+        (nameof(Services.IndexingBackgroundWorker), TimeSpan.FromMinutes(70)),
+        (nameof(Services.RssIngestionService), TimeSpan.FromMinutes(40)),
+        (nameof(Services.EmbeddingBackfillWorker), TimeSpan.FromMinutes(130))
     ];
 
     [HttpGet("live")]

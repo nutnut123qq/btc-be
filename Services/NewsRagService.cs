@@ -203,7 +203,7 @@ public class NewsRagService : INewsRagService, IRagService
             .AsNoTracking()
             .OrderByDescending(a => a.PublishedAt ?? a.FetchedAt)
             .Take(topK)
-            .Select(a => new { a.Title, a.Link, a.Summary })
+            .Select(a => new { a.Title, a.Link, a.Summary, Date = a.PublishedAt ?? a.FetchedAt })
             .ToListAsync(cancellationToken);
 
         if (articles.Count == 0)
@@ -213,6 +213,9 @@ public class NewsRagService : INewsRagService, IRagService
 
         var sb = new StringBuilder();
         sb.AppendLine("(Retrieved by recency; embedding similarity unavailable.)");
+        var newest = articles.Max(a => a.Date);
+        if (newest < DateTimeOffset.UtcNow.AddHours(-6))
+            sb.AppendLine($"WARNING: stored news is stale; newest article is from {newest:O}.");
         foreach (var a in articles)
         {
             sb.AppendLine("---");

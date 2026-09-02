@@ -35,13 +35,25 @@ public class RssIngestionService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var startedAtUtc = DateTime.UtcNow;
             try
             {
+                using (var scope = _scopeFactory.CreateScope())
+                    await WorkerHeartbeatStore.MarkStartedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(RssIngestionService), startedAtUtc, stoppingToken);
                 await IngestAllFeedsAsync(stoppingToken);
+                using (var scope = _scopeFactory.CreateScope())
+                    await WorkerHeartbeatStore.MarkSucceededAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(RssIngestionService), startedAtUtc, DateTime.UtcNow, stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "RSS ingestion cycle failed");
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    await WorkerHeartbeatStore.MarkFailedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(RssIngestionService), startedAtUtc, DateTime.UtcNow, ex, stoppingToken);
+                }
+                catch (Exception heartbeatException) { _logger.LogWarning(heartbeatException, "Could not persist failed RSS heartbeat"); }
             }
 
             try
@@ -70,6 +82,7 @@ public class RssIngestionService : BackgroundService
 
         var http = _httpClientFactory.CreateClient("RssFetcher");
         http.DefaultRequestHeaders.UserAgent.ParseAdd("BitcoinAnalyst/1.0 (Capstone; +https://localhost)");
+        var failures = new List<string>();
 
         foreach (var feed in feeds)
         {
@@ -80,11 +93,14 @@ public class RssIngestionService : BackgroundService
             }
             catch (Exception ex)
             {
+                failures.Add($"{feed.Source}: {ex.GetType().Name}: {ex.Message}");
                 _logger.LogWarning(ex, "Failed to ingest feed {Source} {Url}", feed.Source, feed.Url);
             }
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        if (failures.Count == feeds.Count)
+            throw new InvalidOperationException($"All RSS feeds failed. {string.Join(" | ", failures)}");
     }
 
     private static async Task IngestFeedAsync(

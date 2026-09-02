@@ -26,13 +26,25 @@ public class EmbeddingBackfillWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var startedAtUtc = DateTime.UtcNow;
             try
             {
+                using (var scope = _scopeFactory.CreateScope())
+                    await WorkerHeartbeatStore.MarkStartedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(EmbeddingBackfillWorker), startedAtUtc, stoppingToken);
                 await RunCycleAsync(stoppingToken);
+                using (var scope = _scopeFactory.CreateScope())
+                    await WorkerHeartbeatStore.MarkSucceededAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(EmbeddingBackfillWorker), startedAtUtc, DateTime.UtcNow, stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Embedding backfill cycle failed");
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    await WorkerHeartbeatStore.MarkFailedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(EmbeddingBackfillWorker), startedAtUtc, DateTime.UtcNow, ex, stoppingToken);
+                }
+                catch (Exception heartbeatException) { _logger.LogWarning(heartbeatException, "Could not persist failed embedding heartbeat"); }
             }
 
             try
@@ -49,6 +61,32 @@ public class EmbeddingBackfillWorker : BackgroundService
     internal async Task RunCycleAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var articlesWithoutChunks = await db.NewsArticles
+            .Where(article => !article.Chunks.Any())
+            .OrderByDescending(article => article.PublishedAt ?? article.FetchedAt)
+            .Take(500)
+            .ToListAsync(cancellationToken);
+
+        foreach (var article in articlesWithoutChunks)
+        {
+            var body = string.Join("\n\n", new[] { article.Title, article.Summary }.Where(text => !string.IsNullOrWhiteSpace(text)));
+            var index = 0;
+            foreach (var text in TextChunker.Chunk(body, maxChars: 1000, overlap: 120))
+            {
+                db.NewsChunks.Add(new NewsChunk
+                {
+                    Id = Guid.NewGuid(), ArticleId = article.Id, ChunkIndex = index++,
+                    Text = text.Length > 16000 ? text[..16000] : text
+                });
+            }
+        }
+        if (articlesWithoutChunks.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Created missing chunks for {Count} restored news articles", articlesWithoutChunks.Count);
+        }
+
         var embedder = scope.ServiceProvider.GetRequiredService<IGeminiEmbeddingClient>();
         if (!embedder.IsConfigured)
         {
@@ -59,8 +97,6 @@ public class EmbeddingBackfillWorker : BackgroundService
             }
             return;
         }
-
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var chunks = await db.NewsChunks
             .Where(c => c.Embedding == null || c.Embedding.Length == 0)

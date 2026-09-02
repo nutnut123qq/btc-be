@@ -26,9 +26,15 @@ pwsh ./ops/stop.ps1
 pwsh ./ops/watchdog.ps1
 pwsh ./ops/run-ai-job.ps1 -Job Futures
 pwsh ./ops/run-ai-job.ps1 -Job Paper
+pwsh ./ops/run-ai-job.ps1 -Job EnsemblePaper
+pwsh ./ops/run-ai-job.ps1 -Job Liquidation
+pwsh ./ops/run-ai-job.ps1 -Job Sentiment
+pwsh ./ops/run-ai-job.ps1 -Job Confluence
 ```
 
 `build.ps1` publishes the backend, runs `npm ci && npm run build`, and checks the AI virtual environment. `start.ps1` always builds first so changed source, package locks, and configuration cannot run against stale artifacts, then runs the backend with `ProductionLike`, FastAPI without `--reload`, and Next.js with `next start`. Use `start.ps1 -SkipBuild` only for an intentional restart of already verified unchanged artifacts. Runtime files and logs live in ignored `.ops/`. Startup checks PostgreSQL 17 readiness but never starts it. Production-like startup never applies migrations.
+
+`run-ai-job.ps1` is the only supported Scheduled Task entrypoint for derived data. `EnsemblePaper` manages existing BTC 4h plus ETH/SOL 1h positions through the admin-guarded backend; new Ensemble entries remain fail-closed until a real promotion gate exists. `Confluence` refreshes all three symbols; `Liquidation` and `Sentiment` run their Python snapshot engines. Authentication, HTTP, or Python failures terminate with a non-zero exit code so Task Scheduler cannot report a false success.
 
 ## Controlled migration and backup
 

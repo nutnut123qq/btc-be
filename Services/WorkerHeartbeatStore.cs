@@ -39,7 +39,12 @@ internal static class WorkerHeartbeatStore
         row.Status = "Failed";
         row.LastFailedAtUtc = completedAt;
         row.LastDurationMs = Math.Max(0, (long)(completedAt - startedAtUtc).TotalMilliseconds);
-        row.LastError = $"{exception.GetType().Name}: worker cycle failed; see backend logs.";
+        var detail = string.Join(" ", exception.Message
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var error = string.IsNullOrWhiteSpace(detail)
+            ? exception.GetType().Name
+            : $"{exception.GetType().Name}: {detail}";
+        row.LastError = error[..Math.Min(error.Length, 1000)];
         row.UpdatedAtUtc = completedAt;
         await db.SaveChangesAsync(ct);
     }

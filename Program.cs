@@ -88,7 +88,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddHttpClient("AIService", client =>
 {
-    var aiUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    var aiUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://127.0.0.1:8000";
     client.BaseAddress = new Uri(aiUrl);
     // LangGraph + many Ollama calls: default 15m was often too short on CPU.
     var minutes = builder.Configuration.GetValue("AiService:RequestTimeoutMinutes", 60);
