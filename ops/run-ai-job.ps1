@@ -24,7 +24,7 @@ if ($Job -in @("EnsemblePaper", "Confluence")) {
     exit 0
 }
 
-$aiDir = Join-Path $script:WorkspaceDir "ai"
+$aiDir = $script:AiDir
 $python = Join-Path $aiDir "venv/Scripts/python.exe"
 if (-not (Test-Path -LiteralPath $python)) { throw "AI virtualenv is missing." }
 $scriptName = switch ($Job) {

@@ -20,8 +20,8 @@ if (-not $postgres.ready) {
 
 $backendPublish = Join-Path $script:PublishDir "backend"
 $backendDll = Join-Path $backendPublish "Backend.dll"
-$frontendDir = Join-Path $script:WorkspaceDir "frontend"
-$aiDir = Join-Path $script:WorkspaceDir "ai"
+$frontendDir = $script:FrontendDir
+$aiDir = $script:AiDir
 $python = Join-Path $aiDir "venv/Scripts/python.exe"
 if (-not $SkipBuild) {
     Write-Host "Building production artifacts before start. Use -SkipBuild only for an intentional unchanged-artifact restart."

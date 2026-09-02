@@ -3,6 +3,15 @@ $ErrorActionPreference = "Stop"
 
 $script:BackendDir = Split-Path $PSScriptRoot -Parent
 $script:WorkspaceDir = Split-Path $script:BackendDir -Parent
+
+function Resolve-OpsComponentDirectory([string]$WorkspacePath, [string]$MonorepoName, [string]$SiblingName) {
+    $monorepoPath = Join-Path $WorkspacePath $MonorepoName
+    if (Test-Path -LiteralPath $monorepoPath -PathType Container) { return $monorepoPath }
+    return Join-Path $WorkspacePath $SiblingName
+}
+
+$script:FrontendDir = Resolve-OpsComponentDirectory $script:WorkspaceDir "frontend" "btc-fe"
+$script:AiDir = Resolve-OpsComponentDirectory $script:WorkspaceDir "ai" "btc-ai"
 $script:RuntimeDir = Join-Path $script:BackendDir ".ops"
 $script:LogsDir = Join-Path $script:RuntimeDir "logs"
 $script:PublishDir = Join-Path $script:RuntimeDir "publish"

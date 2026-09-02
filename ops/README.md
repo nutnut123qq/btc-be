@@ -1,6 +1,6 @@
 # Local production-like operations
 
-These PowerShell scripts own the local three-service workflow from the backend repository. They resolve `backend`, sibling `frontend`, and sibling `ai` from the checkout location; no user-specific path is stored.
+These PowerShell scripts own the local three-service workflow from the backend repository. They support both the monorepo layout (`backend`, `frontend`, `ai`) and sibling deployment repositories (`btc-be`, `btc-fe`, `btc-ai`); no user-specific path is stored.
 
 ## Prerequisites
 

@@ -92,7 +92,7 @@ try {
     $modelFiles = @()
     $modelArchiveHash = $null
     if (-not $SkipModels) {
-        $modelsDir = Join-Path $script:WorkspaceDir "ai/models"
+        $modelsDir = Join-Path $script:AiDir "models"
         if (Test-Path -LiteralPath $modelsDir) {
             $files = @(Get-ChildItem -LiteralPath $modelsDir -File | Where-Object Extension -in ".joblib", ".json")
             if ($files.Count -gt 0) {

@@ -6,7 +6,7 @@ dotnet publish (Join-Path $script:BackendDir "Backend.csproj") -c Release -o (Jo
 if ($LASTEXITCODE -ne 0) { throw "Backend publish failed." }
 
 if (-not $SkipDependencies) {
-    Push-Location (Join-Path $script:WorkspaceDir "frontend")
+    Push-Location $script:FrontendDir
     try {
         npm ci
         if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed." }
@@ -15,7 +15,7 @@ if (-not $SkipDependencies) {
     }
     finally { Pop-Location }
 
-    $python = Join-Path $script:WorkspaceDir "ai/venv/Scripts/python.exe"
+    $python = Join-Path $script:AiDir "venv/Scripts/python.exe"
     if (-not (Test-Path -LiteralPath $python)) { throw "AI virtualenv not found: $python" }
     & $python -m pip check
     if ($LASTEXITCODE -ne 0) { throw "AI dependency check failed." }

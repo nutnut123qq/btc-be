@@ -5,7 +5,10 @@ if ([string]::IsNullOrWhiteSpace($env:PGPASSWORD) -or [string]::IsNullOrWhiteSpa
 }
 if ((ConvertTo-OpsHexString ([byte[]]@(0, 255))) -ne "00FF") { throw "Hex conversion failed." }
 
-$python = Join-Path $script:WorkspaceDir "ai/venv/Scripts/python.exe"
+$python = Join-Path $script:AiDir "venv/Scripts/python.exe"
+$missingWorkspace = Join-Path ([IO.Path]::GetTempPath()) "btc-ops-$([Guid]::NewGuid().ToString('N'))"
+$fallback = Resolve-OpsComponentDirectory $missingWorkspace "frontend" "btc-fe"
+if ($fallback -ne (Join-Path $missingWorkspace "btc-fe")) { throw "Sibling component fallback failed." }
 $arguments = @(
     "-c", "import json,sys; print(json.dumps(sys.argv[1:]))",
     "plain", "two words", 'quote"inside', "C:\path with space\", ""
