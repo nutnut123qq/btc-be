@@ -222,6 +222,10 @@ public class Phase3ReliabilityTests
 
         var heartbeat = await db.WorkerHeartbeats.SingleAsync();
         Assert.Equal("InvalidOperationException: BTCUSDT 1h: technical indicators NpgsqlException: timeout", heartbeat.LastError);
+
+        await WorkerHeartbeatStore.MarkFailedAsync(db, "worker", started, DateTime.UtcNow,
+            new InvalidOperationException("save failed", new ArgumentException("missing ChunkIndex")), default);
+        Assert.Equal("InvalidOperationException: save failed | ArgumentException: missing ChunkIndex", heartbeat.LastError);
     }
 
     [Theory]

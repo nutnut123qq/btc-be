@@ -39,7 +39,11 @@ internal static class WorkerHeartbeatStore
         row.Status = "Failed";
         row.LastFailedAtUtc = completedAt;
         row.LastDurationMs = Math.Max(0, (long)(completedAt - startedAtUtc).TotalMilliseconds);
-        var detail = string.Join(" ", exception.Message
+        var root = exception.GetBaseException();
+        var message = ReferenceEquals(root, exception)
+            ? exception.Message
+            : $"{exception.Message} | {root.GetType().Name}: {root.Message}";
+        var detail = string.Join(" ", message
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         var error = string.IsNullOrWhiteSpace(detail)
             ? exception.GetType().Name
