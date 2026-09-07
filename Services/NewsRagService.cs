@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Numerics;
 using System.Text;
 using Backend.Data;
@@ -37,39 +36,6 @@ public class NewsRagService : INewsRagService, IRagService
             return new List<NewsChunkSearchResult>();
         }
 
-        // 1. Fast Path: Native PostgreSQL pgvector HNSW index search (<=> cosine operator)
-        if (_db.Database.IsRelational())
-        {
-            try
-            {
-                var vectorStr = "[" + string.Join(",", qvec.Select(v => v.ToString("G9", CultureInfo.InvariantCulture))) + "]";
-                var rawSql = @"
-                    SELECT c.""Id"", c.""ArticleId"", COALESCE(a.""Title"", '') AS ""Title"", COALESCE(a.""Link"", '') AS ""Link"",
-                           c.""Text"" AS ""Content"",
-                           1.0 - (c.""EmbeddingVector"" <=> {0}::vector) AS ""Similarity""
-                    FROM ""NewsChunks"" c
-                    LEFT JOIN ""NewsArticles"" a ON c.""ArticleId"" = a.""Id""
-                    WHERE c.""EmbeddingVector"" IS NOT NULL
-                    ORDER BY c.""EmbeddingVector"" <=> {0}::vector ASC
-                    LIMIT {1};
-                ";
-
-                var results = await _db.Database
-                    .SqlQueryRaw<NewsChunkSearchResult>(rawSql, vectorStr, topK)
-                    .ToListAsync(cancellationToken);
-
-                if (results.Count > 0)
-                {
-                    return results;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Native pgvector query failed; falling back to in-memory SIMD similarity.");
-            }
-        }
-
-        // 2. Fallback Path: In-memory SIMD Cosine calculation (for non-relational test fixtures)
         var cutoffDate = DateTimeOffset.UtcNow.AddDays(-30);
         var chunks = await _db.NewsChunks
             .AsNoTracking()

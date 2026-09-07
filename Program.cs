@@ -116,7 +116,6 @@ builder.Services.AddScoped<IGeminiEmbeddingClient, GeminiEmbeddingClient>();
 builder.Services.AddScoped<INewsRagService, NewsRagService>();
 builder.Services.AddScoped<NewsRagService>();
 builder.Services.AddScoped<IRagService, NewsRagService>();
-builder.Services.AddScoped<RagService>();
 builder.Services.AddScoped<IBinanceKlinesService, BinanceKlinesService>();
 builder.Services.AddScoped<KlinesBackfillService>();
 builder.Services.AddScoped<IPatternSearchService, PatternSearchService>();

@@ -5,6 +5,37 @@ if ([string]::IsNullOrWhiteSpace($env:PGPASSWORD) -or [string]::IsNullOrWhiteSpa
 }
 if ((ConvertTo-OpsHexString ([byte[]]@(0, 255))) -ne "00FF") { throw "Hex conversion failed." }
 
+$originalSecretsPath = $script:SecretsPath
+$originalGeminiApiKey = [Environment]::GetEnvironmentVariable("GEMINI_API_KEY", "Process")
+$testSecretsPath = Join-Path ([IO.Path]::GetTempPath()) "btc-ops-secrets-$([Guid]::NewGuid().ToString('N')).clixml"
+try {
+    $testSecrets = [pscustomobject]@{
+        PGPASSWORD = ConvertTo-SecureString "test-password" -AsPlainText -Force
+        DB_PASS = ConvertTo-SecureString "test-password" -AsPlainText -Force
+        AdminApiKey = ConvertTo-SecureString "test-admin-key" -AsPlainText -Force
+        PGHOST = "127.0.0.1"
+        PGPORT = "5432"
+        PGUSER = "postgres"
+        PGDATABASE = "bitcoin_analyst"
+        LLM_PROVIDER = "none"
+    }
+    $testSecrets | Export-Clixml -LiteralPath $testSecretsPath
+    $script:SecretsPath = $testSecretsPath
+    [Environment]::SetEnvironmentVariable("GEMINI_API_KEY", $null, "Process")
+    Import-OpsSecrets
+    if ($env:GEMINI_API_KEY) { throw "Legacy secret import invented a Gemini key." }
+
+    $testSecrets | Add-Member -NotePropertyName GEMINI_API_KEY -NotePropertyValue (ConvertTo-SecureString "test-gemini-key" -AsPlainText -Force)
+    $testSecrets | Export-Clixml -LiteralPath $testSecretsPath
+    Import-OpsSecrets
+    if ($env:GEMINI_API_KEY -ne "test-gemini-key") { throw "Optional Gemini secret import failed." }
+}
+finally {
+    $script:SecretsPath = $originalSecretsPath
+    [Environment]::SetEnvironmentVariable("GEMINI_API_KEY", $originalGeminiApiKey, "Process")
+    if (Test-Path -LiteralPath $testSecretsPath) { [IO.File]::Delete($testSecretsPath) }
+}
+
 $python = Join-Path $script:AiDir "venv/Scripts/python.exe"
 $missingWorkspace = Join-Path ([IO.Path]::GetTempPath()) "btc-ops-$([Guid]::NewGuid().ToString('N'))"
 $fallback = Resolve-OpsComponentDirectory $missingWorkspace "frontend" "btc-fe"

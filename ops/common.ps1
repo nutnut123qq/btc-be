@@ -25,9 +25,10 @@ function Initialize-OpsDirectories {
 function Import-OpsSecrets {
     if (-not (Test-Path -LiteralPath $script:SecretsPath)) { return }
     $secrets = Import-Clixml -LiteralPath $script:SecretsPath
-    foreach ($name in @("PGPASSWORD", "DB_PASS", "AdminApiKey")) {
-        if (-not [Environment]::GetEnvironmentVariable($name, "Process")) {
-            $secureValue = $secrets.$name
+    foreach ($name in @("PGPASSWORD", "DB_PASS", "AdminApiKey", "GEMINI_API_KEY")) {
+        $property = $secrets.PSObject.Properties[$name]
+        if (-not [Environment]::GetEnvironmentVariable($name, "Process") -and $property) {
+            $secureValue = $property.Value
             if ($secureValue -isnot [Security.SecureString]) { throw "Invalid protected value: $name" }
             [Environment]::SetEnvironmentVariable(
                 $name,
