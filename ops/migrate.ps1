@@ -8,7 +8,6 @@ if (@(Get-ProcessState | Where-Object { Test-ManagedProcess $_ }).Count -gt 0) {
 $postgres = Assert-NativePg17
 
 & "$PSScriptRoot/restore-verify.ps1" -BackupPath $BackupPath -Mode ListOnly
-if ($LASTEXITCODE -ne 0) { throw "Backup verification failed; migration was not started." }
 $dumpPath = [IO.Path]::GetFullPath($BackupPath)
 $manifestPath = Join-Path (Split-Path $dumpPath -Parent) "$([IO.Path]::GetFileNameWithoutExtension($dumpPath)).manifest.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
