@@ -37,8 +37,8 @@ public class GeminiEmbeddingClient : IGeminiEmbeddingClient
             return null;
 
         var client = _httpClientFactory.CreateClient("GeminiEmbedding");
-        var url =
-            $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={Uri.EscapeDataString(_apiKey!)}";
+        client.DefaultRequestHeaders.Add("x-goog-api-key", _apiKey);
+        const string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent";
 
         var body = new EmbedRequest
         {
