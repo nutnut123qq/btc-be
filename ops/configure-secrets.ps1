@@ -44,7 +44,5 @@ $protectedSecrets = [ordered]@{
 }
 if ($geminiApiKey) { $protectedSecrets.GEMINI_API_KEY = $geminiApiKey }
 [pscustomobject]$protectedSecrets | Export-Clixml -LiteralPath $script:SecretsPath -Force
-
-& icacls.exe $script:SecretsPath /inheritance:r /grant:r "$env:USERNAME`:(F)" "SYSTEM`:(F)" | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "Could not restrict the protected secret file ACL." }
+Set-OpsSecretsFileAcl $script:SecretsPath
 Write-Host "Protected local runtime secrets configured at $script:SecretsPath"

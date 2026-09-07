@@ -17,6 +17,7 @@ These PowerShell scripts own the local three-service workflow from the backend r
 ```powershell
 pwsh ./ops/build.ps1
 pwsh ./ops/configure-secrets.ps1
+pwsh ./ops/rotate-db-password.ps1
 pwsh ./ops/start.ps1
 pwsh ./ops/status.ps1
 pwsh ./ops/common-self-test.ps1
@@ -35,6 +36,8 @@ pwsh ./ops/run-ai-job.ps1 -Job Confluence
 `build.ps1` publishes the backend, runs `npm ci && npm run build`, and checks the AI virtual environment. `start.ps1` always builds first so changed source, package locks, and configuration cannot run against stale artifacts, then runs the backend with `ProductionLike`, FastAPI without `--reload`, and Next.js with `next start`. Use `start.ps1 -SkipBuild` only for an intentional restart of already verified unchanged artifacts. Runtime files and logs live in ignored `.ops/`. Startup checks PostgreSQL 17 readiness but never starts it. Production-like startup never applies migrations.
 
 `run-ai-job.ps1` is the only supported Scheduled Task entrypoint for derived data. `EnsemblePaper` manages existing BTC 4h plus ETH/SOL 1h positions through the admin-guarded backend; new Ensemble entries remain fail-closed until a real promotion gate exists. `Confluence` refreshes all three symbols; `Liquidation` and `Sentiment` run their Python snapshot engines. Authentication, HTTP, or Python failures terminate with a non-zero exit code so Task Scheduler cannot report a false success.
+
+`rotate-db-password.ps1` generates a new random PostgreSQL password, stores it only in the current deploy user's DPAPI-protected secret file, changes the configured PostgreSQL role, and verifies a fresh login. Stop the managed stack and disable application Scheduled Tasks before running it. The password is never printed or passed on a process command line.
 
 ## Controlled migration and backup
 

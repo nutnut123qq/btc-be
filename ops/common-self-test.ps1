@@ -51,4 +51,9 @@ $actual = @()
 foreach ($item in ($result.Output.Trim() | ConvertFrom-Json)) { $actual += $item }
 if (Compare-Object $expected $actual -SyncWindow 0) { throw "Native argument round-trip failed." }
 
+$stdinResult = Invoke-BoundedProcess $python @("-c", "import sys; print(sys.stdin.read())") 10 -StandardInput "stdin round-trip"
+if ($stdinResult.ExitCode -ne 0 -or $stdinResult.Output.Trim() -ne "stdin round-trip") {
+    throw "Native standard-input round-trip failed: $($stdinResult.Error)"
+}
+
 Write-Host "Ops common self-test passed under PowerShell $($PSVersionTable.PSVersion)."

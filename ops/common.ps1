@@ -22,6 +22,13 @@ function Initialize-OpsDirectories {
     New-Item -ItemType Directory -Force -Path $script:RuntimeDir, $script:LogsDir, $script:PublishDir | Out-Null
 }
 
+function Set-OpsSecretsFileAcl([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Protected secret file not found: $Path" }
+    $currentUserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    & icacls.exe $Path /inheritance:r /grant:r "*$currentUserSid`:(F)" "*S-1-5-18`:(F)" "*S-1-5-32-544`:(F)" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not restrict the protected secret file ACL." }
+}
+
 function Import-OpsSecrets {
     if (-not (Test-Path -LiteralPath $script:SecretsPath)) { return }
     $secrets = Import-Clixml -LiteralPath $script:SecretsPath
@@ -167,7 +174,8 @@ function Invoke-BoundedProcess {
         [Parameter(Mandatory)][string]$FilePath,
         [string[]]$ArgumentList = @(),
         [int]$TimeoutSeconds = 60,
-        [string]$WorkingDirectory = ""
+        [string]$WorkingDirectory = "",
+        [AllowEmptyString()][string]$StandardInput
     )
     if ($TimeoutSeconds -le 0) { throw "TimeoutSeconds must be positive." }
     $info = [Diagnostics.ProcessStartInfo]::new()
@@ -175,12 +183,17 @@ function Invoke-BoundedProcess {
     $info.UseShellExecute = $false
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    $info.RedirectStandardInput = $PSBoundParameters.ContainsKey("StandardInput")
     if ($WorkingDirectory) { $info.WorkingDirectory = $WorkingDirectory }
     $info.Arguments = Join-OpsNativeArguments $ArgumentList
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $info
     try {
         if (-not $process.Start()) { throw "Could not start $FilePath." }
+        if ($info.RedirectStandardInput) {
+            $process.StandardInput.Write($StandardInput)
+            $process.StandardInput.Close()
+        }
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
