@@ -44,9 +44,10 @@ function Import-OpsSecrets {
             )
         }
     }
-    foreach ($name in @("PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "LLM_PROVIDER")) {
-        if (-not [Environment]::GetEnvironmentVariable($name, "Process") -and $secrets.$name) {
-            [Environment]::SetEnvironmentVariable($name, [string]$secrets.$name, "Process")
+    foreach ($name in @("PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "LLM_PROVIDER", "GEMINI_MODEL")) {
+        $property = $secrets.PSObject.Properties[$name]
+        if (-not [Environment]::GetEnvironmentVariable($name, "Process") -and $property -and $property.Value) {
+            [Environment]::SetEnvironmentVariable($name, [string]$property.Value, "Process")
         }
     }
 }

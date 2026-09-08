@@ -31,11 +31,17 @@ if (-not (Test-Path -LiteralPath $backendDll)) { throw "Backend publish is missi
 if (-not (Test-Path -LiteralPath (Join-Path $frontendDir ".next/BUILD_ID"))) { throw "Frontend production build is missing." }
 if (-not (Test-Path -LiteralPath $python)) { throw "AI virtualenv missing: $python" }
 
+$llmProvider = $(if ($env:LLM_PROVIDER) { $env:LLM_PROVIDER } else { "none" })
+$aiEnvironment = @{ "LLM_PROVIDER" = $llmProvider }
+if ($llmProvider -eq "gemini") {
+    if ([string]::IsNullOrWhiteSpace($env:GEMINI_API_KEY)) { throw "Gemini API key is not configured." }
+    $aiEnvironment["GOOGLE_API_KEY"] = $env:GEMINI_API_KEY
+    $aiEnvironment["GEMINI_MODEL"] = $(if ($env:GEMINI_MODEL) { $env:GEMINI_MODEL } else { "gemini-3.8-flash" })
+}
+
 $processes = @()
 try {
-    $processes += Start-ManagedProcess "ai" $python @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000") $aiDir @{
-        "LLM_PROVIDER" = $(if ($env:LLM_PROVIDER) { $env:LLM_PROVIDER } else { "none" })
-    }
+    $processes += Start-ManagedProcess "ai" $python @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000") $aiDir $aiEnvironment
     $processes += Start-ManagedProcess "backend" "dotnet" @("Backend.dll") $backendPublish @{
         "ASPNETCORE_ENVIRONMENT" = "ProductionLike"
         "ASPNETCORE_URLS" = "http://127.0.0.1:5197"

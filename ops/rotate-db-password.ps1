@@ -52,6 +52,7 @@ foreach ($required in @("AdminApiKey")) {
     }
 }
 
+$existingGeminiModel = $existing.PSObject.Properties["GEMINI_MODEL"]
 $protectedSecrets = [ordered]@{
     PGHOST = $(if ($existing.PGHOST) { [string]$existing.PGHOST } else { "127.0.0.1" })
     PGPORT = $(if ($existing.PGPORT) { [string]$existing.PGPORT } else { "5432" })
@@ -61,6 +62,7 @@ $protectedSecrets = [ordered]@{
     DB_PASS = ConvertTo-SecureString $newPassword -AsPlainText -Force
     AdminApiKey = $existing.AdminApiKey
     LLM_PROVIDER = $(if ($existing.LLM_PROVIDER) { [string]$existing.LLM_PROVIDER } else { "none" })
+    GEMINI_MODEL = $(if ($existingGeminiModel -and $existingGeminiModel.Value) { [string]$existingGeminiModel.Value } else { "gemini-3.8-flash" })
 }
 $geminiProperty = $existing.PSObject.Properties["GEMINI_API_KEY"]
 if ($geminiProperty) {

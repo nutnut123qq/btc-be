@@ -7,6 +7,7 @@ if ((ConvertTo-OpsHexString ([byte[]]@(0, 255))) -ne "00FF") { throw "Hex conver
 
 $originalSecretsPath = $script:SecretsPath
 $originalGeminiApiKey = [Environment]::GetEnvironmentVariable("GEMINI_API_KEY", "Process")
+$originalGeminiModel = [Environment]::GetEnvironmentVariable("GEMINI_MODEL", "Process")
 $testSecretsPath = Join-Path ([IO.Path]::GetTempPath()) "btc-ops-secrets-$([Guid]::NewGuid().ToString('N')).clixml"
 try {
     $testSecrets = [pscustomobject]@{
@@ -18,10 +19,12 @@ try {
         PGUSER = "postgres"
         PGDATABASE = "bitcoin_analyst"
         LLM_PROVIDER = "none"
+        GEMINI_MODEL = "gemini-3.8-flash"
     }
     $testSecrets | Export-Clixml -LiteralPath $testSecretsPath
     $script:SecretsPath = $testSecretsPath
     [Environment]::SetEnvironmentVariable("GEMINI_API_KEY", $null, "Process")
+    [Environment]::SetEnvironmentVariable("GEMINI_MODEL", $null, "Process")
     Import-OpsSecrets
     if ($env:GEMINI_API_KEY) { throw "Legacy secret import invented a Gemini key." }
 
@@ -29,10 +32,12 @@ try {
     $testSecrets | Export-Clixml -LiteralPath $testSecretsPath
     Import-OpsSecrets
     if ($env:GEMINI_API_KEY -ne "test-gemini-key") { throw "Optional Gemini secret import failed." }
+    if ($env:GEMINI_MODEL -ne "gemini-3.8-flash") { throw "Gemini model import failed." }
 }
 finally {
     $script:SecretsPath = $originalSecretsPath
     [Environment]::SetEnvironmentVariable("GEMINI_API_KEY", $originalGeminiApiKey, "Process")
+    [Environment]::SetEnvironmentVariable("GEMINI_MODEL", $originalGeminiModel, "Process")
     if (Test-Path -LiteralPath $testSecretsPath) { [IO.File]::Delete($testSecretsPath) }
 }
 

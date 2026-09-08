@@ -9,6 +9,7 @@ These PowerShell scripts own the local three-service workflow from the backend r
 - Native PostgreSQL is the source of truth. These scripts never start Docker or create a replacement PostgreSQL instance.
 - Set `PGDATABASE` and `PGPASSWORD`; optionally set `PGHOST`, `PGPORT`, and `PGUSER`. Keep passwords in the process environment, never in a script.
 - For unattended local operation, run `configure-secrets.ps1` once. It stores the database password and generated admin key as a current-user DPAPI-protected CLIXML file under ignored `.ops/`; `show-admin-key.ps1` reveals the admin key only on demand. Run `configure-secrets.ps1 -PromptForGeminiApiKey` to add or replace the optional Gemini embedding key without echoing it.
+- To enable Gemini explanations with an existing protected key, run `configure-secrets.ps1 -LlmProvider gemini -GeminiModel gemini-3.8-flash`; the AI child receives the key as `GOOGLE_API_KEY` without writing it to a command line or log.
 - `start.ps1` and `migrate.ps1` derive the backend/EF connection from that validated PG target. They do not accept a second independent database target.
 - Windows Scheduled Task actions should use the absolute inbox shell path `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`; a bare `pwsh.exe` is not available on every host or scheduler PATH.
 
