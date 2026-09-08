@@ -7,6 +7,7 @@ param(
 )
 . "$PSScriptRoot/common.ps1"
 Initialize-OpsDirectories
+Import-OpsSecrets
 
 if ([string]::IsNullOrWhiteSpace($DatabasePassword)) { $DatabasePassword = $env:PGPASSWORD }
 if ([string]::IsNullOrWhiteSpace($AdminKey)) { $AdminKey = $env:AdminApiKey }
