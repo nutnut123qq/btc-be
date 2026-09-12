@@ -49,9 +49,15 @@ public class ConfluenceContractTests
         var snapshot = await service.CalculateConfluenceAsync("BTCUSDT");
         var dto = ConfluenceController.MapToDto(snapshot);
 
-        Assert.Equal(4, archetypes.WindowSizes.Count);
+        Assert.Equal(3, archetypes.WindowSizes.Count);
         Assert.All(archetypes.WindowSizes, size => Assert.Equal(20, size));
         Assert.All(dto.TimeframeAlignments, item => Assert.Equal("A20", item.ArchetypeCode));
+        Assert.Equal(["1h", "4h", "1d"], dto.TimeframeAlignments.Select(x => x.Timeframe).ToArray());
+        Assert.DoesNotContain(dto.TimeframeAlignments, item => item.Timeframe == "15m");
+        Assert.Equal(1, dto.TimeframeAlignments.Sum(x => x.Weight), 10);
+        Assert.Equal(2d / 9d, dto.TimeframeAlignments.Single(x => x.Timeframe == "1h").Weight, 10);
+        Assert.Equal(3d / 9d, dto.TimeframeAlignments.Single(x => x.Timeframe == "4h").Weight, 10);
+        Assert.Equal(4d / 9d, dto.TimeframeAlignments.Single(x => x.Timeframe == "1d").Weight, 10);
     }
 
     private sealed class RecordingArchetypeService : IArchetypeService

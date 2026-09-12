@@ -111,7 +111,7 @@ public sealed class TransitionMatrixCellDto
 public sealed class TransitionMatrixDto
 {
     public string Symbol { get; set; } = "BTCUSDT";
-    public string Timeframe { get; set; } = "1h";
+    public string Timeframe { get; set; } = "4h";
     public int WindowSize { get; set; }
     public int ArchetypeCount { get; set; }
     public int TotalTransitions { get; set; }

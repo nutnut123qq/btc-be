@@ -14,17 +14,20 @@ public class RuleDiscoveryController : ControllerBase
     private readonly AppDbContext _db;
     private readonly CandleVolumeIndexer _volumeIndexer;
     private readonly ILogger<RuleDiscoveryController> _logger;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public RuleDiscoveryController(
         IBinanceKlinesService binance,
         AppDbContext db,
         CandleVolumeIndexer volumeIndexer,
-        ILogger<RuleDiscoveryController> logger)
+        ILogger<RuleDiscoveryController> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _binance = binance;
         _db = db;
         _volumeIndexer = volumeIndexer;
         _logger = logger;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     /// <summary>
@@ -34,7 +37,7 @@ public class RuleDiscoveryController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> RunDiscovery(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int lookbackBars = 3000,
         [FromQuery] int futureBars = 3,
         [FromQuery] double minWinRate = 0.50,
@@ -43,6 +46,10 @@ public class RuleDiscoveryController : ControllerBase
         [FromQuery] bool saveToDb = true,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+
         lookbackBars = Math.Clamp(lookbackBars, 200, 5000);
         futureBars = Math.Clamp(futureBars, 1, 20);
 
@@ -144,7 +151,11 @@ public class RuleDiscoveryController : ControllerBase
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(symbol)) q = q.Where(r => r.Symbol == symbol);
-        if (!string.IsNullOrWhiteSpace(timeframe)) q = q.Where(r => r.Timeframe == timeframe);
+        if (!string.IsNullOrWhiteSpace(timeframe))
+        {
+            timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+            q = q.Where(r => r.Timeframe == timeframe);
+        }
 
         var items = await q.ToListAsync(cancellationToken);
         return Ok(items);
@@ -157,10 +168,14 @@ public class RuleDiscoveryController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> IndexVolume(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int lookbackBars = 2000,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+
         lookbackBars = Math.Clamp(lookbackBars, 100, 5000);
         var klines = await _binance.GetKlinesAsync(symbol, timeframe, lookbackBars, cancellationToken: cancellationToken);
         var indexed = await _volumeIndexer.IndexAsync(symbol, timeframe, klines, cancellationToken);
@@ -173,10 +188,11 @@ public class RuleDiscoveryController : ControllerBase
     [HttpGet("volume-stats")]
     public async Task<ActionResult<object>> GetVolumeStats(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int take = 100,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         take = Math.Clamp(take, 1, 1000);
         var items = await _db.CandleVolumeStats
             .AsNoTracking()
@@ -194,10 +210,14 @@ public class RuleDiscoveryController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> Evaluate(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int limit = 50,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+
         limit = Math.Clamp(limit, 10, 200);
         var klines = await _binance.GetKlinesAsync(symbol, timeframe, limit, cancellationToken: cancellationToken);
         if (klines.Count == 0)

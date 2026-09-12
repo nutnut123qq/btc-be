@@ -6,14 +6,17 @@ namespace Backend.Services;
 public class SmartMoneyService : ISmartMoneyService
 {
     private readonly AppDbContext _db;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public SmartMoneyService(AppDbContext db)
+    public SmartMoneyService(AppDbContext db, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public async Task<List<SmartMoneyStructure>> GetSmartMoneyStructuresAsync(string symbol, string timeframe, int lookbackBars, CancellationToken ct = default)
     {
+        timeframe = _timeframePolicy.EnsureActive(timeframe);
         var klines = await _db.Klines
             .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)
             .OrderByDescending(k => k.OpenTimeMs)

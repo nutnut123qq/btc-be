@@ -8,10 +8,12 @@ namespace Backend.Services;
 public class RegimeDetectionService : IRegimeDetectionService
 {
     private readonly AppDbContext _db;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public RegimeDetectionService(AppDbContext db)
+    public RegimeDetectionService(AppDbContext db, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public async Task<MarketRegime?> GetCurrentRegimeAsync(string symbol, string timeframe, CancellationToken ct = default)
@@ -33,6 +35,7 @@ public class RegimeDetectionService : IRegimeDetectionService
 
     public async Task BuildRegimesAsync(string symbol, string timeframe, int lookbackBars, CancellationToken ct = default)
     {
+        timeframe = _timeframePolicy.EnsureActive(timeframe);
         // Load recent klines
         var klines = await _db.Klines
             .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)

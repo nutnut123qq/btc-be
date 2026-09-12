@@ -39,6 +39,18 @@ public class KlinesBackfillServiceTests
     }
 
     [Fact]
+    public async Task StartAsync_RejectsInactiveTimeframeBeforeStartingWork()
+    {
+        var service = CreateService(Guid.NewGuid().ToString(), new RangeFakeBinance());
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.StartAsync("BTCUSDT", ["15m"], wait: true));
+
+        Assert.Contains("inactive for production mutations", error.Message);
+        Assert.False(service.IsRunning);
+    }
+
+    [Fact]
     public async Task StartAsync_WhenAlreadyRunning_ReturnsAlreadyRunning()
     {
         var dbName = Guid.NewGuid().ToString();

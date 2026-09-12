@@ -1,4 +1,5 @@
 using Backend.Services;
+using Backend.Services.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Backend.Controllers;
@@ -15,18 +16,20 @@ public class IndexerController : ControllerBase
     private readonly IMlDatasetService _mlDatasetService;
     private readonly ILogger<IndexerController> _logger;
     private readonly DataAuditCache? _auditCache;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public IndexerController(TechnicalIndicatorIndexer techIndexer, IMlDatasetService mlDatasetService, ILogger<IndexerController> logger, DataAuditCache? auditCache = null)
+    public IndexerController(TechnicalIndicatorIndexer techIndexer, IMlDatasetService mlDatasetService, ILogger<IndexerController> logger, DataAuditCache? auditCache = null, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _techIndexer = techIndexer;
         _mlDatasetService = mlDatasetService;
         _logger = logger;
         _auditCache = auditCache;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     /// <summary>
     /// Chạy TechnicalIndicatorIndexer cho một hoặc nhiều timeframe.
-    /// Mặc định chạy cho BTCUSDT trên các timeframe: 1m, 5m, 15m, 1h, 4h, 1d.
+    /// Mặc định chạy cho BTCUSDT trên các timeframe production được cấu hình.
     /// </summary>
     [HttpPost("technical-indicators")]
     public async Task<IActionResult> IndexTechnicalIndicators(
@@ -35,8 +38,12 @@ public class IndexerController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var timeframes = string.IsNullOrWhiteSpace(timeframe)
-            ? new[] { "1m", "5m", "15m", "1h", "4h", "1d" }
-            : new[] { timeframe.Trim() };
+            ? _timeframePolicy.Active
+            : new[] { ProductionTimeframePolicy.Canonicalize(timeframe) };
+
+        var inactive = timeframes.FirstOrDefault(tf => !_timeframePolicy.IsActive(tf));
+        if (inactive is not null)
+            return InactiveTimeframe(inactive);
 
         var results = new Dictionary<string, object>();
         foreach (var tf in timeframes)
@@ -68,8 +75,12 @@ public class IndexerController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var timeframes = string.IsNullOrWhiteSpace(timeframe)
-            ? new[] { "5m", "15m", "30m", "1h", "4h", "1d" }
-            : new[] { timeframe.Trim() };
+            ? _timeframePolicy.Active
+            : new[] { ProductionTimeframePolicy.Canonicalize(timeframe) };
+
+        var inactive = timeframes.FirstOrDefault(tf => !_timeframePolicy.IsActive(tf));
+        if (inactive is not null)
+            return InactiveTimeframe(inactive);
 
         var results = new Dictionary<string, object>();
         foreach (var tf in timeframes)
@@ -90,4 +101,12 @@ public class IndexerController : ControllerBase
         _auditCache?.Invalidate(symbol);
         return Ok(new { symbol, timeframes = results.Keys, results });
     }
+
+    private BadRequestObjectResult InactiveTimeframe(string timeframe) => BadRequest(new ApiErrorEnvelope
+    {
+        Code = "INACTIVE_TIMEFRAME",
+        Message = _timeframePolicy.InactiveMessage(timeframe),
+        Retryable = false,
+        RequestId = HttpContext.TraceIdentifier
+    });
 }

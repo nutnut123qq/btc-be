@@ -19,6 +19,7 @@ public class PredictionController : ControllerBase
     private readonly HttpClient _aiClient;
     private readonly IMemoryCache _cache;
     private readonly ILogger<PredictionController> _logger;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
     private static readonly TimeSpan LatestTtl = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan AccuracyTtl = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ModelsTtl = TimeSpan.FromSeconds(60);
@@ -29,13 +30,15 @@ public class PredictionController : ControllerBase
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
         IMemoryCache cache,
-        ILogger<PredictionController> logger)
+        ILogger<PredictionController> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _windowDataset = windowDataset;
         _db = db;
         _aiClient = httpClientFactory.CreateClient("AIService");
         _cache = cache;
         _logger = logger;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public PredictionController(
@@ -43,7 +46,7 @@ public class PredictionController : ControllerBase
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
         ILogger<PredictionController> logger)
-        : this(windowDataset, db, httpClientFactory, new MemoryCache(new MemoryCacheOptions()), logger)
+        : this(windowDataset, db, httpClientFactory, new MemoryCache(new MemoryCacheOptions()), logger, null)
     {
     }
 
@@ -51,12 +54,16 @@ public class PredictionController : ControllerBase
     [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("expensive")]
     public async Task<ActionResult<object>> GetLatestPrediction(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int windowSize = 5,
-        [FromQuery] string horizon = "1h",
+        [FromQuery] string horizon = "4h",
         [FromQuery] string? modelName = null,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+
         if (!new[] { 5, 10, 15, 20, 25 }.Contains(windowSize))
             return BadRequest(new ApiErrorEnvelope { Code = "INVALID_WINDOW_SIZE", Message = "windowSize must be 5,10,15,20,25.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
         if (!new[] { "1h", "4h", "1d" }.Contains(horizon))
@@ -155,11 +162,12 @@ public class PredictionController : ControllerBase
     [HttpGet("history")]
     public async Task<ActionResult<object>> GetPredictionHistory(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int take = 100,
         [FromQuery] bool includeLegacy = false,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         take = Math.Clamp(take, 1, 1000);
         var items = await _db.ModelPredictions
             .AsNoTracking()
@@ -210,10 +218,14 @@ public class PredictionController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> AuditPredictions(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] bool includeLegacy = false,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+
         var pending = await _db.ModelPredictions
             .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.TargetReturn == null
                 && (includeLegacy || (x.ValidityStatus == ValidityStatuses.Valid && x.ArchivedAtUtc == null)))
@@ -268,10 +280,11 @@ public class PredictionController : ControllerBase
     [HttpGet("accuracy")]
     public async Task<ActionResult<object>> GetModelAccuracy(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] bool includeLegacy = false,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         var cacheKey = $"pred:accuracy:{symbol.ToUpperInvariant()}:{timeframe}:{includeLegacy}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {

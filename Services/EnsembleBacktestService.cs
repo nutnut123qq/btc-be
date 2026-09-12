@@ -7,15 +7,17 @@ namespace Backend.Services;
 public class EnsembleBacktestService : IEnsembleBacktestService
 {
     private readonly AppDbContext _db;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public EnsembleBacktestService(AppDbContext db)
+    public EnsembleBacktestService(AppDbContext db, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public async Task<(BacktestRun Summary, List<BacktestTrade> Trades, List<EquityCurvePointDto> EquityCurve)> RunEnsembleBacktestAsync(
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         long? startTimeMs = null,
         long? endTimeMs = null,
         double initialCapital = 10000,
@@ -25,7 +27,7 @@ public class EnsembleBacktestService : IEnsembleBacktestService
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
-        ArgumentException.ThrowIfNullOrWhiteSpace(timeframe);
+        timeframe = _timeframePolicy.EnsureActive(timeframe);
         if (initialCapital <= 0) throw new ArgumentOutOfRangeException(nameof(initialCapital));
         if (feeBps < 0) throw new ArgumentOutOfRangeException(nameof(feeBps));
         if (minConfidence is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(minConfidence));
@@ -223,9 +225,10 @@ public class EnsembleBacktestService : IEnsembleBacktestService
 
     public Task<WeightOptimizationResultDto> OptimizeWeightsAsync(
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         CancellationToken ct = default)
     {
+        _timeframePolicy.EnsureActive(timeframe);
         throw new InvalidOperationException(
             "INSUFFICIENT_POINT_IN_TIME_LAYER_DATA: Historical layer scores are required for truthful weight optimization.");
     }

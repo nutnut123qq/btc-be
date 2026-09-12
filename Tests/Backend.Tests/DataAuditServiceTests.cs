@@ -74,6 +74,10 @@ public class DataAuditServiceTests
         Assert.Equal(1, tf.TechnicalIndicators);
         Assert.Equal(1, tf.WindowVectors);
         Assert.Equal(0, tf.MissingBars);
+        Assert.True(tf.Active);
+
+        var inactive = result.Timeframes.Single(t => t.Timeframe == "15m");
+        Assert.False(inactive.Active);
     }
 
     [Fact]

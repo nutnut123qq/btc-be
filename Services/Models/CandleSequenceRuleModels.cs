@@ -58,7 +58,7 @@ public class CreateCandleSequenceRuleRequest
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Symbol { get; set; } = "BTCUSDT";
-    public string Timeframe { get; set; } = "1h";
+    public string Timeframe { get; set; } = "4h";
     public int RequiredBars { get; set; } = 10;
     public bool IsEnabled { get; set; } = true;
     public int CooldownMinutes { get; set; } = 60;
@@ -72,7 +72,7 @@ public class UpdateCandleSequenceRuleRequest
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Symbol { get; set; } = "BTCUSDT";
-    public string Timeframe { get; set; } = "1h";
+    public string Timeframe { get; set; } = "4h";
     public int RequiredBars { get; set; } = 10;
     public bool IsEnabled { get; set; } = true;
     public int CooldownMinutes { get; set; } = 60;

@@ -62,7 +62,8 @@ public class HealthControllerTests
 
         Assert.True(healthyBody.DatabaseReachable);
         Assert.Equal("healthy", healthyBody.Status);
-        Assert.All(healthyBody.Klines, item => Assert.Equal("fresh", item.Status));
+        Assert.All(healthyBody.Klines.Where(x => x.Active), item => Assert.Equal("fresh", item.Status));
+        Assert.All(healthyBody.Klines.Where(x => !x.Active), item => Assert.Equal("inactive", item.Status));
 
         db.Klines.RemoveRange(db.Klines.Where(k => k.Timeframe == "1m"));
         await db.SaveChangesAsync();
@@ -70,7 +71,14 @@ public class HealthControllerTests
         var degraded = Assert.IsType<OkObjectResult>((await controller.Get(default)).Result);
         var degradedBody = Assert.IsType<HealthResponse>(degraded.Value);
 
-        Assert.Equal("degraded", degradedBody.Status);
-        Assert.Equal("missing", degradedBody.Klines.Single(x => x.Timeframe == "1m").Status);
+        Assert.Equal("healthy", degradedBody.Status);
+        Assert.Equal("inactive", degradedBody.Klines.Single(x => x.Timeframe == "1m").Status);
+
+        db.Klines.RemoveRange(db.Klines.Where(k => k.Timeframe == "4h"));
+        await db.SaveChangesAsync();
+        var activeMissing = Assert.IsType<OkObjectResult>((await controller.Get(default)).Result);
+        var activeMissingBody = Assert.IsType<HealthResponse>(activeMissing.Value);
+        Assert.Equal("degraded", activeMissingBody.Status);
+        Assert.Equal("missing", activeMissingBody.Klines.Single(x => x.Timeframe == "4h").Status);
     }
 }

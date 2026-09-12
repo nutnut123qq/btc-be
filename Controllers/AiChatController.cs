@@ -16,15 +16,18 @@ public class AiChatController : ControllerBase
     private readonly IAiContextService _contextService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AiChatController> _logger;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public AiChatController(
         IAiContextService contextService,
         IHttpClientFactory httpClientFactory,
-        ILogger<AiChatController> logger)
+        ILogger<AiChatController> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _contextService = contextService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     [HttpGet("capabilities")]
@@ -59,7 +62,10 @@ public class AiChatController : ControllerBase
     public async Task<IActionResult> QueryAi([FromBody] AiChatQueryDto request, CancellationToken ct)
     {
         string symbol = request.Symbol ?? "BTCUSDT";
-        string timeframe = request.Timeframe ?? "1h";
+        string timeframe = ProductionTimeframePolicy.Canonicalize(request.Timeframe);
+        if (string.IsNullOrEmpty(timeframe)) timeframe = _timeframePolicy.Default;
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
         string userQuestion = string.IsNullOrWhiteSpace(request.Prompt) ? "Giải thích tổng quan dự báo BTC hiện tại" : request.Prompt.Trim();
 
         var context = await _contextService.GetFullMarketContextAsync(symbol, timeframe, ct);
@@ -117,7 +123,16 @@ public class AiChatController : ControllerBase
     public async Task StreamAi([FromBody] AiChatQueryDto request, CancellationToken ct)
     {
         string symbol = request.Symbol ?? "BTCUSDT";
-        string timeframe = request.Timeframe ?? "1h";
+        string timeframe = ProductionTimeframePolicy.Canonicalize(request.Timeframe);
+        if (string.IsNullOrEmpty(timeframe)) timeframe = _timeframePolicy.Default;
+        if (!_timeframePolicy.IsActive(timeframe))
+        {
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            await Response.WriteAsJsonAsync(
+                ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier),
+                ct);
+            return;
+        }
         string userQuestion = string.IsNullOrWhiteSpace(request.Prompt) ? "Giải thích tổng quan dự báo BTC hiện tại" : request.Prompt.Trim();
 
         Response.ContentType = "text/event-stream";
@@ -283,7 +298,7 @@ public class AiChatController : ControllerBase
 public class AiChatQueryDto
 {
     public string? Symbol { get; set; }
-    public string? Timeframe { get; set; }
+    public string? Timeframe { get; set; } = "4h";
     public string? Prompt { get; set; }
 }
 

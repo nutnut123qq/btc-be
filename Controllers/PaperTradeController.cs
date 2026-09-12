@@ -16,23 +16,26 @@ public class PaperTradeController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IEnsemblePaperTraderService _ensemblePaperTraderService;
     private readonly IMemoryCache _cache;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
     private static readonly TimeSpan SummaryTtl = TimeSpan.FromSeconds(5);
 
     [ActivatorUtilitiesConstructor]
     public PaperTradeController(
         AppDbContext db,
         IEnsemblePaperTraderService ensemblePaperTraderService,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
         _ensemblePaperTraderService = ensemblePaperTraderService;
         _cache = cache;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public PaperTradeController(
         AppDbContext db,
         IEnsemblePaperTraderService ensemblePaperTraderService)
-        : this(db, ensemblePaperTraderService, new MemoryCache(new MemoryCacheOptions()))
+        : this(db, ensemblePaperTraderService, new MemoryCache(new MemoryCacheOptions()), null)
     {
     }
 
@@ -40,7 +43,10 @@ public class PaperTradeController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<IActionResult> EvaluateEnsemble([FromBody] EvaluateEnsembleRequest request, CancellationToken ct)
     {
-        var result = await _ensemblePaperTraderService.EvaluateAndTradeAsync(request.Symbol, request.Timeframe, ct);
+        var timeframe = ProductionTimeframePolicy.Canonicalize(request.Timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+        var result = await _ensemblePaperTraderService.EvaluateAndTradeAsync(request.Symbol, timeframe, ct);
         return Ok(result);
     }
 
@@ -406,4 +412,4 @@ public class PaperTradeController : ControllerBase
     }
 }
 
-public class EvaluateEnsembleRequest { public string Symbol { get; set; } = "BTCUSDT"; public string Timeframe { get; set; } = "1h"; }
+public class EvaluateEnsembleRequest { public string Symbol { get; set; } = "BTCUSDT"; public string Timeframe { get; set; } = "4h"; }

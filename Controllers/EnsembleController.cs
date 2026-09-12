@@ -9,22 +9,28 @@ namespace Backend.Controllers;
 public class EnsembleController : ControllerBase
 {
     private readonly IEnsembleService _ensembleService;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public EnsembleController(IEnsembleService ensembleService)
+    public EnsembleController(IEnsembleService ensembleService, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _ensembleService = ensembleService;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     [HttpGet("predict")]
-    public async Task<IActionResult> PredictEnsemble([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", CancellationToken ct = default)
+    public async Task<IActionResult> PredictEnsemble([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
         var result = await _ensembleService.PredictEnsembleAsync(symbol, timeframe, ct);
         return Ok(MapToDto(result));
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> GetEnsembleHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int limit = 100, [FromQuery] bool includeLegacy = false, CancellationToken ct = default)
+    public async Task<IActionResult> GetEnsembleHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int limit = 100, [FromQuery] bool includeLegacy = false, CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         var result = await _ensembleService.GetEnsembleHistoryAsync(symbol, timeframe, limit, includeLegacy, ct);
         return Ok(result.Select(MapToDto));
     }
@@ -94,8 +100,11 @@ public class EnsembleController : ControllerBase
 
     [HttpPost("batch-replay")]
     [Backend.Filters.AdminGuard]
-    public async Task<IActionResult> BatchReplay([FromQuery] int sampleCount = 2000, [FromQuery] double minConfidence = 0.60, [FromQuery] bool enableMtfFilter = true, [FromQuery] bool enableSmcFilter = true, [FromQuery] bool enableAtrRrEngine = true, [FromQuery] bool enableVolumeFilter = true, [FromQuery] bool enableMlClassifier = true, [FromQuery] bool enableKellySizing = true, [FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", CancellationToken ct = default)
+    public async Task<IActionResult> BatchReplay([FromQuery] int sampleCount = 2000, [FromQuery] double minConfidence = 0.60, [FromQuery] bool enableMtfFilter = true, [FromQuery] bool enableSmcFilter = true, [FromQuery] bool enableAtrRrEngine = true, [FromQuery] bool enableVolumeFilter = true, [FromQuery] bool enableMlClassifier = true, [FromQuery] bool enableKellySizing = true, [FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
         var result = await _ensembleService.BatchReplayAsync(sampleCount, minConfidence, enableMtfFilter, enableSmcFilter, enableAtrRrEngine, enableVolumeFilter, enableMlClassifier, enableKellySizing, symbol, timeframe, ct);
         return Ok(result); // Already a clean DTO
     }

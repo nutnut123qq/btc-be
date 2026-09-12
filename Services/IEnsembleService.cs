@@ -18,7 +18,7 @@ public interface IEnsembleService
         bool enableMlClassifier = true,
         bool enableKellySizing = true,
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         CancellationToken ct = default);
 }
 
@@ -59,7 +59,7 @@ public class EpochWinRateDto
 public class BatchReplayResultDto
 {
     public string Symbol { get; set; } = "BTCUSDT";
-    public string Timeframe { get; set; } = "1h";
+    public string Timeframe { get; set; } = "4h";
     public double MinConfidenceThreshold { get; set; } = 0.60;
     public bool MtfFilterEnabled { get; set; } = true;
     public bool SmcFilterEnabled { get; set; } = true;

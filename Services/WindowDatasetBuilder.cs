@@ -11,15 +11,17 @@ public class WindowDatasetBuilder : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WindowDatasetBuilder> _logger;
 
-    private static readonly string[] Timeframes = { "1h", "4h", "1d" };
     private static readonly string[] Symbols = { "BTCUSDT" };
+    private readonly IReadOnlyList<string> _timeframes;
 
     public WindowDatasetBuilder(
         IServiceScopeFactory scopeFactory,
-        ILogger<WindowDatasetBuilder> logger)
+        ILogger<WindowDatasetBuilder> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _timeframes = (timeframePolicy ?? new ProductionTimeframePolicy()).Active;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -56,7 +58,7 @@ public class WindowDatasetBuilder : BackgroundService
 
         foreach (var symbol in Symbols)
         {
-            foreach (var timeframe in Timeframes)
+            foreach (var timeframe in _timeframes)
             {
                 try
                 {

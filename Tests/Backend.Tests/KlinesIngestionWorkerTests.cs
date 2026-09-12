@@ -49,8 +49,9 @@ public class KlinesIngestionWorkerTests
 
         await worker.RunCycleAsync(default);
 
-        Assert.Equal(9, fakeBinance.CallCount);
-        Assert.All(fakeBinance.Calls.Take(7), call => Assert.Null(call.start));
+        Assert.Equal(5, fakeBinance.CallCount);
+        Assert.All(fakeBinance.Calls.Take(3), call => Assert.Null(call.start));
+        Assert.Equal(["1h", "4h", "1d"], fakeBinance.Calls.Take(3).Select(call => call.interval).ToArray());
         Assert.Equal(2, fakeBinance.Calls.Count(call => call.start.HasValue));
     }
 
@@ -74,10 +75,25 @@ public class KlinesIngestionWorkerTests
         await worker.RunCycleAsync(default);
 
         var historical = fakeBinance.Calls.Where(x => x.start.HasValue).ToArray();
-        Assert.Equal(["1d", "4h"], historical.Select(x => x.interval).ToArray());
+        Assert.Equal(["1h", "4h"], historical.Select(x => x.interval).ToArray());
         using var scope = services.CreateScope();
         Assert.Equal("Succeeded", (await scope.ServiceProvider.GetRequiredService<AppDbContext>()
             .WorkerHeartbeats.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task GetDueGapStatesAsync_IgnoresPendingLegacyMinuteGaps()
+    {
+        await using var db = CreateInMemoryDb();
+        db.KlineGapStates.AddRange(
+            new KlineGapState { Symbol = "BTCUSDT", Timeframe = "15m", StartOpenTimeMs = 0, EndOpenTimeMs = 900_000, MissingBars = 2, Status = KlineGapStatuses.Pending },
+            new KlineGapState { Symbol = "BTCUSDT", Timeframe = "4h", StartOpenTimeMs = 0, EndOpenTimeMs = 14_400_000, MissingBars = 2, Status = KlineGapStatuses.Pending });
+        await db.SaveChangesAsync();
+
+        var due = await CreateWorker().GetDueGapStatesAsync(db, 10, default);
+
+        var gap = Assert.Single(due);
+        Assert.Equal("4h", gap.Timeframe);
     }
 
     [Fact]

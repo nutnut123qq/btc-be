@@ -4,14 +4,14 @@ public interface IAiContextService
 {
     Task<FullMarketContextDto> GetFullMarketContextAsync(
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         CancellationToken ct = default);
 }
 
 public class FullMarketContextDto
 {
     public string Symbol { get; set; } = "BTCUSDT";
-    public string Timeframe { get; set; } = "1h";
+    public string Timeframe { get; set; } = "4h";
     public double CurrentPrice { get; set; }
     public long ContextTimeMs { get; set; }
 

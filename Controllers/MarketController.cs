@@ -21,6 +21,7 @@ public class MarketController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ILogger<MarketController> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public MarketController(
         IBinanceKlinesService binance,
@@ -33,7 +34,8 @@ public class MarketController : ControllerBase
         IDataAuditService dataAudit,
         AppDbContext db,
         ILogger<MarketController> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _binance = binance;
         _backfill = backfill;
@@ -46,6 +48,7 @@ public class MarketController : ControllerBase
         _db = db;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     /// <summary>
@@ -53,7 +56,7 @@ public class MarketController : ControllerBase
     /// </summary>
     [HttpGet("btc/klines")]
     public async Task<ActionResult<IReadOnlyList<KlineDto>>> GetBtcKlines(
-        [FromQuery] string interval = "1h",
+        [FromQuery] string interval = "4h",
         [FromQuery] int limit = 48,
         [FromQuery] string symbol = "BTCUSDT",
         [FromQuery] long? startTimeMs = null,
@@ -93,7 +96,7 @@ public class MarketController : ControllerBase
     [HttpGet("klines")]
     public async Task<ActionResult<IReadOnlyList<KlineDto>>> GetKlines(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string interval = "1h",
+        [FromQuery] string interval = "4h",
         [FromQuery] int limit = 100,
         [FromQuery] long? startTimeMs = null,
         [FromQuery] long? endTimeMs = null,
@@ -207,7 +210,7 @@ public class MarketController : ControllerBase
         IReadOnlyList<string>? timeframes = null;
         if (!string.IsNullOrWhiteSpace(timeframe))
         {
-            var tf = timeframe.Trim();
+            var tf = ProductionTimeframePolicy.Canonicalize(timeframe);
             if (Timeframes.IntervalToMs(tf) <= 0)
             {
                 return BadRequest(new ApiErrorEnvelope
@@ -218,6 +221,8 @@ public class MarketController : ControllerBase
                     RequestId = HttpContext.TraceIdentifier
                 });
             }
+            if (!_timeframePolicy.IsActive(tf))
+                return InactiveTimeframe(tf);
             timeframes = new[] { tf };
         }
 
@@ -242,7 +247,7 @@ public class MarketController : ControllerBase
     [HttpGet("candles/around")]
     public async Task<ActionResult<CandlesAroundResponse>> GetCandlesAround(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "15m",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] long timeMs = 0,
         [FromQuery] int beforeBars = 100,
         [FromQuery] int afterBars = 100,
@@ -270,7 +275,7 @@ public class MarketController : ControllerBase
         try
         {
             var tfMs = Timeframes.IntervalToMs(timeframe);
-            if (tfMs <= 0) tfMs = 900_000L; // default 15m for unknown interval
+            if (tfMs <= 0) tfMs = 14_400_000L; // default 4h for unknown interval
             var limit = Math.Clamp(beforeBars + afterBars + 1, 1, 1000);
             var data = await _binance.GetKlinesAsync(
                 symbol: symbol,
@@ -311,6 +316,10 @@ public class MarketController : ControllerBase
         [FromBody] PatternSearchRequest request,
         CancellationToken cancellationToken = default)
     {
+        request.Timeframe = ProductionTimeframePolicy.Canonicalize(request.Timeframe);
+        if (!_timeframePolicy.IsActive(request.Timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, request.Timeframe, HttpContext.TraceIdentifier));
+
         if (request.WindowSize is < 5 or > 100)
         {
             return BadRequest(new ApiErrorEnvelope
@@ -365,12 +374,15 @@ public class MarketController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> RebuildPatternIndex(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "15m",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] string featureType = "all",
         [FromQuery] int lookbackBars = 5000,
         [FromQuery] int windowSize = 10,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return InactiveTimeframe(timeframe);
         featureType = PatternVectorFeatureType.Normalize(featureType);
         if (string.IsNullOrEmpty(featureType))
         {
@@ -401,11 +413,14 @@ public class MarketController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> WarmupPatternIndex(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "15m",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int lookbackBars = 5000,
         [FromQuery] int? windowSize = null,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return InactiveTimeframe(timeframe);
         var features = new[] { "open", "high", "low", "close", "all", "returns_shape" };
         var windowSizes = windowSize.HasValue ? new[] { windowSize.Value } : new[] { 5, 10, 15, 20, 25 };
         var total = 0;
@@ -430,7 +445,7 @@ public class MarketController : ControllerBase
     [HttpGet("pattern-index/status")]
     public async Task<ActionResult<object>> PatternIndexStatus(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "15m",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] string featureType = "all",
         [FromQuery] int windowSize = 10,
         CancellationToken cancellationToken = default)
@@ -462,7 +477,7 @@ public class MarketController : ControllerBase
     [HttpGet("candle-patterns")]
     public async Task<ActionResult<object>> GetCandlePatterns(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] long? fromMs = null,
         [FromQuery] long? toMs = null,
         [FromQuery] string? category = null,
@@ -512,7 +527,7 @@ public class MarketController : ControllerBase
     [HttpGet("window-dataset")]
     public async Task<ActionResult<object>> GetWindowDataset(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int windowSize = 10,
         [FromQuery] string horizon = "1d",
         [FromQuery] int? label = null,
@@ -573,9 +588,12 @@ public class MarketController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> BuildMlDataset(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return InactiveTimeframe(timeframe);
         var started = DateTime.UtcNow;
         var count = await _mlDataset.BuildAsync(symbol, timeframe, cancellationToken);
         return Ok(new
@@ -592,11 +610,14 @@ public class MarketController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> BuildWindowDataset(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int windowSize = 10,
         [FromQuery] string horizon = "1d",
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return InactiveTimeframe(timeframe);
         if (!new[] { 5, 10, 15, 20, 25 }.Contains(windowSize))
             return BadRequest(new ApiErrorEnvelope
             {
@@ -633,10 +654,13 @@ public class MarketController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<ActionResult<object>> IndexCandlePatterns(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int lookbackBars = 500,
         CancellationToken cancellationToken = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return InactiveTimeframe(timeframe);
         lookbackBars = Math.Clamp(lookbackBars, 10, 5_000);
         var started = DateTime.UtcNow;
         var indexed = await _patternIndexer.BuildFullAsync(symbol, timeframe, lookbackBars, cancellationToken);
@@ -675,6 +699,8 @@ public class MarketController : ControllerBase
         var gap = await _db.KlineGapStates.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (gap is null)
             return NotFound(new ApiErrorEnvelope { Code = "GAP_NOT_FOUND", Message = $"Data gap {id} was not found.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
+        if (!_timeframePolicy.IsActive(gap.Timeframe))
+            return InactiveTimeframe(gap.Timeframe);
         if (gap.Status == KlineGapStatuses.Filled)
             return Conflict(new ApiErrorEnvelope { Code = "GAP_ALREADY_FILLED", Message = "The data gap is already filled.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
 
@@ -687,6 +713,14 @@ public class MarketController : ControllerBase
         _dataAudit.Invalidate(gap.Symbol);
         return Ok(new GapRetryResponse(gap.Id, gap.Status, gap.AttemptCount, gap.NextRetryAtUtc, gap.UpdatedAtUtc));
     }
+
+    private BadRequestObjectResult InactiveTimeframe(string timeframe) => BadRequest(new ApiErrorEnvelope
+    {
+        Code = "INACTIVE_TIMEFRAME",
+        Message = _timeframePolicy.InactiveMessage(timeframe),
+        Retryable = false,
+        RequestId = HttpContext.TraceIdentifier
+    });
 
 }
 

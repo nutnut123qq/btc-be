@@ -9,11 +9,16 @@ public class EnsembleService : IEnsembleService
 {
     private readonly AppDbContext _db;
     private readonly IBinanceKlinesService _binance;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public EnsembleService(AppDbContext db, IBinanceKlinesService binance)
+    public EnsembleService(
+        AppDbContext db,
+        IBinanceKlinesService binance,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
         _binance = binance;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public record EnsembleLayerInput(
@@ -131,6 +136,7 @@ public class EnsembleService : IEnsembleService
 
     public async Task<EnsemblePredictionRecord> PredictEnsembleAsync(string symbol, string timeframe, CancellationToken ct = default)
     {
+        timeframe = _timeframePolicy.EnsureActive(timeframe);
         var klines = await _binance.GetKlinesAsync(symbol, timeframe, 2, cancellationToken: ct);
         double currentPrice = klines.Count > 0 ? (double)klines[^1].Close : 65000.0;
         long timeMs = klines.Count > 0 ? klines[^1].OpenTimeMs : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -174,6 +180,7 @@ public class EnsembleService : IEnsembleService
 
     public async Task<List<EnsemblePredictionRecord>> GetEnsembleHistoryAsync(string symbol, string timeframe, int limit, bool includeLegacy = false, CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         return await _db.EnsemblePredictionRecords
             .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
                 && (includeLegacy || (x.ValidityStatus == ValidityStatuses.Valid && x.ArchivedAtUtc == null)))
@@ -436,9 +443,10 @@ public class EnsembleService : IEnsembleService
         bool enableMlClassifier = true,
         bool enableKellySizing = true,
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         CancellationToken ct = default)
     {
+        timeframe = _timeframePolicy.EnsureActive(timeframe);
         var klines = await _db.Klines.AsNoTracking()
             .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)
             .OrderBy(k => k.OpenTimeMs)

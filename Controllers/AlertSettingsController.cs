@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,16 +9,13 @@ namespace Backend.Controllers;
 [Route("api/alert-settings")]
 public class AlertSettingsController : ControllerBase
 {
-    private static readonly HashSet<string> AllowedKlineIntervals = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"
-    };
-
     private readonly AppDbContext _db;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public AlertSettingsController(AppDbContext db)
+    public AlertSettingsController(AppDbContext db, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     [HttpGet]
@@ -61,9 +59,11 @@ public class AlertSettingsController : ControllerBase
         if (body.CooldownMinutes is < 1 or > 1440)
             return BadRequest("CooldownMinutes must be between 1 and 1440.");
 
-        var interval = string.IsNullOrWhiteSpace(body.KlineInterval) ? "1m" : body.KlineInterval.Trim();
-        if (!AllowedKlineIntervals.Contains(interval))
-            return BadRequest($"KlineInterval must be one of: {string.Join(", ", AllowedKlineIntervals.OrderBy(x => x, StringComparer.Ordinal))}.");
+        var interval = string.IsNullOrWhiteSpace(body.KlineInterval)
+            ? _timeframePolicy.Default
+            : ProductionTimeframePolicy.Canonicalize(body.KlineInterval);
+        if (!_timeframePolicy.IsActive(interval))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, interval, HttpContext.TraceIdentifier));
 
         // Upper threshold (breakout up) must be above lower threshold (breakout down): a valid price band.
         if (body.PriceAboveUsd.HasValue && body.PriceBelowUsd.HasValue
@@ -95,7 +95,7 @@ public class AlertSettingsController : ControllerBase
         public bool Enabled { get; set; }
         public decimal? PriceAboveUsd { get; set; }
         public decimal? PriceBelowUsd { get; set; }
-        public string KlineInterval { get; set; } = "1m";
+        public string KlineInterval { get; set; } = "4h";
         public int CooldownMinutes { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }
 
@@ -116,7 +116,7 @@ public class AlertSettingsController : ControllerBase
         public bool Enabled { get; set; }
         public decimal? PriceAboveUsd { get; set; }
         public decimal? PriceBelowUsd { get; set; }
-        public string KlineInterval { get; set; } = "1m";
+        public string KlineInterval { get; set; } = "4h";
         public int CooldownMinutes { get; set; } = 30;
     }
 }

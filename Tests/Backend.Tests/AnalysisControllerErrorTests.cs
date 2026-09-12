@@ -87,6 +87,7 @@ public class AnalysisControllerErrorTests
         await controller.GetAnalysis(input);
 
         Assert.Equal("BTCUSDT", market.LastTechSummarySymbol);
+        Assert.Equal("4h", market.LastTechSummaryInterval);
     }
 
     private sealed class StubRagService : IRagService
@@ -98,9 +99,11 @@ public class AnalysisControllerErrorTests
     private sealed class RecordingMarketService : IBinanceKlinesService
     {
         public string? LastTechSummarySymbol { get; private set; }
+        public string? LastTechSummaryInterval { get; private set; }
         public Task<string> BuildTechSummaryAsync(string symbol = "BTCUSDT", string interval = "1h", int limit = 48, CancellationToken cancellationToken = default)
         {
             LastTechSummarySymbol = symbol;
+            LastTechSummaryInterval = interval;
             return Task.FromResult("tech");
         }
         public Task<IReadOnlyList<KlineDto>> GetKlinesAsync(string symbol = "BTCUSDT", string interval = "1h", int limit = 48, long? startTimeMs = null, long? endTimeMs = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();

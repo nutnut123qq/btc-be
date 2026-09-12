@@ -45,7 +45,7 @@ public class AiContextService : IAiContextService
 
     public async Task<FullMarketContextDto> GetFullMarketContextAsync(
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         CancellationToken ct = default)
     {
         var klines = await _binance.GetKlinesAsync(symbol, timeframe, 2, cancellationToken: ct);

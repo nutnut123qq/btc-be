@@ -9,24 +9,32 @@ public class EnsembleBacktestController : ControllerBase
 {
     private readonly IEnsembleBacktestService _backtestService;
     private readonly ILogger<EnsembleBacktestController> _logger;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public EnsembleBacktestController(
         IEnsembleBacktestService backtestService,
-        ILogger<EnsembleBacktestController> logger)
+        ILogger<EnsembleBacktestController> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _backtestService = backtestService;
         _logger = logger;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     [HttpPost("run")]
     [Backend.Filters.AdminGuard]
     public async Task<IActionResult> RunBacktest([FromBody] EnsembleBacktestRunRequestDto req, CancellationToken ct)
     {
+        var timeframe = ProductionTimeframePolicy.Canonicalize(req.Timeframe);
+        if (string.IsNullOrEmpty(timeframe)) timeframe = _timeframePolicy.Default;
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+
         try
         {
             var (run, trades, equityCurve) = await _backtestService.RunEnsembleBacktestAsync(
                 req.Symbol ?? "BTCUSDT",
-                req.Timeframe ?? "1h",
+                timeframe,
                 req.StartTimeMs,
                 req.EndTimeMs,
                 req.InitialCapital ?? 10000,
@@ -92,9 +100,13 @@ public class EnsembleBacktestController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<IActionResult> OptimizeWeights(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+
         try
         {
             var result = await _backtestService.OptimizeWeightsAsync(symbol, timeframe, ct);
@@ -116,7 +128,7 @@ public class EnsembleBacktestController : ControllerBase
 public class EnsembleBacktestRunRequestDto
 {
     public string? Symbol { get; set; }
-    public string? Timeframe { get; set; }
+    public string? Timeframe { get; set; } = "4h";
     public long? StartTimeMs { get; set; }
     public long? EndTimeMs { get; set; }
     public double? InitialCapital { get; set; }

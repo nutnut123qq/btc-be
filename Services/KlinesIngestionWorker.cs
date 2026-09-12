@@ -23,25 +23,25 @@ public class KlinesIngestionWorker : BackgroundService
     private readonly KlinesIngestionOptions _options;
     private readonly DataAuditCache? _cache;
     private readonly TimeProvider _timeProvider;
+    private readonly IReadOnlyList<string> _timeframes;
 
     private static readonly string[] DefaultSymbols = { "BTCUSDT" };
     private const int BatchLimit = 1000;
-
-    // Ưu tiên khung lớn trước: ít request hơn, giảm gapCount nhanh hơn.
-    private static readonly string[] DefaultTimeframes = { "1d", "4h", "1h", "30m", "15m", "5m", "1m" };
 
     public KlinesIngestionWorker(
         IServiceScopeFactory scopeFactory,
         ILogger<KlinesIngestionWorker> logger,
         IOptions<KlinesIngestionOptions> options,
         DataAuditCache? cache = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _options = options.Value;
         _cache = cache;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _timeframes = (timeframePolicy ?? new ProductionTimeframePolicy()).Active;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -94,7 +94,7 @@ public class KlinesIngestionWorker : BackgroundService
         var maxRequests = Math.Max(1, _options.MaxRequestsPerCycle);
         var remainingRequests = maxRequests;
         var maxRequestsPerTimeframe = Math.Max(1,
-            (maxRequests + DefaultTimeframes.Length - 1) / DefaultTimeframes.Length);
+            (maxRequests + _timeframes.Count - 1) / _timeframes.Count);
         var totalInserted = 0;
         Exception? firstFailure = null;
 
@@ -108,7 +108,7 @@ public class KlinesIngestionWorker : BackgroundService
         // Latest ingestion has its own budget: historical gaps can never starve current candles.
         foreach (var symbol in DefaultSymbols)
         {
-            foreach (var tf in DefaultTimeframes)
+            foreach (var tf in _timeframes)
             {
                 if (cancellationToken.IsCancellationRequested)
                     break;
@@ -133,7 +133,7 @@ public class KlinesIngestionWorker : BackgroundService
         // Discover every timeframe before spending the separate historical budget.
         foreach (var symbol in DefaultSymbols)
         {
-            foreach (var tf in DefaultTimeframes)
+            foreach (var tf in _timeframes)
             {
                 if (cancellationToken.IsCancellationRequested)
                     break;
@@ -151,7 +151,7 @@ public class KlinesIngestionWorker : BackgroundService
             }
         }
 
-        var due = await GetDueGapStatesAsync(db, _options.MaxGapsPerTimeframe * DefaultTimeframes.Length, cancellationToken);
+        var due = await GetDueGapStatesAsync(db, _options.MaxGapsPerTimeframe * _timeframes.Count, cancellationToken);
         var usedByTimeframe = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var state in due)
         {
@@ -197,8 +197,10 @@ public class KlinesIngestionWorker : BackgroundService
         AppDbContext db, int take, CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var activeTimeframes = _timeframes.ToArray();
         return db.KlineGapStates
             .Where(x => x.Status == KlineGapStatuses.Pending
+                && activeTimeframes.Contains(x.Timeframe)
                 && (x.NextRetryAtUtc == null || x.NextRetryAtUtc <= now))
             .OrderBy(x => x.LastAttemptAtUtc.HasValue)
             .ThenBy(x => x.LastAttemptAtUtc)

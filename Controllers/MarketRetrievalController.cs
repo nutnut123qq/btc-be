@@ -18,7 +18,7 @@ public class MarketRetrievalController : ControllerBase
     [HttpGet("/api/market/tech-summary")]
     public async Task<IActionResult> GetTechSummary(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string interval = "1h",
+        [FromQuery] string interval = "4h",
         [FromQuery] int limit = 48,
         CancellationToken cancellationToken = default)
     {

@@ -134,7 +134,7 @@ public class UserDataStreamHandlerService : IUserDataStreamHandlerService
                     var newTrade = new PaperTrade
                     {
                         Symbol = symbol,
-                        Timeframe = "1h",
+                        Timeframe = "4h",
                         Side = side is "BUY" or "LONG" ? "LONG" : "SHORT",
                         EntryPrice = effectivePrice,
                         ExecutedQty = accumFilledQty > 0 ? accumFilledQty : origQty,

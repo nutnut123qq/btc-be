@@ -12,25 +12,28 @@ public class RegimeController : ControllerBase
 {
     private readonly IRegimeDetectionService _regimeService;
     private readonly IMemoryCache _cache;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
     private static readonly TimeSpan CurrentTtl = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HistoryTtl = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan SummaryTtl = TimeSpan.FromSeconds(15);
 
     [ActivatorUtilitiesConstructor]
-    public RegimeController(IRegimeDetectionService regimeService, IMemoryCache cache)
+    public RegimeController(IRegimeDetectionService regimeService, IMemoryCache cache, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _regimeService = regimeService;
         _cache = cache;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public RegimeController(IRegimeDetectionService regimeService)
-        : this(regimeService, new MemoryCache(new MemoryCacheOptions()))
+        : this(regimeService, new MemoryCache(new MemoryCacheOptions()), null)
     {
     }
 
     [HttpGet("current")]
-    public async Task<IActionResult> GetCurrentRegime([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", CancellationToken ct = default)
+    public async Task<IActionResult> GetCurrentRegime([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         var cacheKey = $"regime:current:{symbol.ToUpperInvariant()}:{timeframe}";
         if (_cache.TryGetValue(cacheKey, out MarketRegime? cached) && cached != null)
         {
@@ -45,8 +48,9 @@ public class RegimeController : ControllerBase
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> GetHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int limit = 100, CancellationToken ct = default)
+    public async Task<IActionResult> GetHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int limit = 100, CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         var cacheKey = $"regime:history:{symbol.ToUpperInvariant()}:{timeframe}:{limit}";
         if (_cache.TryGetValue(cacheKey, out List<MarketRegime>? cached) && cached != null)
         {
@@ -59,8 +63,9 @@ public class RegimeController : ControllerBase
     }
 
     [HttpGet("summary")]
-    public async Task<IActionResult> GetSummary([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", CancellationToken ct = default)
+    public async Task<IActionResult> GetSummary([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         var cacheKey = $"regime:summary:{symbol.ToUpperInvariant()}:{timeframe}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {
@@ -74,8 +79,11 @@ public class RegimeController : ControllerBase
 
     [HttpPost("build")]
     [Backend.Filters.AdminGuard]
-    public async Task<IActionResult> BuildRegimes([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int lookbackBars = 1000, CancellationToken ct = default)
+    public async Task<IActionResult> BuildRegimes([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int lookbackBars = 1000, CancellationToken ct = default)
     {
+        timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (!_timeframePolicy.IsActive(timeframe))
+            return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
         await _regimeService.BuildRegimesAsync(symbol, timeframe, lookbackBars, ct);
         return Ok(new { message = $"Built regimes for {symbol} {timeframe}" });
     }

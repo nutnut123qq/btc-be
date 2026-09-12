@@ -18,6 +18,7 @@ public class DataAuditService : IDataAuditService
     private readonly DataAuditCache _cache;
     private readonly long? _backfillStartMs;
     private readonly IServiceScopeFactory? _scopeFactory;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     private static readonly string[] DefaultTimeframes =
     {
@@ -29,13 +30,15 @@ public class DataAuditService : IDataAuditService
         ILogger<DataAuditService> logger,
         DataAuditCache? cache = null,
         IOptions<KlinesIngestionOptions>? options = null,
-        IServiceScopeFactory? scopeFactory = null)
+        IServiceScopeFactory? scopeFactory = null,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
         _logger = logger;
         _cache = cache ?? new DataAuditCache(new Microsoft.Extensions.Caching.Memory.MemoryCache(
             new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
         _scopeFactory = scopeFactory;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
         if (options is not null)
         {
             var start = options.Value.BackfillStartDate;
@@ -65,7 +68,10 @@ public class DataAuditService : IDataAuditService
 
         var audits = new List<TimeframeAudit>();
         foreach (var tf in DefaultTimeframes)
-            audits.Add(await AuditTimeframeAsync(_db, symbol, tf, includeInventory, cancellationToken));
+        {
+            var audit = await AuditTimeframeAsync(_db, symbol, tf, includeInventory, cancellationToken);
+            audits.Add(audit with { Active = _timeframePolicy.IsActive(tf) });
+        }
         var timeframeAudits = audits.ToArray();
         var news = await AuditNewsAsync(_db, cancellationToken);
         var rulesAlerts = await AuditRulesAlertsAsync(_db, symbol, cancellationToken);
@@ -176,7 +182,8 @@ public class DataAuditService : IDataAuditService
                 includeInventory ? vectorCounts.GetValueOrDefault(timeframe) : null,
                 includeInventory ? featureCounts.GetValueOrDefault(timeframe) : null,
                 includeInventory ? targetCounts.GetValueOrDefault(timeframe) : null,
-                includeInventory ? datasetCounts.GetValueOrDefault(timeframe) : null, gaps);
+                includeInventory ? datasetCounts.GetValueOrDefault(timeframe) : null, gaps,
+                _timeframePolicy.IsActive(timeframe));
         }).ToArray();
 
         return new DataAuditResponse(symbol, DateTime.UtcNow, timeframeAudits, auxiliary.News, auxiliary.Rules);

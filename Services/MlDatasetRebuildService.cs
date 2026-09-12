@@ -53,7 +53,7 @@ public class MlDatasetRebuildProgress
 /// </summary>
 public class MlDatasetRebuildService
 {
-    public static readonly string[] DefaultTimeframes = { "1m", "5m", "15m", "30m", "1h", "4h", "1d" };
+    public static readonly string[] DefaultTimeframes = { "1h", "4h", "1d" };
     public static readonly string[] DefaultHorizons = { "1h", "4h", "1d" };
 
     private readonly AppDbContext _db;
@@ -61,19 +61,22 @@ public class MlDatasetRebuildService
     private readonly IWindowDatasetService _windowDatasetService;
     private readonly ILogger<MlDatasetRebuildService> _logger;
     private readonly DataAuditCache? _auditCache;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public MlDatasetRebuildService(
         AppDbContext db,
         IMlDatasetService mlDatasetService,
         IWindowDatasetService windowDatasetService,
         ILogger<MlDatasetRebuildService> logger,
-        DataAuditCache? auditCache = null)
+        DataAuditCache? auditCache = null,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
         _mlDatasetService = mlDatasetService;
         _windowDatasetService = windowDatasetService;
         _logger = logger;
         _auditCache = auditCache;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public async Task<MlDatasetRebuildResult> RebuildAsync(
@@ -83,10 +86,11 @@ public class MlDatasetRebuildService
         IProgress<MlDatasetRebuildProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        var activeTimeframes = _timeframePolicy.NormalizeAndEnsureActive(timeframes);
         var result = new MlDatasetRebuildResult
         {
             Symbol = symbol,
-            Timeframes = timeframes.ToList(),
+            Timeframes = activeTimeframes.ToList(),
             Horizons = horizons.ToList(),
             StartedAtUtc = DateTime.UtcNow
         };
@@ -103,15 +107,15 @@ public class MlDatasetRebuildService
             {
                 Timeframe = tf,
                 TimeframeIndex = index + 1,
-                TotalTimeframes = timeframes.Count,
+                TotalTimeframes = activeTimeframes.Count,
                 Stage = stage,
                 SamplesProcessed = samples
             });
         }
 
-        for (int i = 0; i < timeframes.Count; i++)
+        for (int i = 0; i < activeTimeframes.Count; i++)
         {
-            var tf = timeframes[i];
+            var tf = activeTimeframes[i];
             var tfResult = new TimeframeMlRebuildResult { Timeframe = tf };
             var sw = System.Diagnostics.Stopwatch.StartNew();
 

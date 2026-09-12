@@ -73,6 +73,23 @@ public class FullReindexServiceTests
     }
 
     [Fact]
+    public async Task ReindexAsync_RejectsInactiveTimeframeBeforeCleanup()
+    {
+        await using var db = CreateInMemoryDb(Guid.NewGuid().ToString());
+        db.CandlePatterns.Add(new CandlePattern
+        {
+            Symbol = "BTCUSDT", Timeframe = "15m", OpenTimeMs = 1,
+            PatternType = "Doji", PatternCategory = "Single", TrendDirection = "Sideways"
+        });
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            CreateService(db).ReindexAsync("BTCUSDT", ["15m"]));
+
+        Assert.True(await db.CandlePatterns.AnyAsync(x => x.Timeframe == "15m"));
+    }
+
+    [Fact]
     public async Task ReindexAsync_SingleTimeframe_PopulatesAllTables()
     {
         var dbName = Guid.NewGuid().ToString();

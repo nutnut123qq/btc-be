@@ -13,31 +13,33 @@ public class ConfluenceService : IConfluenceService
     private readonly ITransitionService _transitionService;
     private readonly AppDbContext _dbContext;
     private readonly ILogger<ConfluenceService> _logger;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public ConfluenceService(
         IArchetypeService archetypeService,
         IRegimeDetectionService regimeDetectionService,
         ITransitionService transitionService,
         AppDbContext dbContext,
-        ILogger<ConfluenceService> logger)
+        ILogger<ConfluenceService> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _archetypeService = archetypeService;
         _regimeDetectionService = regimeDetectionService;
         _transitionService = transitionService;
         _dbContext = dbContext;
         _logger = logger;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public async Task<ConfluenceSnapshot> CalculateConfluenceAsync(string symbol, CancellationToken ct = default)
     {
-        var timeframes = new[] { "15m", "1h", "4h", "1d" };
-        var weights = new Dictionary<string, double>
+        var timeframes = _timeframePolicy.Active;
+        var weights = NormalizeWeights(new Dictionary<string, double>
         {
             { "1d", 0.40 },
             { "4h", 0.30 },
-            { "1h", 0.20 },
-            { "15m", 0.10 }
-        };
+            { "1h", 0.20 }
+        }, timeframes);
 
         var timeframeAlignments = new List<ConfluenceTimeframeAlignmentDto>();
         double totalWeightedScore = 0;
@@ -103,8 +105,9 @@ public class ConfluenceService : IConfluenceService
         bool hasConflict = false;
         string? conflictDetails = null;
 
-        double htScore = tfScores["4h"] * 0.5 + tfScores["1d"] * 0.5;
-        double ltScore = tfScores["15m"] * 0.5 + tfScores["1h"] * 0.5;
+        var higherWeight = weights["4h"] + weights["1d"];
+        double htScore = (tfScores["4h"] * weights["4h"] + tfScores["1d"] * weights["1d"]) / higherWeight;
+        double ltScore = tfScores["1h"];
 
         if (htScore > 0.3 && ltScore < -0.3)
         {
@@ -133,6 +136,17 @@ public class ConfluenceService : IConfluenceService
         await _dbContext.SaveChangesAsync(ct);
 
         return snapshot;
+    }
+
+    internal static IReadOnlyDictionary<string, double> NormalizeWeights(
+        IReadOnlyDictionary<string, double> source,
+        IReadOnlyList<string> activeTimeframes)
+    {
+        var total = activeTimeframes.Sum(tf => source.TryGetValue(tf, out var value) ? value : 0);
+        if (total <= 0)
+            throw new InvalidOperationException("Confluence weights must have a positive total.");
+        return activeTimeframes.ToDictionary(tf => tf, tf => source.GetValueOrDefault(tf) / total,
+            StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<ConfluenceSnapshot?> GetLatestConfluenceAsync(string symbol, CancellationToken ct = default)

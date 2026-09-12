@@ -10,7 +10,7 @@ namespace Backend.Services;
 
 /// <summary>
 /// Tự động rebuild các index (pattern, window vector, volume stats, technical indicators, pattern sequences) định kỳ
-/// cho đầy đủ 7 khung thởi gian: 1m, 5m, 15m, 30m, 1h, 4h, 1d.
+/// cho các khung production được cấu hình.
 /// Dùng dữ liệu từ DB để incremental; hỗ trợ chạy song song các timeframe.
 /// </summary>
 public class IndexingBackgroundWorker : BackgroundService
@@ -19,8 +19,8 @@ public class IndexingBackgroundWorker : BackgroundService
     private readonly ILogger<IndexingBackgroundWorker> _logger;
     private readonly IndexingOptions _options;
     private readonly TimeProvider _timeProvider;
+    private readonly IReadOnlyList<string> _timeframes;
 
-    private static readonly string[] Timeframes = { "1m", "5m", "15m", "30m", "1h", "4h", "1d" };
     private static readonly string[] FeatureTypes = { "open", "high", "low", "close", "all", "returns_shape", "returns_log", "volume_norm", "volatility", "trend" };
     private static readonly int[] WindowSizes = { 10, 15, 25 };
     private const string Symbol = "BTCUSDT";
@@ -29,12 +29,14 @@ public class IndexingBackgroundWorker : BackgroundService
         IServiceScopeFactory scopeFactory,
         ILogger<IndexingBackgroundWorker> logger,
         IOptions<IndexingOptions> options,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _options = options.Value;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _timeframes = (timeframePolicy ?? new ProductionTimeframePolicy()).Active;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -86,9 +88,9 @@ public class IndexingBackgroundWorker : BackgroundService
                 heartbeatScope.ServiceProvider.GetRequiredService<AppDbContext>(),
                 nameof(IndexingBackgroundWorker), cycleStartedAt, cancellationToken);
         }
-        _logger.LogInformation("Starting indexing cycle for {Symbol} across timeframes: {Timeframes}", Symbol, string.Join(", ", Timeframes));
+        _logger.LogInformation("Starting indexing cycle for {Symbol} across timeframes: {Timeframes}", Symbol, string.Join(", ", _timeframes));
 
-        if (_options.EnableParallelTimeframes && Timeframes.Length > 1)
+        if (_options.EnableParallelTimeframes && _timeframes.Count > 1)
         {
             var parallelOptions = new ParallelOptions
             {
@@ -96,7 +98,7 @@ public class IndexingBackgroundWorker : BackgroundService
                 CancellationToken = cancellationToken
             };
 
-            await Parallel.ForEachAsync(Timeframes, parallelOptions, async (tf, ct) =>
+            await Parallel.ForEachAsync(_timeframes, parallelOptions, async (tf, ct) =>
             {
                 try
                 {
@@ -112,7 +114,7 @@ public class IndexingBackgroundWorker : BackgroundService
         }
         else
         {
-            foreach (var tf in Timeframes)
+            foreach (var tf in _timeframes)
             {
                 try
                 {

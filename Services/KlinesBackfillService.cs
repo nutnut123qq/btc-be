@@ -15,6 +15,7 @@ public class KlinesBackfillService
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<KlinesBackfillService> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     // Chỉ cho phép một backfill chạy đồng thởi trên toàn process để tránh
     // duplicate resource usage khi ngườ dùng gọi lại endpoint nhiều lần.
@@ -24,15 +25,13 @@ public class KlinesBackfillService
     private const int BatchLimit = 1000;
     private const int DefaultRequestsPerMinute = 400;
 
-    // Thứ tự ưu tiên: lớn → nhỏ, phù hợp với yêu cầu.
-    private static readonly string[] PriorityTimeframes = { "1d", "4h", "1h", "15m", "5m", "1m" };
-
-    public KlinesBackfillService(IServiceScopeFactory scopeFactory, IHostApplicationLifetime lifetime, ILogger<KlinesBackfillService> logger, TimeProvider? timeProvider = null)
+    public KlinesBackfillService(IServiceScopeFactory scopeFactory, IHostApplicationLifetime lifetime, ILogger<KlinesBackfillService> logger, TimeProvider? timeProvider = null, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _scopeFactory = scopeFactory;
         _lifetime = lifetime;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public bool IsRunning => Interlocked.CompareExchange(ref _isRunning, 0, 0) == 1;
@@ -51,18 +50,21 @@ public class KlinesBackfillService
         bool fillGaps = false,
         CancellationToken cancellationToken = default)
     {
+        var targetTfs = timeframes?.Count > 0
+            ? _timeframePolicy.NormalizeAndEnsureActive(timeframes)
+            : _timeframePolicy.Active;
+
         if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0)
         {
             return new BackfillStartInfo
             {
                 Symbol = symbol,
-                Timeframes = timeframes?.ToList() ?? PriorityTimeframes.ToList(),
+                Timeframes = targetTfs.ToList(),
                 StartedAtUtc = DateTime.UtcNow,
                 Status = "already_running"
             };
         }
 
-        var targetTfs = timeframes?.Count > 0 ? timeframes : PriorityTimeframes;
         var start = startDateUtc ?? Utc2020;
         var end = endDateUtc ?? DateTime.UtcNow;
 

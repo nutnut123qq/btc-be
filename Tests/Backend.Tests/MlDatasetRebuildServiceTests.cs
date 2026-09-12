@@ -28,6 +28,17 @@ public class MlDatasetRebuildServiceTests
     }
 
     [Fact]
+    public async Task RebuildAsync_RejectsInactiveTimeframe()
+    {
+        await using var db = CreateInMemoryDb(Guid.NewGuid().ToString());
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            CreateService(db).RebuildAsync("BTCUSDT", ["30m"], MlDatasetRebuildService.DefaultHorizons));
+
+        Assert.Contains("inactive for production mutations", error.Message);
+    }
+
+    [Fact]
     public async Task RebuildAsync_SingleTimeframe_PopulatesAllDatasets()
     {
         var dbName = Guid.NewGuid().ToString();

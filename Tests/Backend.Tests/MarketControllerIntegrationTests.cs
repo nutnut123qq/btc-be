@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net;
 
 namespace Backend.Tests;
 
@@ -63,7 +64,7 @@ public class MarketControllerIntegrationTests : IClassFixture<TestWebApplication
 
         // Act
         var response = await client.PostAsync(
-            "/api/market/candle-patterns/index?symbol=BTCUSDT&timeframe=15m&lookbackBars=20",
+            "/api/market/candle-patterns/index?symbol=BTCUSDT&timeframe=1h&lookbackBars=20",
             content: null);
 
         // Assert
@@ -72,6 +73,21 @@ public class MarketControllerIntegrationTests : IClassFixture<TestWebApplication
         var doc = JsonDocument.Parse(content);
         Assert.True(doc.RootElement.TryGetProperty("indexed", out var indexedProp));
         Assert.True(indexedProp.GetInt32() >= 0);
+    }
+
+    [Fact]
+    public async Task IndexCandlePatterns_InactiveHistoricalTimeframe_IsRejected()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Admin-Key", TestWebApplicationFactory.AdminApiKey);
+
+        var response = await client.PostAsync(
+            "/api/market/candle-patterns/index?symbol=BTCUSDT&timeframe=15m&lookbackBars=20",
+            content: null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("INACTIVE_TIMEFRAME", body);
     }
 }
 

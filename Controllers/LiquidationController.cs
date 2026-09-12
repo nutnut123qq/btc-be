@@ -30,7 +30,7 @@ public class LiquidationController : ControllerBase
     [HttpGet("latest")]
     public async Task<IActionResult> GetLatest(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         CancellationToken ct = default)
     {
         symbol = NormalizeSymbol(symbol);
@@ -68,7 +68,7 @@ public class LiquidationController : ControllerBase
     [HttpGet("history")]
     public async Task<IActionResult> GetHistory(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int limit = 50,
         CancellationToken ct = default)
     {

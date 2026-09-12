@@ -11,22 +11,25 @@ public class EnsemblePaperTraderService : IEnsemblePaperTraderService
     private const double FeeAndSlippageRate = 0.0015;
     private readonly AppDbContext _db;
     private readonly IBinanceKlinesService _binance;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public EnsemblePaperTraderService(
         AppDbContext db,
-        IBinanceKlinesService binance)
+        IBinanceKlinesService binance,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
         _binance = binance;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public async Task<EnsemblePaperTradeEvalResult> EvaluateAndTradeAsync(
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         CancellationToken ct = default)
     {
         symbol = symbol.Trim().ToUpperInvariant();
-        timeframe = timeframe.Trim().ToLowerInvariant();
+        timeframe = _timeframePolicy.EnsureActive(timeframe);
         if (string.IsNullOrWhiteSpace(symbol)) throw new ArgumentException("Paper trading symbol is required.", nameof(symbol));
         var timeframeMs = TimeframeMilliseconds(timeframe);
         var klines = await _binance.GetKlinesAsync(symbol, timeframe, 2, cancellationToken: ct);

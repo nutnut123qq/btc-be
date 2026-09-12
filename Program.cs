@@ -77,6 +77,8 @@ builder.Services.Configure<RssOptions>(builder.Configuration.GetSection(RssOptio
 builder.Services.Configure<AlertOptions>(builder.Configuration.GetSection(AlertOptions.SectionName));
 builder.Services.Configure<KlinesIngestionOptions>(builder.Configuration.GetSection(KlinesIngestionOptions.SectionName));
 builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
+builder.Services.Configure<ProductionTimeframeOptions>(builder.Configuration.GetSection(ProductionTimeframeOptions.SectionName));
+builder.Services.AddSingleton<ProductionTimeframePolicy>();
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 builder.Services.Configure<BinanceTestnetOptions>(builder.Configuration.GetSection(BinanceTestnetOptions.SectionName));
 

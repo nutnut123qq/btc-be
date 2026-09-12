@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Backend.Data;
+using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,8 +9,9 @@ namespace Backend.Controllers;
 
 [ApiController]
 [Route("api/health")]
-public class HealthController(AppDbContext db, ILogger<HealthController> logger) : ControllerBase
+public class HealthController(AppDbContext db, ILogger<HealthController> logger, ProductionTimeframePolicy? timeframePolicy = null) : ControllerBase
 {
+    private readonly ProductionTimeframePolicy _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     private static readonly (string Timeframe, TimeSpan MaxAge)[] FreshnessChecks =
     [
         ("1m", TimeSpan.FromMinutes(20)), ("5m", TimeSpan.FromMinutes(20)),
@@ -116,11 +118,14 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger)
                     .FirstOrDefaultAsync(cancellationToken);
                 var latestUtc = latest.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(latest.Value) : (DateTimeOffset?)null;
                 var ageSeconds = latestUtc.HasValue ? Math.Max(0, (long)(checkedAtUtc - latestUtc.Value).TotalSeconds) : (long?)null;
+                var active = _timeframePolicy.IsActive(check.Timeframe);
                 freshness.Add(new KlineFreshness(check.Timeframe,
-                    ageSeconds.HasValue && ageSeconds <= check.MaxAge.TotalSeconds ? "fresh" : latest.HasValue ? "stale" : "missing",
-                    latestUtc, ageSeconds, (long)check.MaxAge.TotalSeconds));
+                    active
+                        ? ageSeconds.HasValue && ageSeconds <= check.MaxAge.TotalSeconds ? "fresh" : latest.HasValue ? "stale" : "missing"
+                        : "inactive",
+                    latestUtc, ageSeconds, (long)check.MaxAge.TotalSeconds, active));
             }
-            return Ok(new HealthResponse(freshness.All(x => x.Status == "fresh") ? "healthy" : "degraded",
+            return Ok(new HealthResponse(freshness.Where(x => x.Active).All(x => x.Status == "fresh") ? "healthy" : "degraded",
                 true, checkedAtUtc, symbol, freshness));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -139,7 +144,7 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger)
 public sealed record LivenessResponse(string Status, DateTimeOffset CheckedAtUtc);
 public sealed record ReadinessResponse(string Status, bool DatabaseReachable, DateTimeOffset CheckedAtUtc, long ResponseTimeMs);
 public sealed record HealthResponse(string Status, bool DatabaseReachable, DateTimeOffset CheckedAtUtc, string Symbol, IReadOnlyList<KlineFreshness> Klines);
-public sealed record KlineFreshness(string Timeframe, string Status, DateTimeOffset? LatestOpenTimeUtc, long? AgeSeconds, long MaxAgeSeconds);
+public sealed record KlineFreshness(string Timeframe, string Status, DateTimeOffset? LatestOpenTimeUtc, long? AgeSeconds, long MaxAgeSeconds, bool Active = true);
 public sealed record WorkerHealthResponse(DateTimeOffset CheckedAtUtc, IReadOnlyList<WorkerHealth> Workers);
 public sealed record WorkerHealth(string Name, string Status, DateTime? LastStartedAtUtc, DateTime? LastSucceededAtUtc,
     DateTime? LastFailedAtUtc, long? AgeSeconds, long MaxAgeSeconds, long? LastDurationMs, string? Message);

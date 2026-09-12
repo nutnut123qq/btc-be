@@ -6,7 +6,7 @@ public interface IEnsembleBacktestService
 {
     Task<(BacktestRun Summary, List<BacktestTrade> Trades, List<EquityCurvePointDto> EquityCurve)> RunEnsembleBacktestAsync(
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         long? startTimeMs = null,
         long? endTimeMs = null,
         double initialCapital = 10000,
@@ -17,7 +17,7 @@ public interface IEnsembleBacktestService
 
     Task<WeightOptimizationResultDto> OptimizeWeightsAsync(
         string symbol = "BTCUSDT",
-        string timeframe = "1h",
+        string timeframe = "4h",
         CancellationToken ct = default);
 }
 
@@ -31,7 +31,7 @@ public class EquityCurvePointDto
 public class WeightOptimizationResultDto
 {
     public string Symbol { get; set; } = "BTCUSDT";
-    public string Timeframe { get; set; } = "1h";
+    public string Timeframe { get; set; } = "4h";
     public Dictionary<string, double> BestWeights { get; set; } = new();
     public double SharpeRatio { get; set; }
     public double TotalReturnPct { get; set; }

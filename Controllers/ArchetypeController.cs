@@ -22,7 +22,7 @@ public class ArchetypeController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<object>> GetArchetypes(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int? windowSize = null,
         [FromQuery] string sortBy = "winRate",
         [FromQuery] int page = 1,
@@ -137,7 +137,7 @@ public class ArchetypeController : ControllerBase
     [HttpGet("match")]
     public async Task<ActionResult<object>> MatchCurrentWindow(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int windowSize = 15,
         CancellationToken cancellationToken = default)
     {
@@ -166,7 +166,7 @@ public class ArchetypeController : ControllerBase
     [HttpGet("match-multi")]
     public async Task<ActionResult<object>> MatchMultiWindow(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         CancellationToken cancellationToken = default)
     {
         try
@@ -197,7 +197,7 @@ public class ArchetypeController : ControllerBase
     [HttpGet("rankings")]
     public async Task<ActionResult<object>> GetRankings(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string timeframe = "1h",
+        [FromQuery] string timeframe = "4h",
         [FromQuery] int? windowSize = null,
         [FromQuery] string? horizon = null,
         [FromQuery] string sortBy = "winRate",

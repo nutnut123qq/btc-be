@@ -23,7 +23,7 @@ public class CandleSequenceController : ControllerBase
     [HttpGet("validate-candles")]
     public async Task<IActionResult> ValidateCandles(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string interval = "1h",
+        [FromQuery] string interval = "4h",
         [FromQuery] int limit = 100,
         CancellationToken cancellationToken = default)
     {
@@ -49,7 +49,7 @@ public class CandleSequenceController : ControllerBase
     [HttpGet("market-structure")]
     public async Task<IActionResult> MarketStructure(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string interval = "1h",
+        [FromQuery] string interval = "4h",
         [FromQuery] int limit = 200,
         [FromQuery] int swingLookback = 5,
         CancellationToken cancellationToken = default)
@@ -93,7 +93,7 @@ public class CandleSequenceController : ControllerBase
     [HttpGet("sequence-scenarios")]
     public async Task<IActionResult> SequenceScenarios(
         [FromQuery] string symbol = "BTCUSDT",
-        [FromQuery] string interval = "1h",
+        [FromQuery] string interval = "4h",
         [FromQuery] int limit = 50,
         CancellationToken cancellationToken = default)
     {

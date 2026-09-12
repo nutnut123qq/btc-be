@@ -30,25 +30,25 @@ public class TransitionsController : ControllerBase
     }
 
     [HttpGet("predict")]
-    public async Task<ActionResult<TransitionPredictionDto>> PredictNext([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int windowSize = 20, CancellationToken ct = default)
+    public async Task<ActionResult<TransitionPredictionDto>> PredictNext([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int windowSize = 20, CancellationToken ct = default)
     {
         return Ok(await _transitionService.PredictNextAsync(symbol, timeframe, windowSize, ct));
     }
 
     [HttpGet("predict-sequence")]
-    public async Task<ActionResult<SequencePredictionDto>> PredictSequence([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int windowSize = 20, CancellationToken ct = default)
+    public async Task<ActionResult<SequencePredictionDto>> PredictSequence([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int windowSize = 20, CancellationToken ct = default)
     {
         return Ok(await _transitionService.GetSequencePredictionAsync(symbol, timeframe, windowSize, ct));
     }
 
     [HttpGet("entropy-ranking")]
-    public async Task<ActionResult<EntropyRankingResponse>> GetEntropyRanking([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int? windowSize = null, [FromQuery] int top = 50, CancellationToken ct = default)
+    public async Task<ActionResult<EntropyRankingResponse>> GetEntropyRanking([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int? windowSize = null, [FromQuery] int top = 50, CancellationToken ct = default)
     {
         return Ok(await _transitionService.GetEntropyRankingAsync(symbol, timeframe, windowSize, Math.Clamp(top, 1, 200), ct));
     }
 
     [HttpGet("matrix")]
-    public async Task<ActionResult<TransitionMatrixDto>> GetTransitionMatrix([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "1h", [FromQuery] int windowSize = 20, CancellationToken ct = default)
+    public async Task<ActionResult<TransitionMatrixDto>> GetTransitionMatrix([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int windowSize = 20, CancellationToken ct = default)
     {
         return Ok(await _transitionService.GetTransitionMatrixAsync(symbol, timeframe, windowSize, ct));
     }

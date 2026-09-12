@@ -7,6 +7,18 @@ namespace Backend.Tests;
 public class EnsembleBacktestServiceTests
 {
     [Fact]
+    public async Task RunAsync_RejectsInactiveTimeframeBeforePersisting()
+    {
+        await using var db = CreateDb();
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            new EnsembleBacktestService(db).RunEnsembleBacktestAsync(timeframe: " 15M "));
+
+        Assert.Contains("inactive for production mutations", error.Message);
+        Assert.Empty(db.BacktestRuns);
+    }
+
+    [Fact]
     public async Task RunAsync_UsesPredictionOnlyFromFollowingBar()
     {
         await using var db = CreateDb();
@@ -18,7 +30,7 @@ public class EnsembleBacktestServiceTests
         await db.SaveChangesAsync();
 
         var (run, trades, _) = await new EnsembleBacktestService(db)
-            .RunEnsembleBacktestAsync(feeBps: 10);
+            .RunEnsembleBacktestAsync(timeframe: "1h", feeBps: 10);
 
         var trade = Assert.Single(trades);
         Assert.Equal(3_600_000, trade.EntryTimeMs);
@@ -47,7 +59,7 @@ public class EnsembleBacktestServiceTests
         await db.SaveChangesAsync();
 
         var (run, trades, curve) = await new EnsembleBacktestService(db)
-            .RunEnsembleBacktestAsync(feeBps: 0);
+            .RunEnsembleBacktestAsync(timeframe: "1h", feeBps: 0);
 
         Assert.Equal(2, trades.Count);
         Assert.Equal("LONG", trades[0].Side);
@@ -66,7 +78,7 @@ public class EnsembleBacktestServiceTests
         await db.SaveChangesAsync();
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new EnsembleBacktestService(db).RunEnsembleBacktestAsync());
+            new EnsembleBacktestService(db).RunEnsembleBacktestAsync(timeframe: "1h"));
 
         Assert.Contains("INSUFFICIENT_POINT_IN_TIME_DATA", error.Message);
         Assert.Empty(db.BacktestRuns);
@@ -79,6 +91,7 @@ public class EnsembleBacktestServiceTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new EnsembleBacktestService(db).RunEnsembleBacktestAsync(
+                timeframe: "1h",
                 customWeights: new Dictionary<string, double> { ["confluence"] = 1 }));
 
         Assert.Contains("INSUFFICIENT_POINT_IN_TIME_LAYER_DATA", error.Message);

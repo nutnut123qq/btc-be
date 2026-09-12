@@ -21,7 +21,7 @@ public class BinanceKlinesService : IBinanceKlinesService
 
     public async Task<IReadOnlyList<KlineDto>> GetKlinesAsync(
         string symbol = "BTCUSDT",
-        string interval = "1h",
+        string interval = "4h",
         int limit = 48,
         long? startTimeMs = null,
         long? endTimeMs = null,
@@ -116,7 +116,7 @@ public class BinanceKlinesService : IBinanceKlinesService
     }
 
     public async Task<IReadOnlyList<KlineDto>> GetBtcKlinesAsync(
-        string interval = "1h",
+        string interval = "4h",
         int limit = 48,
         CancellationToken cancellationToken = default)
     {
@@ -129,7 +129,7 @@ public class BinanceKlinesService : IBinanceKlinesService
 
     public async Task<string> BuildTechSummaryAsync(
         string symbol = "BTCUSDT",
-        string interval = "1h",
+        string interval = "4h",
         int limit = 48,
         CancellationToken cancellationToken = default)
     {

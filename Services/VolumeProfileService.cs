@@ -8,14 +8,17 @@ namespace Backend.Services;
 public class VolumeProfileService : IVolumeProfileService
 {
     private readonly AppDbContext _db;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public VolumeProfileService(AppDbContext db)
+    public VolumeProfileService(AppDbContext db, ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     public async Task<VolumeProfileSnapshot?> GetVolumeProfileAsync(string symbol, string timeframe, int lookbackBars, CancellationToken ct = default)
     {
+        timeframe = _timeframePolicy.EnsureActive(timeframe);
         var klines = await _db.Klines
             .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)
             .OrderByDescending(k => k.OpenTimeMs)

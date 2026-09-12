@@ -33,7 +33,8 @@ public record TimeframeAudit(
     long? MlFeatureStores,
     long? PriceTargets,
     long? WindowClassificationDatasets,
-    IReadOnlyList<CandleGap> TopGaps);
+    IReadOnlyList<CandleGap> TopGaps,
+    bool Active = true);
 
 public record CandleGap(
     long? Id,

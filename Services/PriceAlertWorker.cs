@@ -14,15 +14,18 @@ public class PriceAlertWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptionsMonitor<AlertOptions> _optionsMonitor;
     private readonly ILogger<PriceAlertWorker> _logger;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public PriceAlertWorker(
         IServiceScopeFactory scopeFactory,
         IOptionsMonitor<AlertOptions> optionsMonitor,
-        ILogger<PriceAlertWorker> logger)
+        ILogger<PriceAlertWorker> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _scopeFactory = scopeFactory;
         _optionsMonitor = optionsMonitor;
         _logger = logger;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -89,7 +92,8 @@ public class PriceAlertWorker : BackgroundService
         if (!settings.Enabled)
             return;
 
-        var interval = string.IsNullOrWhiteSpace(settings.KlineInterval) ? "1m" : settings.KlineInterval.Trim();
+        var configuredInterval = ProductionTimeframePolicy.Canonicalize(settings.KlineInterval);
+        var interval = _timeframePolicy.IsActive(configuredInterval) ? configuredInterval : _timeframePolicy.Default;
         var cooldown = Math.Max(1, settings.CooldownMinutes);
         // --- Classic price alerts ---
         if (settings.PriceAboveUsd.HasValue || settings.PriceBelowUsd.HasValue)
@@ -116,9 +120,10 @@ public class PriceAlertWorker : BackgroundService
         // --- Candle Sequence Rules evaluation ---
         try
         {
+            var activeTimeframes = _timeframePolicy.Active.ToArray();
             var timeframes = await db.CandleSequenceRules
                 .AsNoTracking()
-                .Where(r => r.IsEnabled && r.Symbol == "BTCUSDT")
+                .Where(r => r.IsEnabled && r.Symbol == "BTCUSDT" && activeTimeframes.Contains(r.Timeframe))
                 .Select(r => r.Timeframe)
                 .Distinct()
                 .ToListAsync(cancellationToken);

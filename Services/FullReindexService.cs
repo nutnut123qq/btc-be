@@ -25,8 +25,9 @@ public class FullReindexService
     private readonly IndexingOptions _options;
     private readonly ILogger<FullReindexService> _logger;
     private readonly DataAuditCache? _cache;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public static readonly string[] DefaultTimeframes = { "1m", "5m", "15m", "30m", "1h", "4h", "1d" };
+    public static readonly string[] DefaultTimeframes = { "1h", "4h", "1d" };
     public static readonly string[] FeatureTypes = { "open", "high", "low", "close", "all", "returns_shape", "returns_log", "volume_norm", "volatility", "trend" };
     public static readonly int[] WindowSizes = { 10, 15, 25 };
 
@@ -40,7 +41,8 @@ public class FullReindexService
         IServiceScopeFactory scopeFactory,
         IOptions<IndexingOptions> options,
         ILogger<FullReindexService> logger,
-        DataAuditCache? cache = null)
+        DataAuditCache? cache = null,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _db = db;
         _patternIndexer = patternIndexer;
@@ -52,6 +54,7 @@ public class FullReindexService
         _options = options.Value;
         _logger = logger;
         _cache = cache;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     /// <summary>
@@ -67,10 +70,11 @@ public class FullReindexService
         IProgress<FullReindexProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        var activeTimeframes = _timeframePolicy.NormalizeAndEnsureActive(timeframes);
         var result = new FullReindexResult
         {
             Symbol = symbol,
-            Timeframes = timeframes.ToList(),
+            Timeframes = activeTimeframes.ToList(),
             StartedAtUtc = DateTime.UtcNow
         };
 
@@ -80,13 +84,13 @@ public class FullReindexService
             {
                 Timeframe = tf,
                 TimeframeIndex = index + 1,
-                TotalTimeframes = timeframes.Count,
+                TotalTimeframes = activeTimeframes.Count,
                 Stage = stage,
                 RowsProcessed = rows
             });
         }
 
-        if (_options.EnableParallelTimeframes && timeframes.Count > 1)
+        if (_options.EnableParallelTimeframes && activeTimeframes.Count > 1)
         {
             var parallelOptions = new ParallelOptions
             {
@@ -94,7 +98,7 @@ public class FullReindexService
                 CancellationToken = cancellationToken
             };
 
-            await Parallel.ForEachAsync(timeframes, parallelOptions, async (tf, ct) =>
+            await Parallel.ForEachAsync(activeTimeframes, parallelOptions, async (tf, ct) =>
             {
                 // Mỗi timeframe chạy trong scope riêng với DbContext riêng.
                 using var scope = _scopeFactory.CreateScope();
@@ -108,9 +112,9 @@ public class FullReindexService
         }
         else
         {
-            for (var tfIndex = 0; tfIndex < timeframes.Count; tfIndex++)
+            for (var tfIndex = 0; tfIndex < activeTimeframes.Count; tfIndex++)
             {
-                var tf = timeframes[tfIndex];
+                var tf = activeTimeframes[tfIndex];
                 var tfResult = await ReindexTimeframeAsync(symbol, tf, windowLookbackBars, Report, progress, cancellationToken);
                 result.Results[tf] = tfResult;
             }

@@ -15,17 +15,20 @@ public class AnalysisController : ControllerBase
     private readonly IRagService _ragService;
     private readonly IBinanceKlinesService _binanceKlines;
     private readonly ILogger<AnalysisController> _logger;
+    private readonly ProductionTimeframePolicy _timeframePolicy;
 
     public AnalysisController(
         IHttpClientFactory httpClientFactory,
         IRagService ragService,
         IBinanceKlinesService binanceKlines,
-        ILogger<AnalysisController> logger)
+        ILogger<AnalysisController> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _httpClientFactory = httpClientFactory;
         _ragService = ragService;
         _binanceKlines = binanceKlines;
         _logger = logger;
+        _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
     [HttpGet]
@@ -59,7 +62,7 @@ public class AnalysisController : ControllerBase
 
             var techContext = await _binanceKlines.BuildTechSummaryAsync(
                 symbol: marketSymbol,
-                interval: "1h",
+                interval: _timeframePolicy.Default,
                 limit: 48,
                 cancellationToken: cancellationToken);
 

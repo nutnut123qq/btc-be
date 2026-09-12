@@ -3,7 +3,7 @@ namespace Backend.Services.Models;
 public class PatternSearchRequest
 {
     public string Symbol { get; set; } = "BTCUSDT";
-    public string Timeframe { get; set; } = "15m";
+    public string Timeframe { get; set; } = "4h";
     public string FeatureType { get; set; } = "returns_shape";
     public int LookbackBars { get; set; } = 2000;
     public int WindowSize { get; set; } = 10;

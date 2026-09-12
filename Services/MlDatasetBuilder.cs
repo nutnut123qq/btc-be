@@ -8,13 +8,16 @@ public class MlDatasetBuilder : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MlDatasetBuilder> _logger;
+    private readonly IReadOnlyList<string> _timeframes;
 
     public MlDatasetBuilder(
         IServiceScopeFactory scopeFactory,
-        ILogger<MlDatasetBuilder> logger)
+        ILogger<MlDatasetBuilder> logger,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _timeframes = (timeframePolicy ?? new ProductionTimeframePolicy()).Active;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -49,13 +52,9 @@ public class MlDatasetBuilder : BackgroundService
         var mlService = scope.ServiceProvider.GetRequiredService<IMlDatasetService>();
 
         var symbols = new[] { "BTCUSDT", "ETHUSDT", "SOLUSDT" };
-        // 1m is intentionally excluded: it has large gap overhead and is very noisy.
-        // We keep 5m–1d as the clean training timeframes.
-        var timeframes = new[] { "5m", "15m", "30m", "1h", "4h", "1d" };
-
         foreach (var symbol in symbols)
         {
-            foreach (var tf in timeframes)
+            foreach (var tf in _timeframes)
             {
                 try
                 {
