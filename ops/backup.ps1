@@ -135,6 +135,8 @@ try {
     $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     "$manifestHash  $([IO.Path]::GetFileName($manifestPath))" | Set-Content -LiteralPath $manifestChecksumPath -Encoding ascii
 
+    & "$PSScriptRoot/restore-verify.ps1" -BackupPath $dumpPath -Mode ListOnly
+
     if ($RetentionDays -gt 0) {
         $cutoff = [DateTime]::UtcNow.AddDays(-$RetentionDays)
         Get-ChildItem -LiteralPath $output -File | Where-Object {

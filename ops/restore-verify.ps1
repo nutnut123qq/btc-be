@@ -39,7 +39,8 @@ if ($manifest.models.archive) {
         throw "Model archive checksum mismatch."
     }
     Add-Type -AssemblyName System.IO.Compression
-    $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($archive)
     try {
         $entries = @($zip.Entries | ForEach-Object Name)
         foreach ($model in $manifest.models.files) {
