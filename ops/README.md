@@ -51,6 +51,19 @@ pwsh ./ops/restore-verify.ps1 -BackupPath ./.ops/backups/bitcoin_analyst_TIMESTA
 pwsh ./ops/migrate.ps1 -BackupPath ./.ops/backups/bitcoin_analyst_TIMESTAMP.dump
 ```
 
+Production scheduling must use the guarded wrapper. It reserves enough free space
+to keep the configured disk floor, verifies the new dump before rotation, retains
+at least two complete backup sets, and refuses overlapping runs:
+
+```powershell
+pwsh ./ops/guarded-backup.ps1 -PreflightOnly
+pwsh ./ops/guarded-backup.ps1 -RetentionCount 2 -MinimumFreeGiB 15
+pwsh ./ops/install-backup-task.ps1 -RetentionCount 2 -MinimumFreeGiB 15 -DailyAt "02:00" -Enable
+```
+
+The installer updates the existing `Bitcoin Analyst DB Backup` task, preserves its
+principal, and leaves it disabled unless `-Enable` is explicit.
+
 Every backup has SHA-256 checksums for the dump and manifest, exact public-table row counts, source server/database identity, retention metadata, and—when present—a separately checksummed archive whose model artifacts are individually checked against their JSON manifests. `migrate.ps1` refuses to run while managed services are active or until the supplied backup and validated PG/EF migration target identities match.
 
 `Split` is a capacity-constrained logical drill: it restores full pre/post schema into one unique empty database, then restores complete pre-data/data without indexes into another and reconciles exact row counts. It does **not** prove that post-data indexes and foreign keys build successfully against restored rows. Both databases are dropped in `finally`.
