@@ -233,21 +233,70 @@ public class ArchetypeService : IArchetypeService
 
     public async Task<(int Total, List<ArchetypeOccurrenceDto> Items)> GetOccurrencesAsync(long archetypeId, string horizon, int page, int pageSize, CancellationToken ct = default)
     {
+        // ArchetypeOccurrences is cluster membership. Its legacy Horizon/Label fields only
+        // describe the primary clustering horizon, so always reconcile the requested outcome
+        // against WindowClassificationDatasets instead of relabelling that primary result.
         var query = _db.ArchetypeOccurrences.AsNoTracking()
-            .Where(x => x.ArchetypeId == archetypeId && x.Horizon == horizon)
+            .Where(x => x.ArchetypeId == archetypeId)
             .OrderByDescending(x => x.WindowStartMs);
 
         var total = await query.CountAsync(ct);
         var occurrences = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
 
-        var items = occurrences.Select(x => new ArchetypeOccurrenceDto
+        var labelsByWindow = new Dictionary<long, WindowClassificationDataset>();
+        if (occurrences.Count > 0)
         {
-            WindowStartMs = x.WindowStartMs,
-            WindowEndMs = x.WindowEndMs,
-            DistanceToCentroid = x.DistanceToCentroid,
-            Label = x.Label,
-            TargetReturn = x.TargetReturn
-        }).ToList();
+            var first = occurrences[0];
+            var windowStarts = occurrences.Select(x => x.WindowStartMs).Distinct().ToList();
+            var labels = await _db.WindowClassificationDatasets.AsNoTracking()
+                .Where(x => x.Symbol == first.Symbol
+                    && x.Timeframe == first.Timeframe
+                    && x.WindowSize == first.WindowSize
+                    && x.Horizon == horizon
+                    && windowStarts.Contains(x.WindowStartMs))
+                .ToListAsync(ct);
+            labelsByWindow = labels
+                .GroupBy(x => x.WindowStartMs)
+                .ToDictionary(x => x.Key, x => x.OrderByDescending(item => item.CreatedAtUtc).First());
+        }
+
+        var items = new List<ArchetypeOccurrenceDto>(occurrences.Count);
+        foreach (var occurrence in occurrences)
+        {
+            // Fetch the exact persisted candles bounded by the original dataset window.
+            // This remains truthful even when historical source data contains a time gap.
+            var bars = await _db.Klines.AsNoTracking()
+                .Where(x => x.Symbol == occurrence.Symbol
+                    && x.Timeframe == occurrence.Timeframe
+                    && x.OpenTimeMs >= occurrence.WindowStartMs
+                    && x.OpenTimeMs <= occurrence.WindowEndMs)
+                .OrderBy(x => x.OpenTimeMs)
+                .Take(occurrence.WindowSize)
+                .Select(x => new ArchetypeOccurrenceOhlcDto
+                {
+                    OpenTimeMs = x.OpenTimeMs,
+                    Open = x.Open,
+                    High = x.High,
+                    Low = x.Low,
+                    Close = x.Close,
+                    Volume = x.Volume
+                })
+                .ToListAsync(ct);
+
+            labelsByWindow.TryGetValue(occurrence.WindowStartMs, out var requestedOutcome);
+
+            items.Add(new ArchetypeOccurrenceDto
+            {
+                WindowStartMs = occurrence.WindowStartMs,
+                WindowEndMs = occurrence.WindowEndMs,
+                DistanceToCentroid = occurrence.DistanceToCentroid,
+                Label = requestedOutcome?.Label ?? 0,
+                TargetReturn = requestedOutcome?.TargetReturn,
+                OutcomeAvailable = requestedOutcome != null,
+                Ohlc = bars,
+                OhlcComplete = bars.Count == occurrence.WindowSize
+            });
+        }
 
         return (total, items);
     }

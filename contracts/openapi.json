@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-09-hourly-timeframes"
+    "version": "2026-09-archetype-evidence"
   },
   "paths": {
     "/api/ai-chat/capabilities": {

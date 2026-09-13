@@ -2,7 +2,7 @@ namespace Backend.Data;
 
 public static class ResearchVersions
 {
-    public const string ApiContract = "2026-09-hourly-timeframes";
+    public const string ApiContract = "2026-09-archetype-evidence";
     public const string DataPipeline = "quant-pipeline-v3";
     public const string Evaluation = "evaluation-v2";
     public const string Legacy = "legacy-unversioned";

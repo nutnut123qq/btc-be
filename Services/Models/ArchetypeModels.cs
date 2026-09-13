@@ -60,6 +60,19 @@ public class ArchetypeOccurrenceDto
     public float DistanceToCentroid { get; set; }
     public int Label { get; set; }
     public double? TargetReturn { get; set; }
+    public bool OutcomeAvailable { get; set; }
+    public List<ArchetypeOccurrenceOhlcDto> Ohlc { get; set; } = [];
+    public bool OhlcComplete { get; set; }
+}
+
+public class ArchetypeOccurrenceOhlcDto
+{
+    public long OpenTimeMs { get; set; }
+    public decimal Open { get; set; }
+    public decimal High { get; set; }
+    public decimal Low { get; set; }
+    public decimal Close { get; set; }
+    public decimal Volume { get; set; }
 }
 
 public class ArchetypeRankingDto
