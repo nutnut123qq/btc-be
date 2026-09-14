@@ -121,6 +121,7 @@ builder.Services.AddScoped<IRagService, NewsRagService>();
 builder.Services.AddScoped<IBinanceKlinesService, BinanceKlinesService>();
 builder.Services.AddScoped<KlinesBackfillService>();
 builder.Services.AddScoped<IPatternSearchService, PatternSearchService>();
+builder.Services.AddScoped<IHistoricalAnalogService, HistoricalAnalogService>();
 builder.Services.AddScoped<IWindowVectorIndexer, WindowVectorIndexer>();
 builder.Services.AddScoped<ICandlePatternIndexer, CandlePatternIndexer>();
 builder.Services.AddScoped<ICandleSequenceRulesEngine, CandleSequenceRulesEngine>();

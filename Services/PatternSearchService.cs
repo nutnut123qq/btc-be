@@ -1,4 +1,3 @@
-using System.Numerics;
 using Backend.Services.Models;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
@@ -121,7 +120,7 @@ public class PatternSearchService : IPatternSearchService
             {
                 if (row.Vector.Length != currentVec.Length) continue;
                 if (!startIndexByTimeMs.TryGetValue(row.StartTimeMs, out var startIndex)) continue;
-                var similarity = CosineSimilarity(currentVec, currentNorm, row.Vector, row.VectorNorm);
+                var similarity = PatternVectorSimilarity.Cosine(currentVec, currentNorm, row.Vector, row.VectorNorm);
                 candidates.Add(new _Candidate(
                     StartIndex: startIndex,
                     StartTimeMs: row.StartTimeMs,
@@ -139,7 +138,7 @@ public class PatternSearchService : IPatternSearchService
                 var vec = WindowVectorIndexer.BuildVector(w, featureType);
                 if (vec is null) continue;
                 var norm = (float)Math.Sqrt(vec.Sum(v => v * v));
-                var similarity = CosineSimilarity(currentVec, currentNorm, vec, norm);
+                var similarity = PatternVectorSimilarity.Cosine(currentVec, currentNorm, vec, norm);
                 var startTime = w[0].OpenTimeMs;
                 var endTime = w[^1].OpenTimeMs;
                 candidates.Add(new _Candidate(start, startTime, endTime, similarity));
@@ -200,39 +199,6 @@ public class PatternSearchService : IPatternSearchService
             LatencyMs = latencyMs,
             Items = items
         };
-    }
-
-    /// <summary>
-    /// Hardware-accelerated SIMD cosine similarity calculation using Vector&lt;float&gt;.
-    /// </summary>
-    private static double CosineSimilarity(float[] a, float normA, float[] b, float normB)
-    {
-        if (normA <= 0 || normB <= 0 || a.Length == 0 || b.Length == 0) return 0;
-        int n = Math.Min(a.Length, b.Length);
-        int i = 0;
-        int vectorSize = Vector<float>.Count;
-        var dotVec = Vector<float>.Zero;
-
-        if (Vector.IsHardwareAccelerated && n >= vectorSize)
-        {
-            int limit = n - vectorSize;
-            while (i <= limit)
-            {
-                var va = new Vector<float>(a, i);
-                var vb = new Vector<float>(b, i);
-                dotVec += va * vb;
-                i += vectorSize;
-            }
-        }
-
-        float dot = Vector.Dot(dotVec, Vector<float>.One);
-
-        for (; i < n; i++)
-        {
-            dot += a[i] * b[i];
-        }
-
-        return Math.Clamp(dot / (normA * normB), -1.0, 1.0);
     }
 
     private sealed record _Candidate(int StartIndex, long StartTimeMs, long EndTimeMs, double Similarity);
