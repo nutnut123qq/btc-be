@@ -7,93 +7,84 @@ namespace Backend.Tests;
 
 public class ArchetypeServiceEvidenceTests
 {
+    private const long Interval = 14_400_000L;
+    private const string Symbol = "BTCUSDT";
+
     [Fact]
-    public async Task GetOccurrences_ReturnsExactPersistedOhlcAndTruthfulCompleteness()
+    public async Task GetOccurrences_ReturnsAuditableFixedHorizonResultsAndMissingDataHonestly()
     {
         await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
         db.ArchetypeOccurrences.AddRange(
-            new ArchetypeOccurrence
-            {
-                Id = 1,
-                ArchetypeId = 7,
-                Symbol = "BTCUSDT",
-                Timeframe = "4h",
-                WindowSize = 3,
-                WindowStartMs = 100,
-                WindowEndMs = 300,
-                Horizon = "4h",
-                Label = 1,
-                TargetReturn = 0.75
-            },
-            new ArchetypeOccurrence
-            {
-                Id = 2,
-                ArchetypeId = 7,
-                Symbol = "BTCUSDT",
-                Timeframe = "4h",
-                WindowSize = 3,
-                WindowStartMs = 500,
-                WindowEndMs = 700,
-                Horizon = "4h",
-                Label = -1,
-                TargetReturn = -0.8
-            });
+            Occurrence(1, start: 0, end: 2 * Interval),
+            Occurrence(2, start: 10 * Interval, end: 12 * Interval));
 
         db.Klines.AddRange(
-            Bar(1, 100, 10), Bar(2, 200, 11), Bar(3, 300, 12),
-            Bar(4, 500, 20), Bar(5, 700, 22),
-            Bar(6, 600, 999, symbol: "ETHUSDT"));
-        db.WindowClassificationDatasets.Add(new WindowClassificationDataset
-        {
-            Id = 10,
-            Symbol = "BTCUSDT",
-            Timeframe = "4h",
-            WindowSize = 3,
-            Horizon = "4h",
-            WindowStartMs = 100,
-            WindowEndMs = 300,
-            FeatureVector = [1f],
-            FeatureDim = 1,
-            Label = 1,
-            TargetReturn = 0.75
-        });
+            Bar(1, 0, 10), Bar(2, Interval, 11), Bar(3, 2 * Interval, 12),
+            Bar(4, 3 * Interval, 13), Bar(5, 4 * Interval, 12.5m), Bar(6, 5 * Interval, 10),
+            Bar(7, 6 * Interval, 11), Bar(8, 7 * Interval, 12), Bar(9, 8 * Interval, 15),
+            Bar(10, 10 * Interval, 20), Bar(11, 12 * Interval, 22),
+            Bar(12, 3 * Interval, 999, symbol: "ETHUSDT"));
         await db.SaveChangesAsync();
 
         var service = new ArchetypeService(db, null!, NullLogger<ArchetypeService>.Instance);
 
-        var (total, latest) = await service.GetOccurrencesAsync(7, "4h", page: 1, pageSize: 1);
-        var (secondTotal, older) = await service.GetOccurrencesAsync(7, "4h", page: 2, pageSize: 1);
+        var latest = await service.GetOccurrencesAsync(7, page: 1, pageSize: 1);
+        var older = await service.GetOccurrencesAsync(7, page: 2, pageSize: 1);
 
-        Assert.Equal(2, total);
-        Assert.Equal(2, secondTotal);
+        Assert.Equal(2, latest.Total);
+        Assert.Equal(2, older.Total);
 
-        var latestItem = Assert.Single(latest);
-        Assert.Equal(500, latestItem.WindowStartMs);
-        Assert.Equal(new long[] { 500, 700 }, latestItem.Ohlc.Select(x => x.OpenTimeMs));
+        var latestItem = Assert.Single(latest.Items);
+        Assert.Equal(10 * Interval, latestItem.WindowStartMs);
         Assert.False(latestItem.OhlcComplete);
-        Assert.False(latestItem.OutcomeAvailable);
-        Assert.Null(latestItem.TargetReturn);
+        Assert.False(latestItem.FutureOhlcComplete);
+        Assert.All(latestItem.FixedHorizonOutcomes, x => Assert.False(x.Available));
 
-        var olderItem = Assert.Single(older);
-        Assert.Equal(100, olderItem.WindowStartMs);
-        Assert.Equal(new long[] { 100, 200, 300 }, olderItem.Ohlc.Select(x => x.OpenTimeMs));
+        var olderItem = Assert.Single(older.Items);
+        Assert.Equal(new long[] { 0, Interval, 2 * Interval }, olderItem.Ohlc.Select(x => x.OpenTimeMs));
         Assert.True(olderItem.OhlcComplete);
-        Assert.True(olderItem.OutcomeAvailable);
-        Assert.Equal(1, olderItem.Label);
-        Assert.Equal(0.75, olderItem.TargetReturn);
-        Assert.Equal(12m, olderItem.Ohlc[^1].Close);
+        Assert.True(olderItem.FutureOhlcComplete);
+        Assert.Equal(6, olderItem.FutureOhlc.Count);
+
+        var afterOne = olderItem.FixedHorizonOutcomes.Single(x => x.BarsAhead == 1);
+        Assert.True(afterOne.Available);
+        Assert.Equal(1, afterOne.Direction);
+        Assert.Equal(8.333333333333334, afterOne.ReturnPct!.Value, precision: 10);
+
+        var afterThree = olderItem.FixedHorizonOutcomes.Single(x => x.BarsAhead == 3);
+        Assert.Equal(-1, afterThree.Direction);
+        Assert.Equal(-16.666666666666668, afterThree.ReturnPct!.Value, precision: 10);
+
+        var afterSix = olderItem.FixedHorizonOutcomes.Single(x => x.BarsAhead == 6);
+        Assert.Equal(1, afterSix.Direction);
+        Assert.Equal(25, afterSix.ReturnPct);
+
+        Assert.Equal(new[] { 1, 3, 6 }, older.Summaries.Select(x => x.BarsAhead));
+        Assert.Equal(new int?[] { 1, -1, 1 }, older.Summaries.Select(x => x.DominantDirection));
+        Assert.All(older.Summaries, x => Assert.Equal(1, x.TotalSamples));
     }
 
-    private static Kline Bar(long id, long openTimeMs, decimal close, string symbol = "BTCUSDT") => new()
+    private static ArchetypeOccurrence Occurrence(long id, long start, long end) => new()
+    {
+        Id = id,
+        ArchetypeId = 7,
+        Symbol = Symbol,
+        Timeframe = "4h",
+        WindowSize = 3,
+        WindowStartMs = start,
+        WindowEndMs = end
+    };
+
+    private static Kline Bar(long id, long openTimeMs, decimal close, string symbol = Symbol) => new()
     {
         Id = id,
         Symbol = symbol,
         Timeframe = "4h",
         OpenTimeMs = openTimeMs,
-        CloseTimeMs = openTimeMs + 1,
+        CloseTimeMs = openTimeMs + Interval - 1,
         Open = close - 1,
         High = close + 1,
         Low = close - 2,

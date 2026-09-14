@@ -7,6 +7,8 @@ namespace Backend.Services;
 
 public class ArchetypeService : IArchetypeService
 {
+    private static readonly int[] FixedHorizonBars = [1, 3, 6];
+
     private readonly AppDbContext _db;
     private readonly IWindowDatasetService _windowDataset;
     private readonly ILogger<ArchetypeService> _logger;
@@ -231,40 +233,49 @@ public class ArchetypeService : IArchetypeService
         return (matches, weightedSignal);
     }
 
-    public async Task<(int Total, List<ArchetypeOccurrenceDto> Items)> GetOccurrencesAsync(long archetypeId, string horizon, int page, int pageSize, CancellationToken ct = default)
+    public async Task<ArchetypeOccurrencesResult> GetOccurrencesAsync(long archetypeId, int page, int pageSize, CancellationToken ct = default)
     {
-        // ArchetypeOccurrences is cluster membership. Its legacy Horizon/Label fields only
-        // describe the primary clustering horizon, so always reconcile the requested outcome
-        // against WindowClassificationDatasets instead of relabelling that primary result.
-        var query = _db.ArchetypeOccurrences.AsNoTracking()
+        var allOccurrences = await _db.ArchetypeOccurrences.AsNoTracking()
             .Where(x => x.ArchetypeId == archetypeId)
-            .OrderByDescending(x => x.WindowStartMs);
+            .OrderByDescending(x => x.WindowStartMs)
+            .ToListAsync(ct);
 
-        var total = await query.CountAsync(ct);
-        var occurrences = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        if (allOccurrences.Count == 0)
+            return new ArchetypeOccurrencesResult();
 
-        var labelsByWindow = new Dictionary<long, WindowClassificationDataset>();
-        if (occurrences.Count > 0)
-        {
-            var first = occurrences[0];
-            var windowStarts = occurrences.Select(x => x.WindowStartMs).Distinct().ToList();
-            var labels = await _db.WindowClassificationDatasets.AsNoTracking()
-                .Where(x => x.Symbol == first.Symbol
-                    && x.Timeframe == first.Timeframe
-                    && x.WindowSize == first.WindowSize
-                    && x.Horizon == horizon
-                    && windowStarts.Contains(x.WindowStartMs))
-                .ToListAsync(ct);
-            labelsByWindow = labels
-                .GroupBy(x => x.WindowStartMs)
-                .ToDictionary(x => x.Key, x => x.OrderByDescending(item => item.CreatedAtUtc).First());
-        }
+        var first = allOccurrences[0];
+        var intervalMs = TimeframeMilliseconds(first.Timeframe);
+        var requiredOutcomeTimes = allOccurrences
+            .SelectMany(x => Enumerable.Range(0, 7).Select(bars => x.WindowEndMs + bars * intervalMs))
+            .Distinct()
+            .ToList();
+        var outcomeCandles = await _db.Klines.AsNoTracking()
+            .Where(x => x.Symbol == first.Symbol
+                && x.Timeframe == first.Timeframe
+                && requiredOutcomeTimes.Contains(x.OpenTimeMs))
+            .Select(x => new ArchetypeOccurrenceOhlcDto
+            {
+                OpenTimeMs = x.OpenTimeMs,
+                Open = x.Open,
+                High = x.High,
+                Low = x.Low,
+                Close = x.Close,
+                Volume = x.Volume
+            })
+            .ToListAsync(ct);
+        var candlesByTime = outcomeCandles
+            .GroupBy(x => x.OpenTimeMs)
+            .ToDictionary(x => x.Key, x => x.First());
 
+        var outcomesByOccurrence = allOccurrences.ToDictionary(
+            x => x.Id,
+            x => BuildFixedHorizonOutcomes(x.WindowEndMs, intervalMs, candlesByTime));
+        var summaries = BuildFixedHorizonSummaries(outcomesByOccurrence.Values.SelectMany(x => x));
+
+        var occurrences = allOccurrences.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         var items = new List<ArchetypeOccurrenceDto>(occurrences.Count);
         foreach (var occurrence in occurrences)
         {
-            // Fetch the exact persisted candles bounded by the original dataset window.
-            // This remains truthful even when historical source data contains a time gap.
             var bars = await _db.Klines.AsNoTracking()
                 .Where(x => x.Symbol == occurrence.Symbol
                     && x.Timeframe == occurrence.Timeframe
@@ -283,23 +294,109 @@ public class ArchetypeService : IArchetypeService
                 })
                 .ToListAsync(ct);
 
-            labelsByWindow.TryGetValue(occurrence.WindowStartMs, out var requestedOutcome);
+            var expectedPatternTimes = Enumerable.Range(0, occurrence.WindowSize)
+                .Select(index => occurrence.WindowStartMs + index * intervalMs)
+                .ToArray();
+            var futureBars = Enumerable.Range(1, 6)
+                .Select(index => candlesByTime.GetValueOrDefault(occurrence.WindowEndMs + index * intervalMs))
+                .Where(x => x != null)
+                .Cast<ArchetypeOccurrenceOhlcDto>()
+                .ToList();
 
             items.Add(new ArchetypeOccurrenceDto
             {
                 WindowStartMs = occurrence.WindowStartMs,
                 WindowEndMs = occurrence.WindowEndMs,
                 DistanceToCentroid = occurrence.DistanceToCentroid,
-                Label = requestedOutcome?.Label ?? 0,
-                TargetReturn = requestedOutcome?.TargetReturn,
-                OutcomeAvailable = requestedOutcome != null,
                 Ohlc = bars,
                 OhlcComplete = bars.Count == occurrence.WindowSize
+                    && bars.Select(x => x.OpenTimeMs).SequenceEqual(expectedPatternTimes),
+                FutureOhlc = futureBars,
+                FutureOhlcComplete = futureBars.Count == 6,
+                FixedHorizonOutcomes = outcomesByOccurrence[occurrence.Id]
             });
         }
 
-        return (total, items);
+        return new ArchetypeOccurrencesResult
+        {
+            Total = allOccurrences.Count,
+            Items = items,
+            Summaries = summaries
+        };
     }
+
+    private static List<ArchetypeFixedHorizonOutcomeDto> BuildFixedHorizonOutcomes(
+        long windowEndMs,
+        long intervalMs,
+        IReadOnlyDictionary<long, ArchetypeOccurrenceOhlcDto> candlesByTime)
+    {
+        candlesByTime.TryGetValue(windowEndMs, out var current);
+        return FixedHorizonBars.Select(barsAhead =>
+        {
+            var targetTime = windowEndMs + barsAhead * intervalMs;
+            candlesByTime.TryGetValue(targetTime, out var target);
+            if (current == null || target == null || current.Close == 0)
+            {
+                return new ArchetypeFixedHorizonOutcomeDto
+                {
+                    BarsAhead = barsAhead,
+                    TargetOpenTimeMs = targetTime
+                };
+            }
+
+            var returnPct = (double)((target.Close - current.Close) / current.Close * 100m);
+            return new ArchetypeFixedHorizonOutcomeDto
+            {
+                BarsAhead = barsAhead,
+                TargetOpenTimeMs = targetTime,
+                TargetClose = target.Close,
+                ReturnPct = returnPct,
+                Direction = returnPct > 0 ? 1 : returnPct < 0 ? -1 : 0,
+                Available = true
+            };
+        }).ToList();
+    }
+
+    private static List<ArchetypeFixedHorizonSummaryDto> BuildFixedHorizonSummaries(
+        IEnumerable<ArchetypeFixedHorizonOutcomeDto> outcomes)
+    {
+        return outcomes.GroupBy(x => x.BarsAhead).OrderBy(x => x.Key).Select(group =>
+        {
+            var available = group.Where(x => x.Available && x.Direction.HasValue && x.ReturnPct.HasValue).ToList();
+            var up = available.Count(x => x.Direction == 1);
+            var down = available.Count(x => x.Direction == -1);
+            var sideways = available.Count(x => x.Direction == 0);
+            var maxCount = Math.Max(up, Math.Max(down, sideways));
+            var dominantCandidates = new[] { (Label: 1, Count: up), (Label: -1, Count: down), (Label: 0, Count: sideways) }
+                .Where(x => x.Count == maxCount)
+                .ToList();
+
+            return new ArchetypeFixedHorizonSummaryDto
+            {
+                BarsAhead = group.Key,
+                TotalSamples = available.Count,
+                UpRate = available.Count == 0 ? 0 : (double)up / available.Count,
+                DownRate = available.Count == 0 ? 0 : (double)down / available.Count,
+                SidewaysRate = available.Count == 0 ? 0 : (double)sideways / available.Count,
+                AvgReturnPct = available.Count == 0 ? 0 : available.Average(x => x.ReturnPct!.Value),
+                DominantDirection = available.Count > 0 && dominantCandidates.Count == 1
+                    ? dominantCandidates[0].Label
+                    : null
+            };
+        }).ToList();
+    }
+
+    private static long TimeframeMilliseconds(string timeframe) => timeframe switch
+    {
+        "1m" => 60_000L,
+        "5m" => 300_000L,
+        "15m" => 900_000L,
+        "30m" => 1_800_000L,
+        "1h" => 3_600_000L,
+        "4h" => 14_400_000L,
+        "1d" => 86_400_000L,
+        _ => throw new ArgumentOutOfRangeException(nameof(timeframe), timeframe, "Unsupported timeframe.")
+    };
 
     public async Task<List<ArchetypeRankingDto>> GetRankingsAsync(string symbol, string timeframe, int? windowSize, string? horizon, string sortBy, int top, CancellationToken ct = default)
     {

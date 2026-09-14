@@ -58,11 +58,11 @@ public class ArchetypeOccurrenceDto
     public long WindowStartMs { get; set; }
     public long WindowEndMs { get; set; }
     public float DistanceToCentroid { get; set; }
-    public int Label { get; set; }
-    public double? TargetReturn { get; set; }
-    public bool OutcomeAvailable { get; set; }
     public List<ArchetypeOccurrenceOhlcDto> Ohlc { get; set; } = [];
     public bool OhlcComplete { get; set; }
+    public List<ArchetypeOccurrenceOhlcDto> FutureOhlc { get; set; } = [];
+    public bool FutureOhlcComplete { get; set; }
+    public List<ArchetypeFixedHorizonOutcomeDto> FixedHorizonOutcomes { get; set; } = [];
 }
 
 public class ArchetypeOccurrenceOhlcDto
@@ -73,6 +73,34 @@ public class ArchetypeOccurrenceOhlcDto
     public decimal Low { get; set; }
     public decimal Close { get; set; }
     public decimal Volume { get; set; }
+}
+
+public sealed class ArchetypeFixedHorizonOutcomeDto
+{
+    public int BarsAhead { get; set; }
+    public long TargetOpenTimeMs { get; set; }
+    public decimal? TargetClose { get; set; }
+    public double? ReturnPct { get; set; }
+    public int? Direction { get; set; }
+    public bool Available { get; set; }
+}
+
+public sealed class ArchetypeFixedHorizonSummaryDto
+{
+    public int BarsAhead { get; set; }
+    public int TotalSamples { get; set; }
+    public double UpRate { get; set; }
+    public double DownRate { get; set; }
+    public double SidewaysRate { get; set; }
+    public double AvgReturnPct { get; set; }
+    public int? DominantDirection { get; set; }
+}
+
+public sealed class ArchetypeOccurrencesResult
+{
+    public int Total { get; set; }
+    public List<ArchetypeOccurrenceDto> Items { get; set; } = [];
+    public List<ArchetypeFixedHorizonSummaryDto> Summaries { get; set; } = [];
 }
 
 public class ArchetypeRankingDto

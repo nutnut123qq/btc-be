@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-09-archetype-evidence"
+    "version": "2026-09-archetype-fixed-horizon"
   },
   "paths": {
     "/api/ai-chat/capabilities": {
@@ -568,15 +568,6 @@
             "schema": {
               "type": "integer",
               "format": "int64"
-            }
-          },
-          {
-            "name": "horizon",
-            "in": "query",
-            "style": "form",
-            "schema": {
-              "type": "string",
-              "default": "4h"
             }
           },
           {

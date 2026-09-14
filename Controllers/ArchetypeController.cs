@@ -99,7 +99,6 @@ public class ArchetypeController : ControllerBase
     [HttpGet("{id}/occurrences")]
     public async Task<ActionResult<object>> GetOccurrences(
         long id,
-        [FromQuery] string horizon = "4h",
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
@@ -109,16 +108,18 @@ public class ArchetypeController : ControllerBase
 
         try
         {
-            var (total, items) = await _archetypeService.GetOccurrencesAsync(id, horizon, page, pageSize, cancellationToken);
+            var result = await _archetypeService.GetOccurrencesAsync(id, page, pageSize, cancellationToken);
             return Ok(new
             {
                 requestId = HttpContext.TraceIdentifier,
                 archetypeId = id,
-                horizon,
+                evaluationMethod = "fixed-horizon-close-to-close",
+                forwardBars = new[] { 1, 3, 6 },
                 page,
                 pageSize,
-                total,
-                items
+                total = result.Total,
+                summaries = result.Summaries,
+                items = result.Items
             });
         }
         catch (Exception ex)
