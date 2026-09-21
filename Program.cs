@@ -14,14 +14,21 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers(options => options.Filters.Add<ProductionSymbolScopeFilter>());
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiInfo
+builder.Services.AddSwaggerGen(options =>
 {
-    Title = "Bitcoin AI Analyst Backend",
-    Version = ResearchVersions.ApiContract
-}));
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Bitcoin AI Analyst Backend",
+        Version = ResearchVersions.ApiContract
+    });
+});
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<DataAuditCache>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ITechnicalCapabilityRegistry, TechnicalCapabilityRegistry>();
+builder.Services.Configure<EvidenceCatalogOptions>(builder.Configuration.GetSection(EvidenceCatalogOptions.SectionName));
+builder.Services.AddSingleton<IResearchEvidenceCatalog, ResearchEvidenceCatalog>();
+builder.Services.AddScoped<IPaperObservationReader, PaperObservationReader>();
 builder.Services.AddSignalR();
 
 // Response Compression (Brotli + Gzip) for High Concurrency Payload Optimization

@@ -125,7 +125,7 @@ public class CandlePatternIndexer : ICandlePatternIndexer
                 Close = startCandle.Close,
                 Volume = startCandle.Volume,
                 PatternType = patternType,
-                PatternCategory = mp.Pattern.ToString().StartsWith("Three") ? "Triple" : "Double",
+                PatternCategory = IsTriplePattern(mp.Pattern) ? "Triple" : "Double",
                 TrendDirection = trend.ToString(),
                 CreatedAtUtc = now
             });
@@ -136,6 +136,14 @@ public class CandlePatternIndexer : ICandlePatternIndexer
         await FlushBatchAsync();
         return totalAdded;
     }
+
+    private static bool IsTriplePattern(MultiCandlePattern pattern) => pattern is
+        MultiCandlePattern.MorningStar or
+        MultiCandlePattern.EveningStar or
+        MultiCandlePattern.ThreeWhiteSoldiers or
+        MultiCandlePattern.ThreeBlackCrows or
+        MultiCandlePattern.ThreeInsideUp or
+        MultiCandlePattern.ThreeInsideDown;
 
     public async Task<int> BuildFullAsync(
         string symbol,

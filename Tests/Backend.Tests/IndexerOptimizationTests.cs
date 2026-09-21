@@ -59,6 +59,30 @@ public class IndexerOptimizationTests
     }
 
     [Fact]
+    public async Task CandlePatternIndexer_StoresMorningStarAsTriplePattern()
+    {
+        await using var db = CreateInMemoryDb();
+        var indexer = new CandlePatternIndexer(
+            db,
+            new FakeBinanceKlinesService(),
+            OptionsFactory.Create(DefaultOptions()));
+        var klines = new List<KlineDto>();
+        for (var i = 0; i < 5; i++)
+        {
+            var close = 65_000m - i * 200m;
+            klines.Add(TestBar(i, close + 200m, close + 250m, close - 50m, close));
+        }
+        klines.Add(TestBar(5, 64_050m, 64_100m, 63_800m, 63_850m));
+        klines.Add(TestBar(6, 63_850m, 63_930m, 63_830m, 63_860m));
+        klines.Add(TestBar(7, 63_860m, 64_200m, 63_850m, 64_150m));
+
+        await indexer.IndexAsync("BTCUSDT", "1h", klines);
+
+        var stored = await db.CandlePatterns.SingleAsync(x => x.PatternType == "MorningStar");
+        Assert.Equal("Triple", stored.PatternCategory);
+    }
+
+    [Fact]
     public async Task CandleVolumeIndexer_IndexAsync_IndexesVolumeAndSkipsExisting()
     {
         await using var db = CreateInMemoryDb();
@@ -210,4 +234,14 @@ public class IndexerOptimizationTests
     {
         return CreateKlines(timeframe, startIndex, count).Select(KlineMapper.ToDto).ToList();
     }
+
+    private static KlineDto TestBar(long index, decimal open, decimal high, decimal low, decimal close) => new()
+    {
+        OpenTimeMs = index * 3_600_000L,
+        Open = open,
+        High = high,
+        Low = low,
+        Close = close,
+        Volume = 100m
+    };
 }

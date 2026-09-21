@@ -17,6 +17,7 @@ public class PaperTradeController : ControllerBase
     private readonly IEnsemblePaperTraderService _ensemblePaperTraderService;
     private readonly IMemoryCache _cache;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
     private static readonly TimeSpan SummaryTtl = TimeSpan.FromSeconds(5);
 
     [ActivatorUtilitiesConstructor]
@@ -24,18 +25,20 @@ public class PaperTradeController : ControllerBase
         AppDbContext db,
         IEnsemblePaperTraderService ensemblePaperTraderService,
         IMemoryCache cache,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _db = db;
         _ensemblePaperTraderService = ensemblePaperTraderService;
         _cache = cache;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public PaperTradeController(
         AppDbContext db,
         IEnsemblePaperTraderService ensemblePaperTraderService)
-        : this(db, ensemblePaperTraderService, new MemoryCache(new MemoryCacheOptions()), null)
+        : this(db, ensemblePaperTraderService, new MemoryCache(new MemoryCacheOptions()), null, null)
     {
     }
 
@@ -43,15 +46,17 @@ public class PaperTradeController : ControllerBase
     [Backend.Filters.AdminGuard]
     public async Task<IActionResult> EvaluateEnsemble([FromBody] EvaluateEnsembleRequest request, CancellationToken ct)
     {
+        if (!TryActiveSymbol(request.Symbol, out var symbol, out var symbolError))
+            return symbolError!;
         var timeframe = ProductionTimeframePolicy.Canonicalize(request.Timeframe);
         if (!_timeframePolicy.IsActive(timeframe))
             return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
-        var result = await _ensemblePaperTraderService.EvaluateAndTradeAsync(request.Symbol, timeframe, ct);
+        var result = await _ensemblePaperTraderService.EvaluateAndTradeAsync(symbol, timeframe, ct);
         return Ok(result);
     }
 
     /// <summary>
-    /// Lấy danh sách giao dịch với bộ lọc nâng cao (hỗ trợ nhiều symbols, phân trang, lọc theo side, status, thời gian).
+    /// Lấy danh sách giao dịch BTC với phân trang và bộ lọc timeframe, side, status, thời gian.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -71,25 +76,12 @@ public class PaperTradeController : ControllerBase
 
         var query = _db.PaperTrades.AsNoTracking();
 
-        // 1. Filter by symbol(s)
-        string? targetSymbols = !string.IsNullOrWhiteSpace(symbols) ? symbols : symbol;
-        if (!string.IsNullOrWhiteSpace(targetSymbols) && targetSymbols.Trim().ToLower() != "all")
-        {
-            var symbolList = targetSymbols
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(s => s.ToUpperInvariant())
-                .ToList();
-
-            if (symbolList.Count == 1)
-            {
-                var s = symbolList[0];
-                query = query.Where(t => t.Symbol == s);
-            }
-            else if (symbolList.Count > 1)
-            {
-                query = query.Where(t => symbolList.Contains(t.Symbol.ToUpper()));
-            }
-        }
+        // 1. BTC-only production scope. The plural legacy parameter is accepted
+        // only when it resolves to the single active symbol.
+        var requestedSymbol = !string.IsNullOrWhiteSpace(symbols) ? symbols : symbol;
+        if (!TryActiveSymbol(requestedSymbol, out var activeSymbol, out var symbolError))
+            return symbolError!;
+        query = query.Where(t => t.Symbol == activeSymbol);
 
         // 2. Filter by timeframe
         if (!string.IsNullOrWhiteSpace(timeframe) && timeframe.Trim().ToLower() != "all")
@@ -184,7 +176,7 @@ public class PaperTradeController : ControllerBase
     }
 
     /// <summary>
-    /// API Tổng quan danh mục Đa tài sản (Multi-Asset Portfolio Summary) chuẩn Binance.
+    /// API tổng quan paper portfolio BTC.
     /// </summary>
     [HttpGet("portfolio-summary")]
     public async Task<IActionResult> GetPortfolioSummary(
@@ -196,7 +188,9 @@ public class PaperTradeController : ControllerBase
             return Ok(cached);
         }
 
-        var allTrades = await _db.PaperTrades.AsNoTracking().ToListAsync();
+        var allTrades = await _db.PaperTrades.AsNoTracking()
+            .Where(t => t.Symbol == ProductionSymbolPolicy.Symbol)
+            .ToListAsync();
 
         var totalTrades = allTrades.Count;
         var openTrades = allTrades.Where(t => t.Status == "open").ToList();
@@ -282,15 +276,15 @@ public class PaperTradeController : ControllerBase
         [FromQuery] string? symbol = null,
         [FromQuery] string? timeframe = null)
     {
-        var cacheKey = $"paper:summary:{symbol ?? "all"}:{timeframe}";
+        if (!TryActiveSymbol(symbol, out var activeSymbol, out var symbolError))
+            return symbolError!;
+        var cacheKey = $"paper:summary:{activeSymbol}:{timeframe}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {
             return Ok(cached);
         }
 
-        var query = _db.PaperTrades.AsNoTracking();
-        if (!string.IsNullOrEmpty(symbol))
-            query = query.Where(t => t.Symbol == symbol);
+        var query = _db.PaperTrades.AsNoTracking().Where(t => t.Symbol == activeSymbol);
 
         if (!string.IsNullOrEmpty(timeframe))
             query = query.Where(t => t.Timeframe == timeframe);
@@ -358,15 +352,16 @@ public class PaperTradeController : ControllerBase
         [FromQuery] string? symbol = null,
         [FromQuery] string? timeframe = null)
     {
-        var cacheKey = $"paper:equity-curve:{symbol ?? "all"}:{timeframe}";
+        if (!TryActiveSymbol(symbol, out var activeSymbol, out var symbolError))
+            return symbolError!;
+        var cacheKey = $"paper:equity-curve:{activeSymbol}:{timeframe}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {
             return Ok(cached);
         }
 
-        var query = _db.PaperTrades.AsNoTracking().Where(t => t.Status == "closed");
-        if (!string.IsNullOrEmpty(symbol))
-            query = query.Where(t => t.Symbol == symbol);
+        var query = _db.PaperTrades.AsNoTracking()
+            .Where(t => t.Symbol == activeSymbol && t.Status == "closed");
 
         if (!string.IsNullOrEmpty(timeframe))
             query = query.Where(t => t.Timeframe == timeframe);
@@ -391,7 +386,7 @@ public class PaperTradeController : ControllerBase
             });
         }
 
-        var response = new { symbol = symbol ?? "all", points = result };
+        var response = new { symbol = activeSymbol, points = result };
         _cache.Set(cacheKey, response, SummaryTtl);
         return Ok(response);
     }
@@ -400,15 +395,34 @@ public class PaperTradeController : ControllerBase
     public async Task<IActionResult> GetOpen(
         [FromQuery] string? symbol = null)
     {
-        var query = _db.PaperTrades.AsNoTracking().Where(t => t.Status == "open");
-        if (!string.IsNullOrEmpty(symbol))
-            query = query.Where(t => t.Symbol == symbol);
+        if (!TryActiveSymbol(symbol, out var activeSymbol, out var symbolError))
+            return symbolError!;
+        var query = _db.PaperTrades.AsNoTracking()
+            .Where(t => t.Symbol == activeSymbol && t.Status == "open");
 
         var items = await query
             .OrderByDescending(t => t.EntryTimeMs)
             .ToListAsync();
 
-        return Ok(new { symbol = symbol ?? "all", count = items.Count, items });
+        return Ok(new { symbol = activeSymbol, count = items.Count, items });
+    }
+
+    private bool TryActiveSymbol(string? requested, out string activeSymbol, out IActionResult? error)
+    {
+        var candidate = string.IsNullOrWhiteSpace(requested)
+            ? ProductionSymbolPolicy.Symbol
+            : requested;
+        if (!_symbolPolicy.IsActive(candidate))
+        {
+            activeSymbol = string.Empty;
+            error = BadRequest(ProductionSymbolApiError.Create(
+                _symbolPolicy, candidate, HttpContext.TraceIdentifier));
+            return false;
+        }
+
+        activeSymbol = ProductionSymbolPolicy.Canonicalize(candidate);
+        error = null;
+        return true;
     }
 }
 

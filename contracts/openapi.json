@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-09-research-evidence-v2"
+    "version": "2026-09-research-evidence-v4"
   },
   "paths": {
     "/api/ai-chat/capabilities": {
@@ -3332,6 +3332,146 @@
         }
       }
     },
+    "/api/paper-observations": {
+      "get": {
+        "tags": [
+          "PaperObservations"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperObservationListResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperObservationListResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperObservationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/paper-trades/observations": {
+      "get": {
+        "tags": [
+          "PaperObservations"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperObservationListResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperObservationListResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperObservationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/paper-trades/evaluate-ensemble": {
       "post": {
         "tags": [
@@ -3976,6 +4116,124 @@
               "text/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResearchSpecificationDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/capabilities": {
+      "get": {
+        "tags": [
+          "ResearchCapabilities"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalCapabilitiesResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalCapabilitiesResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalCapabilitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/evidence": {
+      "get": {
+        "tags": [
+          "ResearchEvidence"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchEvidenceCatalogResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchEvidenceCatalogResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchEvidenceCatalogResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/evidence/{id}": {
+      "get": {
+        "tags": [
+          "ResearchEvidence"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchEvidenceDetailDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchEvidenceDetailDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchEvidenceDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -4956,6 +5214,27 @@
         },
         "additionalProperties": false
       },
+      "ApiErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ArchetypeOccurrenceOhlcDto": {
         "type": "object",
         "properties": {
@@ -5549,6 +5828,49 @@
           "timeframe": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EvidenceIntegrityDto": {
+        "required": [
+          "verificationMode"
+        ],
+        "type": "object",
+        "properties": {
+          "verified": {
+            "type": "boolean"
+          },
+          "manifestHashVerified": {
+            "type": "boolean"
+          },
+          "reportHashVerified": {
+            "type": "boolean"
+          },
+          "reportHashEmbedded": {
+            "type": "boolean"
+          },
+          "verificationMode": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EvidenceIntegritySummaryDto": {
+        "type": "object",
+        "properties": {
+          "scannedArtifactCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "publishedArtifactCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rejectedArtifactCount": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -6492,6 +6814,159 @@
         },
         "additionalProperties": false
       },
+      "PaperObservationDto": {
+        "required": [
+          "availableTimeMs",
+          "configProvenanceJson",
+          "decision",
+          "decisionId",
+          "evidenceProvenanceJson",
+          "id",
+          "observedAtUtc",
+          "quoteSource",
+          "recorderVersion",
+          "signalBarCloseTimeMs",
+          "signalBarOpenTimeMs",
+          "symbol",
+          "timeframe"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decisionId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "recorderVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "signalBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "signalBarCloseTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "modelVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "decision": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "abstentionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "quoteSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "quotePrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "quoteReceivedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "quoteReceivedTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "configProvenanceJson": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidenceProvenanceJson": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "fillPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fillObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "outcomeReturn": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "outcomeObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "outcomeHorizon": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PaperObservationListResponse": {
+        "required": [
+          "available",
+          "items",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaperObservationDto"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "PatternSearchItem": {
         "type": "object",
         "properties": {
@@ -6648,6 +7123,550 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "instance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "ResearchEvidenceArtifactDto": {
+        "required": [
+          "role",
+          "sha256"
+        ],
+        "type": "object",
+        "properties": {
+          "role": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rowCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceBaselineDto": {
+        "required": [
+          "description",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceCatalogItemDto": {
+        "required": [
+          "evidenceTier",
+          "id",
+          "integrity",
+          "kind",
+          "limitations",
+          "manifestSha256",
+          "reportSha256",
+          "status",
+          "summary",
+          "symbol",
+          "timeframe",
+          "title"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidenceTier": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "manifestSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reportSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/EvidenceIntegrityDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceCatalogResponse": {
+        "required": [
+          "contractVersion",
+          "generatedAtUtc",
+          "integrity",
+          "items",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidenceCatalogItemDto"
+            }
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/EvidenceIntegritySummaryDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceCoverageDto": {
+        "type": "object",
+        "properties": {
+          "evaluatedRows": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "eligibleRows": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "ratio": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "foldCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceDatasetDto": {
+        "required": [
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "source": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "rowCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "firstDecisionTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "lastDecisionTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "datasetSha256": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceDetailDto": {
+        "required": [
+          "artifacts",
+          "baselines",
+          "conclusion",
+          "coverage",
+          "dataset",
+          "evidenceTier",
+          "findings",
+          "hypothesis",
+          "id",
+          "integrity",
+          "kind",
+          "limitations",
+          "manifestSha256",
+          "metrics",
+          "protocol",
+          "provenance",
+          "reportSha256",
+          "status",
+          "summary",
+          "symbol",
+          "timeframe",
+          "title",
+          "uncertainty"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidenceTier": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "manifestSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reportSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "hypothesis": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/ResearchEvidenceDatasetDto"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/ResearchEvidenceProtocolDto"
+          },
+          "baselines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidenceBaselineDto"
+            }
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidenceMetricDto"
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidenceFindingDto"
+            }
+          },
+          "uncertainty": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidenceUncertaintyDto"
+            }
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/ResearchEvidenceCoverageDto"
+          },
+          "conclusion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ResearchEvidenceProvenanceDto"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidenceArtifactDto"
+            }
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/EvidenceIntegrityDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceFindingDto": {
+        "required": [
+          "id",
+          "label",
+          "metricName",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "metricName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lower": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "upper": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sampleSize": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceMetricDto": {
+        "required": [
+          "label",
+          "name",
+          "unit"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "unit": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "baseline": {
+            "type": "string",
+            "nullable": true
+          },
+          "interpretation": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceProtocolDto": {
+        "type": "object",
+        "properties": {
+          "evaluatorVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "decisionTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "outcomePriceBasis": {
+            "type": "string",
+            "nullable": true
+          },
+          "chronologicalOos": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "multipleTesting": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceProvenanceDto": {
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "experiment": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluatorSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "researchContractSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "gitCommit": {
+            "type": "string",
+            "nullable": true
+          },
+          "gitDirty": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidenceUncertaintyDto": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "lower": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "upper": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "confidenceLevel": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "familywise": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -6839,6 +7858,99 @@
           "lastEventType": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalCapabilitiesResponse": {
+        "required": [
+          "contractVersion",
+          "evidenceCatalogEndpoint",
+          "generatedAtUtc",
+          "items",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evidenceCatalogEndpoint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicalCapabilityDto"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalCapabilityDto": {
+        "required": [
+          "category",
+          "endpoint",
+          "evidenceStage",
+          "evidenceTarget",
+          "id",
+          "intendedUse",
+          "limitation",
+          "name",
+          "operationalStatus",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "category": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "operationalStatus": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidenceStage": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidenceTarget": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "intendedUse": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "limitation": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "endpoint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "type": "string"
           }
         },
         "additionalProperties": false

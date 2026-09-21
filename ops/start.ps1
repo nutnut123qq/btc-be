@@ -46,6 +46,7 @@ try {
         "ASPNETCORE_ENVIRONMENT" = "ProductionLike"
         "ASPNETCORE_URLS" = "http://127.0.0.1:5197"
         "ConnectionStrings__DefaultConnection" = Get-BackendConnectionString
+        "EvidenceCatalog__RootPath" = (Join-Path $script:AiDir "docs/research/evidence")
     }
     $processes += Start-ManagedProcess "frontend" (Join-Path $frontendDir "node_modules/.bin/next.cmd") @("start", "-H", "127.0.0.1", "-p", "3000") $frontendDir @{
         "NODE_ENV" = "production"

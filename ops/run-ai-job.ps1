@@ -38,9 +38,9 @@ $scriptPath = Join-Path $aiDir $scriptName
     @($scriptPath, "poll")
 }
 elseif ($Job -eq "Paper") {
-    # Prospective paper is the safe default. This command intentionally exits
-    # non-zero until a timestamped live-fill recorder exists; historical replay
-    # must never be launched by Task Scheduler under the Paper job name.
+    # Prospective observation is the safe default. It records a timestamped
+    # decision/abstention and live quote; it never invents a fill or outcome.
+    # Historical replay must never run under the scheduled Paper job name.
     @($scriptPath, "--mode", "forward-paper")
 }
 else {
