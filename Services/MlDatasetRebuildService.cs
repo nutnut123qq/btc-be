@@ -62,6 +62,7 @@ public class MlDatasetRebuildService
     private readonly ILogger<MlDatasetRebuildService> _logger;
     private readonly DataAuditCache? _auditCache;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     public MlDatasetRebuildService(
         AppDbContext db,
@@ -69,7 +70,8 @@ public class MlDatasetRebuildService
         IWindowDatasetService windowDatasetService,
         ILogger<MlDatasetRebuildService> logger,
         DataAuditCache? auditCache = null,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _db = db;
         _mlDatasetService = mlDatasetService;
@@ -77,6 +79,7 @@ public class MlDatasetRebuildService
         _logger = logger;
         _auditCache = auditCache;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public async Task<MlDatasetRebuildResult> RebuildAsync(
@@ -86,6 +89,7 @@ public class MlDatasetRebuildService
         IProgress<MlDatasetRebuildProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         var activeTimeframes = _timeframePolicy.NormalizeAndEnsureActive(timeframes);
         var result = new MlDatasetRebuildResult
         {
@@ -161,6 +165,9 @@ public class MlDatasetRebuildService
             {
                 tfResult.Status = "error";
                 tfResult.Error = ex.Message;
+                // A failed SaveChanges can leave Added entities tracked. Never
+                // let them bleed into the next timeframe's rebuild attempt.
+                _db.ChangeTracker.Clear();
                 _logger.LogError(ex, "[MlDatasetRebuild] Lỗi khi rebuild {Symbol} {Timeframe}", symbol, tf);
             }
             finally

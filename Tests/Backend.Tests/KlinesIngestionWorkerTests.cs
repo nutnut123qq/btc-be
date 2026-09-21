@@ -20,13 +20,16 @@ public class KlinesIngestionWorkerTests
         return new AppDbContext(options);
     }
 
-    private static KlinesIngestionWorker CreateWorker(KlinesIngestionOptions? options = null)
+    private static KlinesIngestionWorker CreateWorker(
+        KlinesIngestionOptions? options = null,
+        TimeProvider? timeProvider = null)
     {
         var opt = options ?? new KlinesIngestionOptions();
         return new KlinesIngestionWorker(
             null!,
             NullLogger<KlinesIngestionWorker>.Instance,
-            OptionsFactory.Create(opt));
+            OptionsFactory.Create(opt),
+            timeProvider: timeProvider);
     }
 
     [Fact]
@@ -243,6 +246,61 @@ public class KlinesIngestionWorkerTests
 
         Assert.Equal(2, inserted);
         Assert.Equal(3, await db.Klines.CountAsync());
+    }
+
+    [Fact]
+    public async Task InsertBatchAsync_DoesNotPersistFormingCandle()
+    {
+        await using var db = CreateInMemoryDb();
+        var clock = new MutableTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(3_600_000));
+        var worker = CreateWorker(timeProvider: clock);
+        var forming = CreateKlineDto(3_600_000);
+
+        var inserted = await worker.InsertBatchAsync(db, "BTCUSDT", "1h", [forming], default);
+
+        Assert.Equal(0, inserted);
+        Assert.Empty(await db.Klines.ToListAsync());
+    }
+
+    [Fact]
+    public async Task InsertBatchAsync_RemovesLegacyFormingCandleForIncomingOpenTime()
+    {
+        await using var db = CreateInMemoryDb();
+        var clock = new MutableTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(3_600_000));
+        var worker = CreateWorker(timeProvider: clock);
+        var stale = CreateKline("1h", 3_600_000);
+        stale.CloseTimeMs = 7_199_999;
+        db.Klines.Add(stale);
+        await db.SaveChangesAsync();
+
+        var inserted = await worker.InsertBatchAsync(
+            db, "BTCUSDT", "1h", [CreateKlineDto(3_600_000)], default);
+
+        Assert.Equal(0, inserted);
+        Assert.Empty(await db.Klines.ToListAsync());
+    }
+
+    [Fact]
+    public async Task InsertBatchAsync_FinalizedResponseRepairsExistingPartialCandle()
+    {
+        await using var db = CreateInMemoryDb();
+        var clock = new MutableTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(7_200_000));
+        var worker = CreateWorker(timeProvider: clock);
+        var partial = CreateKline("1h", 0);
+        partial.High = 64_010m;
+        partial.Close = 64_005m;
+        partial.Volume = 0.1m;
+        db.Klines.Add(partial);
+        await db.SaveChangesAsync();
+
+        var finalized = CreateKlineDto(0);
+        var inserted = await worker.InsertBatchAsync(db, "BTCUSDT", "1h", [finalized], default);
+
+        Assert.Equal(0, inserted);
+        var stored = await db.Klines.SingleAsync();
+        Assert.Equal(finalized.High, stored.High);
+        Assert.Equal(finalized.Close, stored.Close);
+        Assert.Equal(finalized.Volume, stored.Volume);
     }
 
     [Fact]

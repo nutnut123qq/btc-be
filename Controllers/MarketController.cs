@@ -188,6 +188,7 @@ public class MarketController : ControllerBase
     /// Backfill dữ liệu nến từ Binance Spot API vào bảng Klines.
     /// Mặc định chạy ngầm (202 Accepted); đặt wait=true để đợi hoàn thành (có thể rất lâu).
     /// Đặt fillGaps=true để tìm và lấp tất cả gaps trong khoảng [startDateUtc, endDateUtc] thay vì chỉ resume từ nến cuối.
+    /// Đặt reconcileExisting=true để fetch lại range hữu hạn và sửa row partial/revised bằng nến đã đóng.
     /// </summary>
     [HttpPost("klines/backfill")]
     [Backend.Filters.AdminGuard]
@@ -199,6 +200,7 @@ public class MarketController : ControllerBase
         [FromQuery] int requestsPerMinuteLimit = 400,
         [FromQuery] bool wait = false,
         [FromQuery] bool fillGaps = false,
+        [FromQuery] bool reconcileExisting = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(symbol))
@@ -206,6 +208,8 @@ public class MarketController : ControllerBase
 
         if (requestsPerMinuteLimit is < 10 or > 600)
             return BadRequest(new ApiErrorEnvelope { Code = "INVALID_RATE_LIMIT", Message = "requestsPerMinuteLimit must be between 10 and 600.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
+        if (fillGaps && reconcileExisting)
+            return BadRequest(new ApiErrorEnvelope { Code = "INVALID_BACKFILL_MODE", Message = "fillGaps and reconcileExisting cannot both be true.", Retryable = false, RequestId = HttpContext.TraceIdentifier });
 
         IReadOnlyList<string>? timeframes = null;
         if (!string.IsNullOrWhiteSpace(timeframe))
@@ -234,6 +238,7 @@ public class MarketController : ControllerBase
             requestsPerMinuteLimit: requestsPerMinuteLimit,
             wait: wait,
             fillGaps: fillGaps,
+            reconcileExisting: reconcileExisting,
             cancellationToken: cancellationToken);
 
         startInfo.RequestId = HttpContext.TraceIdentifier;

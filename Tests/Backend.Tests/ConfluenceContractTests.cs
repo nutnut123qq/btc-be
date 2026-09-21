@@ -22,6 +22,10 @@ public class ConfluenceContractTests
         Assert.Equal(0.4, item.DirectionalScore);
         Assert.Equal("TrendingUp", item.RegimeType);
         Assert.Equal("A", item.ArchetypeCode);
+        Assert.Equal("descriptive", result.CapabilityState);
+        Assert.Equal("heuristic_index", result.ScoreKind);
+        Assert.False(result.IsProbability);
+        Assert.True(result.InputsComplete);
     }
 
     [Fact]
@@ -29,6 +33,7 @@ public class ConfluenceContractTests
     {
         var result = ConfluenceController.MapToDto(new ConfluenceSnapshot { TimeframeAlignmentsJson = "not-json" });
         Assert.Empty(result.TimeframeAlignments);
+        Assert.False(result.InputsComplete);
     }
 
     [Fact]

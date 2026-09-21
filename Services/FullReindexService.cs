@@ -26,6 +26,7 @@ public class FullReindexService
     private readonly ILogger<FullReindexService> _logger;
     private readonly DataAuditCache? _cache;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     public static readonly string[] DefaultTimeframes = { "1h", "4h", "1d" };
     public static readonly string[] FeatureTypes = { "open", "high", "low", "close", "all", "returns_shape", "returns_log", "volume_norm", "volatility", "trend" };
@@ -42,7 +43,8 @@ public class FullReindexService
         IOptions<IndexingOptions> options,
         ILogger<FullReindexService> logger,
         DataAuditCache? cache = null,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _db = db;
         _patternIndexer = patternIndexer;
@@ -55,6 +57,7 @@ public class FullReindexService
         _logger = logger;
         _cache = cache;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     /// <summary>
@@ -70,6 +73,7 @@ public class FullReindexService
         IProgress<FullReindexProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         var activeTimeframes = _timeframePolicy.NormalizeAndEnsureActive(timeframes);
         var result = new FullReindexResult
         {
@@ -252,7 +256,9 @@ public class FullReindexService
             return 0;
         }
 
-        var warmupBars = _options.TechnicalIndicatorWarmupBars;
+        var warmupBars = Math.Max(
+            _options.TechnicalIndicatorWarmupBars,
+            TechnicalIndicatorIndexer.RequiredWarmupBars);
         var chunks = IndexingRangeHelper.BuildChunks(
             klines[0].OpenTimeMs, klines[^1].OpenTimeMs, intervalMs, _options.MaxInMemoryKlines, warmupBars);
 
@@ -274,9 +280,10 @@ public class FullReindexService
 
     private async Task<List<Kline>> LoadKlinesFromDbAsync(string symbol, string timeframe, CancellationToken cancellationToken)
     {
+        var finalizedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         return await _db.Klines
             .AsNoTracking()
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && k.CloseTimeMs <= finalizedAtMs)
             .OrderBy(k => k.OpenTimeMs)
             .ToListAsync(cancellationToken);
     }

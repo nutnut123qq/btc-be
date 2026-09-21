@@ -68,9 +68,11 @@ public class MlDatasetService : IMlDatasetService
             ? 0L
             : Math.Max(0L, maxExistingTime - warmupBars * intervalMs);
 
+        var finalizedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var klines = await _db.Klines
             .AsNoTracking()
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && k.OpenTimeMs >= startMs)
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe
+                && k.OpenTimeMs >= startMs && k.CloseTimeMs <= finalizedAtMs)
             .OrderBy(k => k.OpenTimeMs)
             .Take(warmupBars + maxBarsPerBuild)
             .ToListAsync(cancellationToken);

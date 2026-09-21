@@ -10,15 +10,18 @@ public class EnsembleService : IEnsembleService
     private readonly AppDbContext _db;
     private readonly IBinanceKlinesService _binance;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     public EnsembleService(
         AppDbContext db,
         IBinanceKlinesService binance,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _db = db;
         _binance = binance;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public record EnsembleLayerInput(
@@ -39,7 +42,10 @@ public class EnsembleService : IEnsembleService
 
         foreach (var l in candidateLayers)
         {
-            if (!l.IsAvailable || !l.ProbUp.HasValue || !l.ProbDown.HasValue || string.IsNullOrWhiteSpace(l.Direction))
+            var probabilities = new[] { l.ProbUp, l.ProbDown, l.ProbSideways };
+            var validProbabilities = probabilities.All(x => x.HasValue && double.IsFinite(x.Value) && x.Value >= 0 && x.Value <= 1)
+                && Math.Abs(probabilities.Sum(x => x!.Value) - 1.0) <= 0.0015;
+            if (!l.IsAvailable || !validProbabilities || string.IsNullOrWhiteSpace(l.Direction))
             {
                 degraded.Add(l.LayerName);
             }
@@ -52,11 +58,18 @@ public class EnsembleService : IEnsembleService
         if (active.Count == 0)
         {
             return (
-                0.33, 0.33, 0.34,
-                "Sideways",
-                0.34,
+                0, 0, 0,
+                "Unavailable",
+                0,
                 degraded,
-                new { isDegraded = true, degradedLayers = degraded, activeLayers = Array.Empty<object>() }
+                new
+                {
+                    isAvailable = false,
+                    isDegraded = true,
+                    reason = "No evaluated ensemble component supplied a complete probability distribution.",
+                    degradedLayers = degraded,
+                    layers = Array.Empty<object>()
+                }
             );
         }
 
@@ -136,21 +149,88 @@ public class EnsembleService : IEnsembleService
 
     public async Task<EnsemblePredictionRecord> PredictEnsembleAsync(string symbol, string timeframe, CancellationToken ct = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         timeframe = _timeframePolicy.EnsureActive(timeframe);
-        var klines = await _binance.GetKlinesAsync(symbol, timeframe, 2, cancellationToken: ct);
-        double currentPrice = klines.Count > 0 ? (double)klines[^1].Close : 65000.0;
-        long timeMs = klines.Count > 0 ? klines[^1].OpenTimeMs : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        double currentPrice = 0;
+        long timeMs = nowMs;
+        string? marketDataReason = null;
 
-        var candidateLayers = new[]
+        try
         {
-            new EnsembleLayerInput("Confluence (MTF)", 0.45, "Bullish", 0.80, 0.10, 0.10, "Multi-TF alignment 88/100"),
-            new EnsembleLayerInput("MarkovTransitions", 0.30, "Bullish", 0.75, 0.15, 0.10, "Archetype transition P(B|A)=75%"),
-            new EnsembleLayerInput("MarketRegime", 0.15, "Bullish", 0.70, 0.20, 0.10, "TrendingUp ADX 38.2"),
-            new EnsembleLayerInput("SmcVolumeProfile (KeyLevel)", 0.05, "Bullish", 0.72, 0.18, 0.10, "Rebound at VPVR POC $64,989 & FVG Support"),
-            new EnsembleLayerInput("Sentiment", 0.05, "Bullish", 0.62, 0.28, 0.10, "Fear & Greed Index 70")
-        };
+            var klines = await _binance.GetKlinesAsync(symbol, timeframe, 3, cancellationToken: ct);
+            var latestFinalized = klines.LastOrDefault(x => x.CloseTimeMs <= nowMs);
+            if (latestFinalized is null)
+            {
+                marketDataReason = "No finalized market candle is available.";
+            }
+            else
+            {
+                currentPrice = (double)latestFinalized.Close;
+                timeMs = latestFinalized.CloseTimeMs;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            marketDataReason = $"Market data unavailable: {ex.GetType().Name}.";
+        }
 
-        var (probUp, probDown, probSideways, direction, confidence, _, breakdown) = AggregateLayers(candidateLayers);
+        var latestConfluence = await _db.ConfluenceSnapshots.AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.TimeMs <= timeMs)
+            .OrderByDescending(x => x.TimeMs)
+            .FirstOrDefaultAsync(ct);
+        var latestRegime = await _db.MarketRegimes.AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.OpenTimeMs <= timeMs)
+            .OrderByDescending(x => x.OpenTimeMs)
+            .FirstOrDefaultAsync(ct);
+        var latestStructure = await _db.SmartMoneyStructures.AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && x.CalculationVersion == SmartMoneyService.CalculationVersion
+                && x.AvailableTimeMs <= timeMs)
+            .OrderByDescending(x => x.AvailableTimeMs)
+            .FirstOrDefaultAsync(ct);
+
+        // The current components are descriptive/heuristic. They are deliberately not converted
+        // into probabilities until each component has passed the shared temporal evaluator.
+        var unavailableReason = marketDataReason
+            ?? "No ensemble component has passed the probability-calibration and promotion gates.";
+        var breakdown = new
+        {
+            contractVersion = ResearchVersions.EnsembleApiContract,
+            isAvailable = false,
+            reason = unavailableReason,
+            degradedLayers = new[] { "Confluence (MTF)", "MarkovTransitions", "MarketRegime", "SmcVolumeProfile" },
+            observations = new
+            {
+                confluence = latestConfluence is null ? null : new
+                {
+                    latestConfluence.TimeMs,
+                    latestConfluence.ConfluenceScore,
+                    latestConfluence.OverallDirection,
+                    latestConfluence.HasConflict,
+                    kind = "HeuristicScore"
+                },
+                regime = latestRegime is null ? null : new
+                {
+                    timeMs = latestRegime.OpenTimeMs,
+                    latestRegime.RegimeType,
+                    latestRegime.Adx,
+                    kind = "DescriptiveLabel"
+                },
+                smartMoney = latestStructure is null ? null : new
+                {
+                    latestStructure.TimeMs,
+                    latestStructure.EventType,
+                    latestStructure.Price,
+                    kind = "GeometricEvent"
+                }
+            },
+            layers = Array.Empty<object>()
+        };
 
         var record = new EnsemblePredictionRecord
         {
@@ -158,17 +238,17 @@ public class EnsembleService : IEnsembleService
             Timeframe = timeframe,
             TimeMs = timeMs,
             EntryPrice = currentPrice,
-            FinalDirection = direction,
-            ProbUp = probUp,
-            ProbDown = probDown,
-            ProbSideways = probSideways,
-            EnsembleConfidence = confidence,
+            FinalDirection = "Unavailable",
+            ProbUp = 0,
+            ProbDown = 0,
+            ProbSideways = 0,
+            EnsembleConfidence = 0,
             LayerBreakdownJson = JsonSerializer.Serialize(breakdown),
             EvaluationStatus = "N", // Pending
             PipelineVersion = ResearchVersions.DataPipeline,
-            EvaluationVersion = ResearchVersions.Legacy,
-            ValidityStatus = ValidityStatuses.Legacy,
-            InvalidReason = "Experimental ensemble has not passed promotion evaluation.",
+            EvaluationVersion = ResearchVersions.Evaluation,
+            ValidityStatus = ValidityStatuses.Invalid,
+            InvalidReason = unavailableReason,
             CreatedAtUtc = DateTime.UtcNow
         };
 
@@ -180,6 +260,7 @@ public class EnsembleService : IEnsembleService
 
     public async Task<List<EnsemblePredictionRecord>> GetEnsembleHistoryAsync(string symbol, string timeframe, int limit, bool includeLegacy = false, CancellationToken ct = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
         return await _db.EnsemblePredictionRecords
             .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
@@ -195,6 +276,7 @@ public class EnsembleService : IEnsembleService
         bool includeLegacy = false,
         CancellationToken ct = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         const long horizonMs = 24 * 60 * 60 * 1000L;
         if (includeLegacy)
@@ -342,6 +424,7 @@ public class EnsembleService : IEnsembleService
         bool includeLegacy = false,
         CancellationToken ct = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         itemLimit = Math.Clamp(itemLimit, 1, 500);
         var query = _db.EnsemblePredictionRecords.AsNoTracking()
             .Where(r => r.Symbol == symbol
@@ -446,6 +529,7 @@ public class EnsembleService : IEnsembleService
         string timeframe = "4h",
         CancellationToken ct = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         timeframe = _timeframePolicy.EnsureActive(timeframe);
         var klines = await _db.Klines.AsNoTracking()
             .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)

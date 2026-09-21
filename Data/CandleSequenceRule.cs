@@ -19,6 +19,26 @@ public class CandleSequenceRule
     public double WinRate { get; set; } = 0;
     public double AvgReturn { get; set; } = 0;
     public int SampleCount { get; set; } = 0;
+    /// <summary>descriptive, experimental, validated, forward-observed, or retired.</summary>
+    public string CapabilityState { get; set; } = "descriptive";
+    public string MethodVersion { get; set; } = "legacy-unversioned";
+    public long? DiscoveryRunId { get; set; }
+    public long? SelectionStartTimeMs { get; set; }
+    public long? SelectionEndTimeMs { get; set; }
+    public long? EvaluationStartTimeMs { get; set; }
+    public long? EvaluationEndTimeMs { get; set; }
+    public int SelectionSampleCount { get; set; }
+    public int OosSampleCount { get; set; }
+    public double? OosWinRate { get; set; }
+    public double? OosWinRateCi95Low { get; set; }
+    public double? OosWinRateCi95High { get; set; }
+    public double? BaselineWinRate { get; set; }
+    public double? OosLift { get; set; }
+    public double? OosGrossAvgReturnPct { get; set; }
+    public double? OosNetAvgReturnPct { get; set; }
+    public double? LabelDeadZonePct { get; set; }
+    public double? RoundTripCostBps { get; set; }
+    public string? RejectedReason { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }
 }
@@ -33,5 +53,8 @@ public class CandleSequenceSignal
     public long TriggerTimeMs { get; set; }
     public decimal ClosePrice { get; set; }
     public string Message { get; set; } = string.Empty;
+    public long AvailableTimeMs { get; set; }
+    public string EvidenceKind { get; set; } = "observed-event";
+    public string Provenance { get; set; } = "candle-sequence-rule";
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

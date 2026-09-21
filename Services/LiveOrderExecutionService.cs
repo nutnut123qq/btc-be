@@ -15,6 +15,7 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
     private readonly string _apiSecret;
     private readonly string _baseUrl;
     private readonly string _tradingMode;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     public string TradingMode => _tradingMode;
     public string BaseUrl => _baseUrl;
@@ -22,10 +23,12 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
     public LiveOrderExecutionService(
         HttpClient http,
         IConfiguration config,
-        ILogger<LiveOrderExecutionService> logger)
+        ILogger<LiveOrderExecutionService> logger,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _http = http;
         _logger = logger;
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
 
         _baseUrl = config["BinanceTestnet:BaseUrl"] ?? "https://testnet.binancefuture.com";
         _apiKey = config["BinanceTestnet:ApiKey"] ?? "";
@@ -56,6 +59,7 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
         decimal quantity,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         var parameters = new Dictionary<string, string>
         {
             ["symbol"] = symbol.ToUpperInvariant(),
@@ -74,6 +78,7 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
         decimal quantity,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         var parameters = new Dictionary<string, string>
         {
             ["symbol"] = symbol.ToUpperInvariant(),
@@ -94,6 +99,7 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
         decimal quantity,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         var parameters = new Dictionary<string, string>
         {
             ["symbol"] = symbol.ToUpperInvariant(),
@@ -185,6 +191,7 @@ public class LiveOrderExecutionService : ILiveOrderExecutionService
         string symbol,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         var parameters = new Dictionary<string, string>
         {
             ["symbol"] = symbol.ToUpperInvariant(),

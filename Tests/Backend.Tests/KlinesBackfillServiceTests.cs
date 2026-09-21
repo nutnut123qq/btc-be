@@ -30,12 +30,16 @@ public class KlinesBackfillServiceTests
         return provider.GetRequiredService<IServiceScopeFactory>();
     }
 
-    private static KlinesBackfillService CreateService(string dbName, IBinanceKlinesService binance)
+    private static KlinesBackfillService CreateService(
+        string dbName,
+        IBinanceKlinesService binance,
+        TimeProvider? timeProvider = null)
     {
         return new KlinesBackfillService(
             CreateScopeFactory(dbName, binance),
             new FakeHostLifetime(),
-            NullLogger<KlinesBackfillService>.Instance);
+            NullLogger<KlinesBackfillService>.Instance,
+            timeProvider);
     }
 
     [Fact]
@@ -185,6 +189,49 @@ public class KlinesBackfillServiceTests
         Assert.Equal(KlineGapStatuses.Filled, (await db.KlineGapStates.SingleAsync()).Status);
     }
 
+    [Fact]
+    public async Task StartAsync_DoesNotPersistStillFormingCandle()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var start = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end = new DateTime(2024, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+        var clock = new FixedTimeProvider(new DateTimeOffset(2024, 1, 1, 12, 0, 0, TimeSpan.Zero));
+
+        await CreateService(dbName, new RangeFakeBinance(), clock)
+            .StartAsync("BTCUSDT", ["1d"], start, end, wait: true);
+
+        await using var db = CreateInMemoryDb(dbName);
+        Assert.Empty(await db.Klines.ToListAsync());
+    }
+
+    [Fact]
+    public async Task StartAsync_ReconcileExisting_RepairsFinalizedPartialRowWithinBoundedRange()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        const long day = 86_400_000L;
+        const long jan1 = 1_704_067_200_000L;
+        await using (var seed = CreateInMemoryDb(dbName))
+        {
+            var partial = CreateKline("1d", jan1, day);
+            partial.Close = 1m;
+            partial.Volume = 0.01m;
+            seed.Klines.Add(partial);
+            await seed.SaveChangesAsync();
+        }
+
+        var start = DateTimeOffset.FromUnixTimeMilliseconds(jan1).UtcDateTime;
+        var end = DateTimeOffset.FromUnixTimeMilliseconds(jan1 + day).UtcDateTime;
+        var result = await CreateService(dbName, new RangeFakeBinance())
+            .StartAsync("BTCUSDT", ["1d"], start, end, wait: true, reconcileExisting: true);
+
+        Assert.True(result.ReconcileExisting);
+        await using var db = CreateInMemoryDb(dbName);
+        var repaired = await db.Klines.SingleAsync(x => x.OpenTimeMs == jan1);
+        Assert.Equal(64050m, repaired.Close);
+        Assert.Equal(1m, repaired.Volume);
+        Assert.Equal(2, await db.Klines.CountAsync());
+    }
+
     private static Kline CreateKline(string timeframe, long openTimeMs, long intervalMs) => new()
     {
         Symbol = "BTCUSDT",
@@ -208,6 +255,11 @@ public class KlinesBackfillServiceTests
         public CancellationToken ApplicationStopping => CancellationToken.None;
         public CancellationToken ApplicationStopped => CancellationToken.None;
         public void StopApplication() { }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     /// <summary>

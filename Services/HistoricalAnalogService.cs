@@ -8,19 +8,20 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
 {
     private static readonly int[] HorizonBars = [1, 3, 6];
     private static readonly HashSet<int> AllowedWindowSizes = [10, 15, 20, 25];
-    private static readonly HashSet<string> AllowedSymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
-    private const string ShapeFeatureType = PatternVectorFeatureType.ReturnsShape;
     private readonly AppDbContext _db;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
     private readonly ILogger<HistoricalAnalogService> _logger;
 
     public HistoricalAnalogService(
         AppDbContext db,
         ProductionTimeframePolicy timeframePolicy,
-        ILogger<HistoricalAnalogService> logger)
+        ILogger<HistoricalAnalogService> logger,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _db = db;
         _timeframePolicy = timeframePolicy;
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
         _logger = logger;
     }
 
@@ -30,9 +31,7 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
         CancellationToken cancellationToken = default)
     {
         var startedAt = DateTime.UtcNow;
-        var symbol = request.Symbol.Trim().ToUpperInvariant();
-        if (!AllowedSymbols.Contains(symbol))
-            throw new ArgumentException("symbol must be BTCUSDT, ETHUSDT, or SOLUSDT.", nameof(request.Symbol));
+        var symbol = _symbolPolicy.EnsureActive(request.Symbol);
 
         var timeframe = _timeframePolicy.EnsureActive(request.Timeframe);
         if (!AllowedWindowSizes.Contains(request.WindowSize))
@@ -41,9 +40,18 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
             throw new ArgumentException("roundTripCostPct must be between 0 and 5.", nameof(request.RoundTripCostPct));
         if (!double.IsFinite(request.AtrMultiplier) || request.AtrMultiplier < 0 || request.AtrMultiplier > 5)
             throw new ArgumentException("atrMultiplier must be between 0 and 5.", nameof(request.AtrMultiplier));
+        if (!double.IsFinite(request.MinimumMeanSimilarity) || request.MinimumMeanSimilarity < -1 || request.MinimumMeanSimilarity > 1)
+            throw new ArgumentException("minimumMeanSimilarity must be between -1 and 1.", nameof(request.MinimumMeanSimilarity));
 
         var intervalMs = Timeframes.IntervalToMs(timeframe);
         if (intervalMs <= 0) throw new ArgumentException("Unsupported timeframe.", nameof(request.Timeframe));
+
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (request.AsOfTimeMs is <= 0)
+            throw new ArgumentException("asOfTimeMs must be a positive Unix timestamp in milliseconds.", nameof(request.AsOfTimeMs));
+        if (request.AsOfTimeMs > nowMs)
+            throw new ArgumentException("asOfTimeMs cannot be in the future.", nameof(request.AsOfTimeMs));
+        var decisionTimeMs = request.AsOfTimeMs ?? nowMs;
 
         var lookbackBars = Math.Clamp(request.LookbackBars, 100, 100_000);
         var neighborCount = Math.Clamp(request.NeighborCount, 1, 200);
@@ -64,13 +72,15 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
             PageSize = pageSize,
             ExclusionBars = exclusionBars,
             RoundTripCostPct = request.RoundTripCostPct,
-            AtrMultiplier = request.AtrMultiplier
+            AtrMultiplier = request.AtrMultiplier,
+            MinimumMeanSimilarity = request.MinimumMeanSimilarity,
+            DecisionTimeMs = decisionTimeMs
         };
 
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var requestedRows = lookbackBars + request.WindowSize + HorizonBars[^1] + 14;
         var rowsDescending = await _db.Klines.AsNoTracking()
-            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe && x.CloseTimeMs <= nowMs)
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe &&
+                        x.CloseTimeMs > 0 && x.CloseTimeMs <= decisionTimeMs)
             .OrderByDescending(x => x.OpenTimeMs)
             .Take(requestedRows)
             .Select(x => new KlineDto
@@ -109,6 +119,7 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
         {
             StartTimeMs = queryStartMs,
             EndTimeMs = queryEndMs,
+            AvailableAtTimeMs = rows[^1].CloseTimeMs,
             Ohlc = rows.Skip(queryStartIndex).Take(request.WindowSize).Select(ToOhlc).ToList(),
             Context = new HistoricalAnalogContextDto
             {
@@ -116,10 +127,25 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
                 AvailableFeatureCount = queryContext.Normalized.Count
             }
         };
+        var ageMs = Math.Max(0, decisionTimeMs - rows[^1].CloseTimeMs);
+        response.Freshness = new HistoricalAnalogFreshnessDto
+        {
+            Status = ageMs <= intervalMs ? "fresh" : "stale",
+            AsOfTimeMs = rows[^1].CloseTimeMs,
+            AgeSeconds = ageMs / 1000.0,
+            Reason = request.AsOfTimeMs.HasValue
+                ? "Độ mới được tính tại historical as-of cutoff đã yêu cầu."
+                : "Độ mới được tính từ nến đã đóng gần nhất; nến đang hình thành bị loại."
+        };
 
         var candidates = new List<Candidate>();
-        var latestCandidateStart = queryStartIndex - request.WindowSize - HorizonBars[^1];
-        for (var start = 0; start <= latestCandidateStart; start++)
+        var maximumCandidateEnd = queryStartIndex - HorizonBars[^1] - 1;
+        var minimumCandidateEnd = Math.Max(
+            request.WindowSize - 1,
+            maximumCandidateEnd - lookbackBars + 1);
+        var earliestCandidateStart = minimumCandidateEnd - request.WindowSize + 1;
+        var latestCandidateStart = maximumCandidateEnd - request.WindowSize + 1;
+        for (var start = earliestCandidateStart; start <= latestCandidateStart; start++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!IsContiguous(rows, start, exclusionBars, intervalMs)) continue;
@@ -130,14 +156,13 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
 
             var candidateVector = BuildShapeVector(rows, start, request.WindowSize);
             if (candidateVector is null) continue;
-            var atr14Pct = GetAtr14Pct(rows, endIndex, features.GetValueOrDefault(rows[endIndex].OpenTimeMs));
-            if (atr14Pct is null) continue;
+            var atr14Pct = GetAtr14Pct(rows, endIndex);
 
             var shapeSimilarity = PatternVectorSimilarity.Cosine(
                 queryVector, queryNorm, candidateVector, VectorNorm(candidateVector));
             var candidateContext = ContextValues(features.GetValueOrDefault(rows[endIndex].OpenTimeMs));
             var (contextSimilarity, comparableCount) = CompareContexts(queryContext.Normalized, candidateContext.Normalized);
-            var thresholdPct = Math.Max(request.RoundTripCostPct, request.AtrMultiplier * atr14Pct.Value);
+            var thresholdPct = Math.Max(request.RoundTripCostPct, request.AtrMultiplier * atr14Pct);
 
             candidates.Add(new Candidate(
                 start,
@@ -146,14 +171,13 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
                 shapeSimilarity,
                 contextSimilarity,
                 comparableCount,
-                atr14Pct.Value,
+                atr14Pct,
                 thresholdPct));
         }
 
         response.RawCandidateCount = candidates.Count;
         var ranked = candidates
             .OrderByDescending(x => x.ShapeSimilarity)
-            .ThenByDescending(x => x.EndIndex)
             .ToList();
 
         // Greedy exclusion in similarity order. Marking end-index ranges makes the
@@ -171,6 +195,27 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
 
         response.IndependentCandidateCount = independent.Count;
         var selected = independent.Take(neighborCount).ToList();
+        var minimumRequiredNeighbors = Math.Min(5, neighborCount);
+        response.MeanSelectedSimilarity = selected.Count == 0
+            ? null
+            : selected.Average(candidate => candidate.ShapeSimilarity);
+        response.Abstained = selected.Count < minimumRequiredNeighbors ||
+                             response.MeanSelectedSimilarity < request.MinimumMeanSimilarity;
+        // Coverage/abstentionRate are evaluator-level rates across many query
+        // timestamps. A single API query cannot estimate either honestly.
+        response.Coverage = null;
+        response.AbstentionRate = null;
+        if (response.Abstained)
+        {
+            response.AbstentionReason = selected.Count < minimumRequiredNeighbors
+                ? $"Chỉ có {selected.Count} láng giềng độc lập; cần tối thiểu {minimumRequiredNeighbors}."
+                : $"Độ tương đồng trung bình {response.MeanSelectedSimilarity:0.000} thấp hơn ngưỡng đã khai báo {request.MinimumMeanSimilarity:0.000}.";
+            response.Validation.Reason = $"{response.AbstentionReason} API không phát bằng chứng hướng khi quality gate thất bại.";
+            response.EffectiveSampleCount = 0;
+            response.Total = 0;
+            return response;
+        }
+
         response.EffectiveSampleCount = selected.Count;
         response.Total = selected.Count;
 
@@ -205,7 +250,7 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
     }
 
     private static float[]? BuildShapeVector(IReadOnlyList<KlineDto> rows, int start, int count) =>
-        WindowVectorIndexer.BuildVector(rows, start, count, ShapeFeatureType);
+        HistoricalAnalogV2Representation.BuildVector(rows, start, count);
 
     private static float VectorNorm(IEnumerable<float> values) =>
         (float)Math.Sqrt(values.Sum(x => x * x));
@@ -221,18 +266,18 @@ public sealed class HistoricalAnalogService : IHistoricalAnalogService
         return true;
     }
 
-    private static double? GetAtr14Pct(
-        IReadOnlyList<KlineDto> rows, int endIndex, MlFeatureStore? feature)
+    private static double GetAtr14Pct(IReadOnlyList<KlineDto> rows, int endIndex)
     {
-        if (feature?.Atr14Pct is > 0 and var stored && double.IsFinite(stored)) return stored;
-        if (endIndex < 14 || rows[endIndex].Close <= 0) return null;
+        // Python evaluator uses NaN->0 before applying the economic floor for
+        // the first 13 bars. Returning zero here produces the same threshold.
+        if (endIndex < 13 || rows[endIndex].Close <= 0) return 0;
 
         double totalTrueRange = 0;
         for (var i = endIndex - 13; i <= endIndex; i++)
         {
             var high = (double)rows[i].High;
             var low = (double)rows[i].Low;
-            var previousClose = (double)rows[i - 1].Close;
+            var previousClose = i == 0 ? (double)rows[i].Close : (double)rows[i - 1].Close;
             totalTrueRange += Math.Max(high - low, Math.Max(Math.Abs(high - previousClose), Math.Abs(low - previousClose)));
         }
         return (totalTrueRange / 14.0) / (double)rows[endIndex].Close * 100.0;

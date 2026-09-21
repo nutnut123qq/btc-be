@@ -12,6 +12,13 @@ public class MarketMetrics
     public string Timeframe { get; set; } = "1h";
     public long OpenTimeMs { get; set; }
 
+    public long? SourceEventTimeMs { get; set; }
+    public DateTimeOffset? ReceivedAtUtc { get; set; }
+    public long? AvailableTimeMs { get; set; }
+    public string? Source { get; set; }
+    public string? MarketType { get; set; }
+    public bool IsReconstructed { get; set; } = true;
+
     // Funding rate (8h intervals, nhưng lưu theo timestamp gần nhất)
     public double? FundingRate { get; set; }
 

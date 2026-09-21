@@ -10,13 +10,15 @@ public class BinanceKlinesService : IBinanceKlinesService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMemoryCache _cache;
     private readonly ILogger<BinanceKlinesService> _logger;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(20);
 
-    public BinanceKlinesService(IHttpClientFactory httpClientFactory, IMemoryCache cache, ILogger<BinanceKlinesService> logger)
+    public BinanceKlinesService(IHttpClientFactory httpClientFactory, IMemoryCache cache, ILogger<BinanceKlinesService> logger, ProductionSymbolPolicy? symbolPolicy = null)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public async Task<IReadOnlyList<KlineDto>> GetKlinesAsync(
@@ -27,6 +29,7 @@ public class BinanceKlinesService : IBinanceKlinesService
         long? endTimeMs = null,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         // ponytail: 20s cache — chart refresh + repeated AI/analysis calls hit Binance once
         // instead of per request (latency + rate-limit). Closed/historical ranges are
         // immutable so 20s is conservative; raise TTL for endTime-bounded ranges if needed.
@@ -248,7 +251,7 @@ public class BinanceKlinesService : IBinanceKlinesService
         foreach (var item in doc.RootElement.EnumerateArray())
         {
             var symbol = item.GetProperty("symbol").GetString() ?? string.Empty;
-            if (!symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
+            if (!_symbolPolicy.IsActive(symbol))
                 continue;
 
             decimal.TryParse(item.GetProperty("lastPrice").GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var lastPrice);
@@ -290,6 +293,7 @@ public class BinanceKlinesService : IBinanceKlinesService
         int limit = 50,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         limit = Math.Clamp(limit, 1, 500);
         var cacheKey = $"market:trades:{symbol.ToUpperInvariant()}:{limit}";
         if (_cache.TryGetValue(cacheKey, out IReadOnlyList<MarketTradeDto>? cached) && cached is not null)
@@ -342,6 +346,7 @@ public class BinanceKlinesService : IBinanceKlinesService
         int limit = 20,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
         limit = Math.Clamp(limit, 5, 100);
         var cacheKey = $"market:depth:{symbol.ToUpperInvariant()}:{limit}";
         if (_cache.TryGetValue(cacheKey, out OrderBookDepthDto? cached) && cached is not null)

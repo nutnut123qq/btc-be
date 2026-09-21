@@ -66,6 +66,8 @@ public class RegimeDetectionService : IRegimeDetectionService
 
         var regimes = new List<MarketRegime>();
         MarketRegime? lastRegime = null;
+        var regimeStartIndex = 200;
+        var transitions = new List<RegimeTransition>();
 
         for (int i = 200; i < klines.Count; i++) // start after warmup
         {
@@ -145,24 +147,22 @@ public class RegimeDetectionService : IRegimeDetectionService
 
             if (lastRegime != null && lastRegime.RegimeType != regimeType)
             {
-                var transition = new RegimeTransition
+                transitions.Add(new RegimeTransition
                 {
                     Symbol = symbol,
                     Timeframe = timeframe,
                     FromRegime = lastRegime.RegimeType,
                     ToRegime = regimeType,
                     TransitionTimeMs = k.OpenTimeMs,
-                    DurationBars = i - klines.FindIndex(x => x.OpenTimeMs == lastRegime.OpenTimeMs), // approximate
+                    DurationBars = i - regimeStartIndex,
                     CreatedAtUtc = DateTime.UtcNow
-                };
-                _db.RegimeTransitions.Add(transition);
+                });
             }
 
-            // Keep track of first in series to compute duration correct?
-            // Actually lastRegime can just be updated to the latest, but we need to track duration.
-            // A simple way is just:
-            if (lastRegime == null || lastRegime.RegimeType != regimeType) {
+            if (lastRegime == null || lastRegime.RegimeType != regimeType)
+            {
                 lastRegime = regime;
+                regimeStartIndex = i;
             }
         }
 
@@ -177,6 +177,15 @@ public class RegimeDetectionService : IRegimeDetectionService
 
         var toInsert = regimes.Where(r => !existingTimes.Contains(r.OpenTimeMs)).ToList();
         _db.MarketRegimes.AddRange(toInsert);
+
+        var transitionTimes = transitions.Select(x => x.TransitionTimeMs).ToList();
+        var existingTransitionTimes = await _db.RegimeTransitions.AsNoTracking()
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && transitionTimes.Contains(x.TransitionTimeMs))
+            .Select(x => x.TransitionTimeMs)
+            .ToListAsync(ct);
+        var existingTransitionSet = existingTransitionTimes.ToHashSet();
+        _db.RegimeTransitions.AddRange(transitions.Where(x => !existingTransitionSet.Contains(x.TransitionTimeMs)));
 
         await _db.SaveChangesAsync(ct);
     }

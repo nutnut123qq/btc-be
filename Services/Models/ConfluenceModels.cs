@@ -16,6 +16,11 @@ public sealed class ConfluenceSnapshotDto
     public string Symbol { get; set; } = "BTCUSDT";
     public long TimeMs { get; set; }
     public double ConfluenceScore { get; set; }
+    public string CapabilityState { get; set; } = "descriptive";
+    public string ScoreKind { get; set; } = "heuristic_index";
+    public bool IsProbability { get; set; }
+    public bool InputsComplete { get; set; }
+    public List<string> MissingInputs { get; set; } = [];
     public string OverallDirection { get; set; } = "Neutral";
     public List<ConfluenceTimeframeAlignmentDto> TimeframeAlignments { get; set; } = [];
     public bool HasConflict { get; set; }

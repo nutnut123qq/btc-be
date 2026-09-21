@@ -7,7 +7,7 @@ if ($Job -in @("EnsemblePaper", "Confluence")) {
     if ([string]::IsNullOrWhiteSpace($env:AdminApiKey)) { throw "AdminApiKey is required for $Job." }
     $logPath = Join-Path $script:LogsDir "$($Job.ToLowerInvariant())-job.log"
     Rotate-OpsLog $logPath
-    foreach ($target in @(@{ Symbol = "BTCUSDT"; Timeframe = "4h" }, @{ Symbol = "ETHUSDT"; Timeframe = "1h" }, @{ Symbol = "SOLUSDT"; Timeframe = "1h" })) {
+    foreach ($target in @(@{ Symbol = "BTCUSDT"; Timeframe = "4h" })) {
         if ($Job -eq "EnsemblePaper") {
             $body = $target | ConvertTo-Json -Compress
             $result = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/paper-trades/evaluate-ensemble" `
@@ -34,7 +34,18 @@ $scriptName = switch ($Job) {
     "Sentiment" { "macro_sentiment.py" }
 }
 $scriptPath = Join-Path $aiDir $scriptName
-[string[]]$jobArguments = if ($Job -eq "Futures") { @($scriptPath, "poll") } else { @($scriptPath) }
+[string[]]$jobArguments = if ($Job -eq "Futures") {
+    @($scriptPath, "poll")
+}
+elseif ($Job -eq "Paper") {
+    # Prospective paper is the safe default. This command intentionally exits
+    # non-zero until a timestamped live-fill recorder exists; historical replay
+    # must never be launched by Task Scheduler under the Paper job name.
+    @($scriptPath, "--mode", "forward-paper")
+}
+else {
+    @($scriptPath)
+}
 $logPath = Join-Path $script:LogsDir "$($Job.ToLowerInvariant())-job.log"
 Rotate-OpsLog $logPath
 

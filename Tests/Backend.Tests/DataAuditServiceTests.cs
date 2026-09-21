@@ -134,6 +134,64 @@ public class DataAuditServiceTests
             Assert.Null(tf.MaxOpenTimeMs);
             Assert.Null(tf.ExpectedBars);
         }
+
+        Assert.NotNull(result.Derivatives);
+        Assert.Equal(0, result.Derivatives!.FuturesMetrics.Rows);
+    }
+
+    [Fact]
+    public async Task AuditAsync_ReportsInvalidFormingDerivedAndDerivativeMissingness()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        await using var db = CreateInMemoryDb(dbName);
+        var finalized = CreateKline("1h", 0);
+        var invalid = CreateKline("1h", 3_600_000);
+        invalid.High = invalid.Low - 1;
+        var forming = CreateKline("1h", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        forming.CloseTimeMs = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
+        db.Klines.AddRange(finalized, invalid, forming);
+        db.TechnicalIndicators.Add(new TechnicalIndicator
+        {
+            Symbol = "BTCUSDT", Timeframe = "1h", OpenTimeMs = 0, Rsi14 = 50
+        });
+        db.FuturesMetrics.Add(new FuturesMetric
+        {
+            Symbol = "BTCUSDT", OpenTimeMs = 1_000, FundingRate = 0.0001
+        });
+        db.MarketMetrics.Add(new MarketMetrics
+        {
+            Symbol = "BTCUSDT", Timeframe = "1h", OpenTimeMs = 1_000,
+            FundingRate = 0.0001
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).AuditAsync("BTCUSDT", includeInventory: true);
+        var oneHour = result.Timeframes.Single(x => x.Timeframe == "1h");
+
+        Assert.NotNull(oneHour.Quality);
+        Assert.Equal(2, oneHour.Quality!.FinalizedRows);
+        Assert.Equal(1, oneHour.Quality.FormingRows);
+        Assert.Equal(1, oneHour.Quality.InvalidOhlcvRows);
+        Assert.Equal(0, oneHour.Quality.DuplicateOpenTimeRows);
+        Assert.Contains(oneHour.DerivedTables!, x =>
+            x.Table == "TechnicalIndicators" && x.Rows == 1 && x.MissingRows == 1);
+
+        Assert.NotNull(result.Derivatives);
+        Assert.Equal(1, result.Derivatives!.FuturesMetrics.Rows);
+        Assert.Equal(1, result.Derivatives.FuturesMetrics.MissingOpenInterest);
+        Assert.Equal(1, result.Derivatives.FuturesMetrics.MissingMarkPrice);
+        Assert.NotNull(result.Derivatives.FuturesMetrics.Lineage);
+        Assert.Equal(0, result.Derivatives.FuturesMetrics.Lineage!.CompleteRows);
+        Assert.Equal(1, result.Derivatives.FuturesMetrics.Lineage.MissingReceivedAt);
+        Assert.Equal(1, result.Derivatives.FuturesMetrics.Lineage.MissingAvailableAt);
+        Assert.Equal(1, result.Derivatives.FuturesMetrics.Lineage.ReconstructedRows);
+        var market = Assert.Single(result.Derivatives.MarketMetrics);
+        Assert.Equal(1, market.MissingOpenInterest);
+        Assert.Equal(1, market.MissingLiquidations);
+        Assert.NotNull(market.Lineage);
+        Assert.Equal(1, market.Lineage!.ReconstructedRows);
+        Assert.Equal(0, market.Lineage.AsOfEligibleRows);
+        Assert.Contains("reconstructed", result.Derivatives.AvailabilityCaveat);
     }
 
     [Fact]

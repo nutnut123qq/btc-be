@@ -31,7 +31,7 @@ public class RuleDiscoveryController : ControllerBase
     }
 
     /// <summary>
-    /// Chạy Rule Discovery — tự động quét dữ liệu lịch sử để tìm rules có win rate cao.
+    /// Chạy bounded rule discovery với selection/OOS split theo thời gian và ghi đầy đủ trial ledger.
     /// </summary>
     [HttpPost("run")]
     [Backend.Filters.AdminGuard]
@@ -41,8 +41,12 @@ public class RuleDiscoveryController : ControllerBase
         [FromQuery] int lookbackBars = 3000,
         [FromQuery] int futureBars = 3,
         [FromQuery] double minWinRate = 0.50,
-        [FromQuery] int minSamples = 5,
-        [FromQuery] double minAvgReturnPct = 0.1,
+        [FromQuery] int minSamples = 30,
+        [FromQuery] double minAvgReturnPct = 0,
+        [FromQuery] int candidateBudget = 128,
+        [FromQuery] double selectionFraction = 0.70,
+        [FromQuery] double labelDeadZonePct = 0.30,
+        [FromQuery] double roundTripCostBps = 30,
         [FromQuery] bool saveToDb = true,
         CancellationToken cancellationToken = default)
     {
@@ -52,9 +56,16 @@ public class RuleDiscoveryController : ControllerBase
 
         lookbackBars = Math.Clamp(lookbackBars, 200, 5000);
         futureBars = Math.Clamp(futureBars, 1, 20);
+        minSamples = Math.Clamp(minSamples, 10, 1000);
+        candidateBudget = Math.Clamp(candidateBudget, 1, 500);
+        selectionFraction = Math.Clamp(selectionFraction, 0.55, 0.85);
+        labelDeadZonePct = Math.Clamp(labelDeadZonePct, 0, 10);
+        roundTripCostBps = Math.Clamp(roundTripCostBps, 0, 1000);
 
         var started = DateTime.UtcNow;
-        var klines = await _binance.GetKlinesAsync(symbol, timeframe, lookbackBars, cancellationToken: cancellationToken);
+        var fetchedKlines = await _binance.GetKlinesAsync(symbol, timeframe, lookbackBars, cancellationToken: cancellationToken);
+        var decisionTimeMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var klines = fetchedKlines.Where(k => k.CloseTimeMs > 0 && k.CloseTimeMs <= decisionTimeMs).ToList();
         if (klines.Count < 200)
             return BadRequest(new { message = "Không đủ dữ liệu để discovery (cần ít nhất 200 nến)." });
 
@@ -62,26 +73,83 @@ public class RuleDiscoveryController : ControllerBase
         var indexed = await _volumeIndexer.IndexAsync(symbol, timeframe, klines, cancellationToken);
         var volumeStats = await _volumeIndexer.GetStatsAsync(symbol, timeframe, cancellationToken);
 
-        var candidates = CandleRuleDiscoveryEngine.Discover(
-            klines, symbol, timeframe,
-            futureBars, minWinRate, minSamples, minAvgReturnPct,
-            volumeStats);
+        var discoveryOptions = new CandleRuleDiscoveryEngine.DiscoveryOptions
+        {
+            FutureBars = futureBars,
+            CandidateBudget = candidateBudget,
+            SelectionFraction = selectionFraction,
+            LabelDeadZonePct = labelDeadZonePct,
+            RoundTripCostBps = roundTripCostBps,
+            MinWinRate = minWinRate,
+            MinSelectionSamples = minSamples,
+            MinEvaluationSamples = minSamples,
+            // Kept query name for API compatibility; v2 applies it to return after explicit costs.
+            MinNetAvgReturnPct = minAvgReturnPct
+        };
+        var discovery = CandleRuleDiscoveryEngine.DiscoverWithLedger(
+            klines, symbol, timeframe, discoveryOptions, volumeStats);
+        var candidates = discovery.SelectedRules;
 
         int savedCount = 0;
-        if (saveToDb && candidates.Count > 0)
+        long? runId = null;
+        if (saveToDb)
         {
-            // Xóa các discovered rules cũ của cặp này để tránh chồng chéo
-            var oldAutoRules = await _db.CandleSequenceRules
-                .Where(r => r.Symbol == symbol && r.Timeframe == timeframe && r.IsAutoDiscovered)
-                .ToListAsync(cancellationToken);
-
-            if (oldAutoRules.Count > 0)
+            var run = new RuleDiscoveryRun
             {
-                _db.CandleSequenceRules.RemoveRange(oldAutoRules);
+                MethodVersion = discovery.Method,
+                Symbol = symbol,
+                Timeframe = timeframe,
+                FutureBars = futureBars,
+                CandidateBudget = discovery.CandidateBudget,
+                TrialCount = discovery.TrialCount,
+                LabelDeadZonePct = discovery.LabelDeadZonePct,
+                RoundTripCostBps = discovery.RoundTripCostBps,
+                SelectionStartTimeMs = discovery.SelectionStartTimeMs,
+                SelectionEndTimeMs = discovery.SelectionEndTimeMs,
+                EvaluationStartTimeMs = discovery.EvaluationStartTimeMs,
+                EvaluationEndTimeMs = discovery.EvaluationEndTimeMs
+            };
+            _db.RuleDiscoveryRuns.Add(run);
+            await _db.SaveChangesAsync(cancellationToken);
+            runId = run.Id;
+
+            foreach (var trial in discovery.Trials)
+            {
+                _db.RuleDiscoveryTrials.Add(new RuleDiscoveryTrial
+                {
+                    RunId = run.Id,
+                    TrialNumber = trial.TrialNumber,
+                    CandidateKey = trial.CandidateKey,
+                    ConditionsJson = CandleSequenceRuleMappers.SerializeConditions(trial.Conditions),
+                    Status = trial.Status,
+                    RejectedReason = trial.RejectedReason,
+                    SelectionSampleCount = trial.Selection?.SampleCount ?? 0,
+                    SelectionWinRate = trial.Selection?.WinRate,
+                    SelectionNetAvgReturnPct = trial.Selection?.NetAvgReturnPct,
+                    EvaluationSampleCount = trial.Evaluation?.SampleCount ?? 0,
+                    EvaluationWinRate = trial.Evaluation?.WinRate,
+                    EvaluationWinRateCi95Low = trial.Evaluation?.WinRateCi95Low,
+                    EvaluationWinRateCi95High = trial.Evaluation?.WinRateCi95High,
+                    BaselineWinRate = trial.Evaluation?.BaselineWinRate,
+                    OosLift = trial.Evaluation?.OosLift,
+                    EvaluationNetAvgReturnPct = trial.Evaluation?.NetAvgReturnPct
+                });
             }
 
-            foreach (var c in candidates)
+            // Old search results remain auditable but may not keep producing alerts.
+            var oldAutoRules = await _db.CandleSequenceRules
+                .Where(r => r.Symbol == symbol && r.Timeframe == timeframe && r.IsAutoDiscovered && r.IsEnabled)
+                .ToListAsync(cancellationToken);
+            foreach (var oldRule in oldAutoRules)
             {
+                oldRule.IsEnabled = false;
+                oldRule.CapabilityState = "retired";
+                oldRule.UpdatedAtUtc = DateTime.UtcNow;
+            }
+
+            foreach (var trial in discovery.Trials.Where(x => x.Status == "selected" && x.Evaluation is not null))
+            {
+                var c = trial.Evaluation!;
                 _db.CandleSequenceRules.Add(new CandleSequenceRule
                 {
                     Name = c.Name,
@@ -89,7 +157,8 @@ public class RuleDiscoveryController : ControllerBase
                     Symbol = symbol,
                     Timeframe = timeframe,
                     RequiredBars = c.RequiredBars,
-                    IsEnabled = true,
+                    // OOS selection alone is development evidence, not a validated predictive alert.
+                    IsEnabled = false,
                     CooldownMinutes = 60,
                     ConditionsJson = CandleSequenceRuleMappers.SerializeConditions(c.Conditions),
                     Action = "ALERT",
@@ -98,6 +167,24 @@ public class RuleDiscoveryController : ControllerBase
                     WinRate = c.WinRate,
                     AvgReturn = c.AvgReturnPct,
                     SampleCount = c.SampleCount,
+                    CapabilityState = "experimental",
+                    MethodVersion = discovery.Method,
+                    DiscoveryRunId = run.Id,
+                    SelectionStartTimeMs = discovery.SelectionStartTimeMs,
+                    SelectionEndTimeMs = discovery.SelectionEndTimeMs,
+                    EvaluationStartTimeMs = discovery.EvaluationStartTimeMs,
+                    EvaluationEndTimeMs = discovery.EvaluationEndTimeMs,
+                    SelectionSampleCount = trial.Selection?.SampleCount ?? 0,
+                    OosSampleCount = c.SampleCount,
+                    OosWinRate = c.WinRate,
+                    OosWinRateCi95Low = c.WinRateCi95Low,
+                    OosWinRateCi95High = c.WinRateCi95High,
+                    BaselineWinRate = c.BaselineWinRate,
+                    OosLift = c.OosLift,
+                    OosGrossAvgReturnPct = c.AvgReturnPct,
+                    OosNetAvgReturnPct = c.NetAvgReturnPct,
+                    LabelDeadZonePct = discovery.LabelDeadZonePct,
+                    RoundTripCostBps = discovery.RoundTripCostBps,
                     CreatedAtUtc = DateTime.UtcNow
                 });
                 savedCount++;
@@ -117,6 +204,14 @@ public class RuleDiscoveryController : ControllerBase
             timeframe,
             lookbackBars,
             futureBars,
+            method = discovery.Method,
+            runId,
+            discovery.CandidateBudget,
+            discovery.TrialCount,
+            selectionInterval = new { startTimeMs = discovery.SelectionStartTimeMs, endTimeMs = discovery.SelectionEndTimeMs },
+            evaluationInterval = new { startTimeMs = discovery.EvaluationStartTimeMs, endTimeMs = discovery.EvaluationEndTimeMs },
+            discovery.LabelDeadZonePct,
+            discovery.RoundTripCostBps,
             barsAnalyzed = klines.Count,
             candidatesFound = candidates.Count,
             savedToDb = savedCount,
@@ -127,10 +222,25 @@ public class RuleDiscoveryController : ControllerBase
                 c.Description,
                 c.WinRate,
                 c.AvgReturnPct,
+                c.NetAvgReturnPct,
                 c.ProfitFactor,
                 c.SampleCount,
+                c.WinRateCi95Low,
+                c.WinRateCi95High,
                 c.MaxDrawdownPct,
+                c.BaselineWinRate,
+                c.OosLift,
                 conditions = c.Conditions
+            }),
+            rejected = discovery.Trials.Count(x => x.Status == "rejected"),
+            trialLedger = discovery.Trials.Select(x => new
+            {
+                x.TrialNumber,
+                x.CandidateKey,
+                x.Status,
+                x.RejectedReason,
+                selectionSamples = x.Selection?.SampleCount ?? 0,
+                evaluationSamples = x.Evaluation?.SampleCount ?? 0
             })
         });
     }

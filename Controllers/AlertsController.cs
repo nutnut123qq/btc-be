@@ -48,6 +48,13 @@ public class AlertsController : ControllerBase
                 a.CreatedAt,
                 a.IsRead,
                 a.SourceKey,
+                a.EvidenceKind,
+                a.Provenance,
+                a.AvailableTimeMs,
+                a.DeliveryStatus,
+                a.DeliveryAttemptedAtUtc,
+                a.DeliveredAtUtc,
+                a.DeliveryError,
                 a.ArchivedAtUtc
             })
             .ToListAsync(cancellationToken);

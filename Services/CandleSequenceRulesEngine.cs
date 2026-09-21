@@ -80,6 +80,11 @@ public class CandleSequenceRulesEngine : ICandleSequenceRulesEngine
                 Message = $"[{rule.Name}] {rule.Description}",
                 TriggerClose = last.Close,
                 TriggerTimeMs = last.OpenTimeMs,
+                AvailableTimeMs = last.CloseTimeMs > 0 ? last.CloseTimeMs : last.OpenTimeMs,
+                EvidenceKind = rule.CapabilityState is "validated" or "forward-observed"
+                    ? "validated-predictive"
+                    : "observed-event",
+                Provenance = $"{rule.MethodVersion}:rule:{rule.Id}",
                 Priority = rule.Priority
             });
         }

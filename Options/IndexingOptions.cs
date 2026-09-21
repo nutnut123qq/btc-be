@@ -29,8 +29,12 @@ public class IndexingOptions
     /// <summary>Batch size cho WindowDatasetService.</summary>
     public int WindowDatasetBatchSize { get; set; } = 5000;
 
-    /// <summary>Số nến warmup trước điểm bắt đầu incremental để tính indicators chính xác.</summary>
-    public int TechnicalIndicatorWarmupBars { get; set; } = 250;
+    /// <summary>
+    /// Số nến warmup trước điểm bắt đầu incremental. TechnicalIndicatorIndexer
+    /// luôn áp dụng tối thiểu 1.000 bars để residual seed error của EMA200 còn
+    /// khoảng 0,034%; giá trị thấp hơn chỉ được giữ để tương thích cấu hình cũ.
+    /// </summary>
+    public int TechnicalIndicatorWarmupBars { get; set; } = 1000;
 
     /// <summary>Số nến warmup cho ML features/targets.</summary>
     public int MlDatasetWarmupBars { get; set; } = 500;

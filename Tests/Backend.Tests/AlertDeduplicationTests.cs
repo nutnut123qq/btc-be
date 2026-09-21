@@ -36,6 +36,45 @@ public class AlertDeduplicationTests
     }
 
     [Fact]
+    public async Task Retry_DeliversOneLogicalEventAtMostOnce_WithEvidenceLineage()
+    {
+        await using var db = Db();
+        var telegram = new CountingTelegram();
+        const string key = "sequence:default:1:BTCUSDT:4h:100";
+        var first = await PriceAlertWorker.TryCreateAlertAsync(db, telegram, "default", "sequence_rule",
+            "Rule", "Message", 10, key, 30, default, "observed-event", "rules-v2:rule:1", 200);
+        var retry = await PriceAlertWorker.TryCreateAlertAsync(db, telegram, "default", "sequence_rule",
+            "Rule", "Message", 10, key, 30, default, "observed-event", "rules-v2:rule:1", 200);
+
+        Assert.True(first);
+        Assert.False(retry);
+        Assert.Equal(1, telegram.SendCount);
+        var alert = Assert.Single(await db.AppAlerts.ToListAsync());
+        Assert.Equal("observed-event", alert.EvidenceKind);
+        Assert.Equal("rules-v2:rule:1", alert.Provenance);
+        Assert.Equal(200, alert.AvailableTimeMs);
+        Assert.Equal("delivered", alert.DeliveryStatus);
+    }
+
+    [Fact]
+    public async Task ProviderFalse_IsNotRecordedAsDelivered_AndIsNotRetried()
+    {
+        await using var db = Db();
+        var telegram = new CountingTelegram(deliveryResult: false);
+        const string key = "price:default:above:70000:4h:100";
+        await PriceAlertWorker.TryCreateAlertAsync(db, telegram, "default", "price_above",
+            "Threshold", "Message", 70_001, key, 30, default);
+        await PriceAlertWorker.TryCreateAlertAsync(db, telegram, "default", "price_above",
+            "Threshold", "Message", 70_001, key, 30, default);
+
+        var alert = Assert.Single(await db.AppAlerts.ToListAsync());
+        Assert.Equal(1, telegram.SendCount);
+        Assert.Equal("failed-at-most-once", alert.DeliveryStatus);
+        Assert.Null(alert.DeliveredAtUtc);
+        Assert.Contains("returned false", alert.DeliveryError);
+    }
+
+    [Fact]
     public async Task Deduplicate_NeverGuessesForNullKeys_AndArchivesExactKeyDuplicates()
     {
         await using var db = Db();
@@ -101,5 +140,22 @@ public class AlertDeduplicationTests
             Up(builder);
             return builder.Operations;
         }
+    }
+
+    private sealed class CountingTelegram : ITelegramNotificationService
+    {
+        private readonly bool _deliveryResult;
+        public CountingTelegram(bool deliveryResult = true) => _deliveryResult = deliveryResult;
+        public int SendCount { get; private set; }
+        public Task<bool> SendMessageAsync(string message, CancellationToken cancellationToken = default)
+        {
+            SendCount++;
+            return Task.FromResult(_deliveryResult);
+        }
+
+        public Task<bool> SendTradeExecutionAlertAsync(Backend.Services.Models.TradeExecutionAlertDto alert, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+
+        public string FormatTradeExecutionMessage(Backend.Services.Models.TradeExecutionAlertDto alert) => string.Empty;
     }
 }

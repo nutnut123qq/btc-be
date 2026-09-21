@@ -11,19 +11,22 @@ public class PatternSearchService : IPatternSearchService
     private readonly IWindowVectorIndexer _indexer;
     private readonly ILogger<PatternSearchService> _logger;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     public PatternSearchService(
         IBinanceKlinesService klines,
         AppDbContext db,
         IWindowVectorIndexer indexer,
         ILogger<PatternSearchService> logger,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _klines = klines;
         _db = db;
         _indexer = indexer;
         _logger = logger;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public async Task<PatternSearchResponse> SearchAsync(
@@ -31,6 +34,7 @@ public class PatternSearchService : IPatternSearchService
         string requestId,
         CancellationToken cancellationToken = default)
     {
+        request.Symbol = _symbolPolicy.EnsureActive(request.Symbol);
         request.Timeframe = _timeframePolicy.EnsureActive(request.Timeframe);
         var startedAt = DateTime.UtcNow;
         var lookback = Math.Clamp(request.LookbackBars, 100, 100_000);

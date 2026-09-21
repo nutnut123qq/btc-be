@@ -85,6 +85,16 @@ public class ConfluenceController : ControllerBase
             alignments = [];
         }
 
+        var missingInputs = alignments
+            .SelectMany(item => new[]
+            {
+                item.RegimeType == "Unknown" ? $"{item.Timeframe}:regime" : null,
+                string.IsNullOrWhiteSpace(item.ArchetypeCode) ? $"{item.Timeframe}:archetype" : null
+            })
+            .Where(item => item is not null)
+            .Cast<string>()
+            .ToList();
+
         return new ConfluenceSnapshotDto
         {
             Id = snapshot.Id,
@@ -95,7 +105,9 @@ public class ConfluenceController : ControllerBase
             HasConflict = snapshot.HasConflict,
             ConflictDetails = snapshot.ConflictDetails,
             CreatedAtUtc = snapshot.CreatedAtUtc,
-            TimeframeAlignments = alignments
+            TimeframeAlignments = alignments,
+            InputsComplete = alignments.Count > 0 && missingInputs.Count == 0,
+            MissingInputs = missingInputs
         };
     }
 

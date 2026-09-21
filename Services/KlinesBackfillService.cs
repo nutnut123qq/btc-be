@@ -16,6 +16,7 @@ public class KlinesBackfillService
     private readonly ILogger<KlinesBackfillService> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     // Chỉ cho phép một backfill chạy đồng thởi trên toàn process để tránh
     // duplicate resource usage khi ngườ dùng gọi lại endpoint nhiều lần.
@@ -25,13 +26,14 @@ public class KlinesBackfillService
     private const int BatchLimit = 1000;
     private const int DefaultRequestsPerMinute = 400;
 
-    public KlinesBackfillService(IServiceScopeFactory scopeFactory, IHostApplicationLifetime lifetime, ILogger<KlinesBackfillService> logger, TimeProvider? timeProvider = null, ProductionTimeframePolicy? timeframePolicy = null)
+    public KlinesBackfillService(IServiceScopeFactory scopeFactory, IHostApplicationLifetime lifetime, ILogger<KlinesBackfillService> logger, TimeProvider? timeProvider = null, ProductionTimeframePolicy? timeframePolicy = null, ProductionSymbolPolicy? symbolPolicy = null)
     {
         _scopeFactory = scopeFactory;
         _lifetime = lifetime;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public bool IsRunning => Interlocked.CompareExchange(ref _isRunning, 0, 0) == 1;
@@ -48,8 +50,12 @@ public class KlinesBackfillService
         int requestsPerMinuteLimit = DefaultRequestsPerMinute,
         bool wait = false,
         bool fillGaps = false,
+        bool reconcileExisting = false,
         CancellationToken cancellationToken = default)
     {
+        symbol = _symbolPolicy.EnsureActive(symbol);
+        if (fillGaps && reconcileExisting)
+            throw new ArgumentException("fillGaps and reconcileExisting are mutually exclusive modes.");
         var targetTfs = timeframes?.Count > 0
             ? _timeframePolicy.NormalizeAndEnsureActive(timeframes)
             : _timeframePolicy.Active;
@@ -76,7 +82,8 @@ public class KlinesBackfillService
             EndDateUtc = end,
             StartedAtUtc = DateTime.UtcNow,
             Status = "accepted",
-            FillGaps = fillGaps
+            FillGaps = fillGaps,
+            ReconcileExisting = reconcileExisting
         };
 
         // Background work dùng application stopping token thay vì request token,
@@ -86,7 +93,8 @@ public class KlinesBackfillService
         {
             try
             {
-                await RunBackfillAsync(symbol, targetTfs, start, end, requestsPerMinuteLimit, fillGaps, appStoppingToken);
+                await RunBackfillAsync(symbol, targetTfs, start, end, requestsPerMinuteLimit,
+                    fillGaps, reconcileExisting, appStoppingToken);
             }
             finally
             {
@@ -111,6 +119,7 @@ public class KlinesBackfillService
         DateTime endDateUtc,
         int requestsPerMinuteLimit,
         bool fillGaps,
+        bool reconcileExisting,
         CancellationToken cancellationToken)
     {
         var startMs = new DateTimeOffset(startDateUtc).ToUnixTimeMilliseconds();
@@ -149,10 +158,11 @@ public class KlinesBackfillService
                 }
                 else
                 {
-                    summary = await BackfillTimeframeAsync(symbol, tf, intervalMs, startMs, endMs, requestsPerMinuteLimit, cancellationToken);
+                    summary = await BackfillTimeframeAsync(symbol, tf, intervalMs, startMs, endMs,
+                        requestsPerMinuteLimit, reconcileExisting, cancellationToken);
                     _logger.LogInformation(
-                        "Backfill finished for {Symbol} {Timeframe}: inserted {Inserted} rows in {RequestCount} requests",
-                        symbol, tf, summary.Inserted, summary.RequestCount);
+                        "Backfill finished for {Symbol} {Timeframe}: inserted {Inserted}, reconciled {Updated} rows in {RequestCount} requests",
+                        symbol, tf, summary.Inserted, summary.Updated, summary.RequestCount);
                 }
             }
             catch (OperationCanceledException)
@@ -176,6 +186,7 @@ public class KlinesBackfillService
         long startMs,
         long endMs,
         int requestsPerMinuteLimit,
+        bool reconcileExisting,
         CancellationToken cancellationToken)
     {
         var summary = new TimeframeBackfillSummary { Timeframe = timeframe };
@@ -185,7 +196,9 @@ public class KlinesBackfillService
         // thay vì từ 2020 để tránh fetch hàng triệu nến đã tồn tại khi chạy lại.
         // Nếu dữ liệu mới nhất đã vượt quá endMs (ví dụ DB có dữ liệu gần đây nhưng thiếu gap lịch sử),
         // chuyển sang chế độ fill-gap trong khoảng [startMs, endMs].
-        var latestExistingMs = await GetLatestOpenTimeMsAsync(symbol, timeframe, cancellationToken);
+        var latestExistingMs = reconcileExisting
+            ? null
+            : await GetLatestOpenTimeMsAsync(symbol, timeframe, cancellationToken);
         long cursorMs = startMs;
         if (latestExistingMs.HasValue && latestExistingMs.Value >= startMs)
         {
@@ -241,15 +254,16 @@ public class KlinesBackfillService
                 break;
             }
 
-            var inserted = await InsertBatchAsync(symbol, timeframe, batch, cancellationToken);
-            summary.Inserted += inserted;
+            var written = await WriteFinalizedBatchAsync(symbol, timeframe, batch, cancellationToken);
+            summary.Inserted += written.Inserted;
+            summary.Updated += written.Updated;
 
             var last = batch[^1];
             cursorMs = last.OpenTimeMs + intervalMs;
 
             _logger.LogInformation(
                 "Backfill progress {Symbol} {Timeframe}: batch {BatchSize}, inserted {Inserted}, total {TotalInserted}, cursor {CursorIso}",
-                symbol, timeframe, batch.Count, inserted, summary.Inserted,
+                symbol, timeframe, batch.Count, written.Inserted, summary.Inserted,
                 DateTimeOffset.FromUnixTimeMilliseconds(cursorMs).UtcDateTime.ToString("O"));
 
             // Nếu batch < 1000 nghĩa là đã lấy hết dữ liệu trong range [cursor, end]
@@ -351,9 +365,10 @@ public class KlinesBackfillService
                     break;
                 }
 
-                var inserted = await InsertBatchAsync(symbol, timeframe, batch, cancellationToken);
-                summary.Inserted += inserted;
-                gapInserted += inserted;
+                var written = await WriteFinalizedBatchAsync(symbol, timeframe, batch, cancellationToken);
+                summary.Inserted += written.Inserted;
+                summary.Updated += written.Updated;
+                gapInserted += written.Inserted;
 
                 var last = batch[^1];
                 cursor = last.OpenTimeMs + intervalMs;
@@ -554,7 +569,7 @@ public class KlinesBackfillService
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<int> InsertBatchAsync(
+    private async Task<BatchWriteResult> WriteFinalizedBatchAsync(
         string symbol,
         string timeframe,
         IReadOnlyList<KlineDto> batch,
@@ -564,18 +579,33 @@ public class KlinesBackfillService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var auditCache = scope.ServiceProvider.GetService<DataAuditCache>();
 
-        var openTimes = batch.Select(x => x.OpenTimeMs).ToList();
-        var existing = await db.Klines
-            .AsNoTracking()
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && openTimes.Contains(k.OpenTimeMs))
-            .Select(k => k.OpenTimeMs)
-            .ToListAsync(cancellationToken);
-        var existingSet = new HashSet<long>(existing);
+        var finalizedAtMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var finalizedBatch = batch
+            .Where(x => x.CloseTimeMs <= finalizedAtMs)
+            .GroupBy(x => x.OpenTimeMs)
+            .Select(x => x.Last())
+            .ToList();
+        if (finalizedBatch.Count == 0)
+            return new BatchWriteResult(0, 0);
 
-        var toAdd = new List<Kline>(batch.Count);
-        foreach (var k in batch)
+        var openTimes = finalizedBatch.Select(x => x.OpenTimeMs).ToList();
+        var existing = await db.Klines
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && openTimes.Contains(k.OpenTimeMs))
+            .ToListAsync(cancellationToken);
+        var existingByOpenTime = existing.ToDictionary(k => k.OpenTimeMs);
+
+        var toAdd = new List<Kline>(finalizedBatch.Count);
+        var updated = 0;
+        foreach (var k in finalizedBatch)
         {
-            if (existingSet.Contains(k.OpenTimeMs)) continue;
+            if (existingByOpenTime.TryGetValue(k.OpenTimeMs, out var stored))
+            {
+                if (!HasDifferentValues(stored, k))
+                    continue;
+                CopyValues(stored, k);
+                updated++;
+                continue;
+            }
 
             toAdd.Add(new Kline
             {
@@ -595,12 +625,12 @@ public class KlinesBackfillService
             });
         }
 
-        if (toAdd.Count > 0)
+        if (toAdd.Count > 0 || updated > 0)
         {
             db.Klines.AddRange(toAdd);
             await db.SaveChangesAsync(cancellationToken);
-            var minInserted = toAdd.Min(x => x.OpenTimeMs);
-            var maxInserted = toAdd.Max(x => x.OpenTimeMs);
+            var minInserted = finalizedBatch.Min(x => x.OpenTimeMs);
+            var maxInserted = finalizedBatch.Max(x => x.OpenTimeMs);
             var intervalMs = Timeframes.IntervalToMs(timeframe);
             var affectedGaps = await db.KlineGapStates
                 .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
@@ -625,8 +655,31 @@ public class KlinesBackfillService
             auditCache?.Invalidate(symbol);
         }
 
-        return toAdd.Count;
+        return new BatchWriteResult(toAdd.Count, updated);
     }
+
+    private static bool HasDifferentValues(Kline stored, KlineDto source) =>
+        stored.CloseTimeMs != source.CloseTimeMs || stored.Open != source.Open ||
+        stored.High != source.High || stored.Low != source.Low || stored.Close != source.Close ||
+        stored.Volume != source.Volume || stored.QuoteVolume != source.QuoteVolume ||
+        stored.TradeCount != source.TradeCount || stored.TakerBuyVolume != source.TakerBuyVolume ||
+        stored.TakerBuyQuoteVolume != source.TakerBuyQuoteVolume;
+
+    private static void CopyValues(Kline target, KlineDto source)
+    {
+        target.CloseTimeMs = source.CloseTimeMs;
+        target.Open = source.Open;
+        target.High = source.High;
+        target.Low = source.Low;
+        target.Close = source.Close;
+        target.Volume = source.Volume;
+        target.QuoteVolume = source.QuoteVolume;
+        target.TradeCount = source.TradeCount;
+        target.TakerBuyVolume = source.TakerBuyVolume;
+        target.TakerBuyQuoteVolume = source.TakerBuyQuoteVolume;
+    }
+
+    private readonly record struct BatchWriteResult(int Inserted, int Updated);
 }
 
 public class BackfillStartInfo
@@ -640,12 +693,14 @@ public class BackfillStartInfo
     public DateTime? CompletedAtUtc { get; set; }
     public string Status { get; set; } = "accepted";
     public bool FillGaps { get; set; }
+    public bool ReconcileExisting { get; set; }
 }
 
 public class TimeframeBackfillSummary
 {
     public string Timeframe { get; set; } = "";
     public long Inserted { get; set; }
+    public long Updated { get; set; }
     public int RequestCount { get; set; }
     public string? ErrorMessage { get; set; }
 }

@@ -1,4 +1,6 @@
 using Backend.Services;
+using Backend.Data;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Backend.Tests;
@@ -48,7 +50,7 @@ public class EnsembleServiceTests
     }
 
     [Fact]
-    public void AggregateLayers_AllLayersDegraded_ReturnsSafeNeutralFallbackWithoutCrash()
+    public void AggregateLayers_AllLayersDegraded_ReturnsTruthfulUnavailableState()
     {
         var layers = new[]
         {
@@ -59,7 +61,30 @@ public class EnsembleServiceTests
         var (probUp, probDown, probSideways, direction, confidence, degraded, _) = EnsembleService.AggregateLayers(layers);
 
         Assert.Equal(2, degraded.Count);
-        Assert.Equal("Sideways", direction);
-        Assert.True(confidence > 0.30);
+        Assert.Equal("Unavailable", direction);
+        Assert.Equal(0, probUp);
+        Assert.Equal(0, probDown);
+        Assert.Equal(0, probSideways);
+        Assert.Equal(0, confidence);
+    }
+
+    [Fact]
+    public async Task PredictEnsemble_PersistsUnavailableInsteadOfInventingMarketInputs()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new AppDbContext(options);
+        var service = new EnsembleService(db, new FakeBinanceKlinesService());
+
+        var result = await service.PredictEnsembleAsync("BTCUSDT", "4h");
+
+        Assert.Equal("Unavailable", result.FinalDirection);
+        Assert.Equal(0, result.EnsembleConfidence);
+        Assert.Equal(0, result.ProbUp + result.ProbDown + result.ProbSideways);
+        Assert.Equal(ValidityStatuses.Invalid, result.ValidityStatus);
+        Assert.True(result.EntryPrice > 0);
+        Assert.Contains("No ensemble component", result.InvalidReason);
+        Assert.Equal(1, await db.EnsemblePredictionRecords.CountAsync());
+        Assert.Contains("\"isAvailable\":false", result.LayerBreakdownJson);
     }
 }

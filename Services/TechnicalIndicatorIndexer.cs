@@ -12,6 +12,11 @@ namespace Backend.Services;
 /// </summary>
 public class TechnicalIndicatorIndexer
 {
+    // EMA200 seeded from an SMA still carries seed error. 1,000 bars leaves
+    // roughly (199/201)^(1000-200) ~= 0.034% of that initial error while
+    // remaining small for the production 1h/4h/1d datasets.
+    internal const int RequiredWarmupBars = 1_000;
+
     private readonly AppDbContext _db;
     private readonly ILogger<TechnicalIndicatorIndexer> _logger;
     private readonly IndexingOptions _options;
@@ -19,7 +24,7 @@ public class TechnicalIndicatorIndexer
     /// <summary>
     /// Projection nhẹ để tránh giữ hàng triệu entity Kline đầy đủ trong memory.
     /// </summary>
-    private readonly record struct Bar(
+    internal readonly record struct Bar(
         long OpenTimeMs,
         decimal Open,
         decimal High,
@@ -74,8 +79,12 @@ public class TechnicalIndicatorIndexer
             return 0;
         }
 
-        var warmupBars = _options.TechnicalIndicatorWarmupBars;
-        var startMs = IndexingRangeHelper.ComputeIncrementalStartMs(maxExistingMs, warmupBars, intervalMs);
+        // Load the complete active-timeframe history. OBV and UTC-session VWAP
+        // have cumulative state that cannot be reconstructed from a generic
+        // fixed lookback without persisted seeds. Production scope is only
+        // BTC 1h/4h/1d, so exact replay is both bounded and preferable to a
+        // silently approximate incremental value.
+        long? startMs = null;
         var endMs = maxKlineMs;
 
         var bars = await LoadBarsAsync(symbol, timeframe, startMs, endMs, cancellationToken);
@@ -85,7 +94,7 @@ public class TechnicalIndicatorIndexer
             return 0;
         }
 
-        var existingKeys = await LoadExistingKeysAsync(symbol, timeframe, startMs, bars[^1].OpenTimeMs, cancellationToken);
+        var existingKeys = await LoadExistingKeysAsync(symbol, timeframe, bars[0].OpenTimeMs, bars[^1].OpenTimeMs, cancellationToken);
         return await IndexBarsAsync(symbol, timeframe, bars, existingKeys, cancellationToken);
     }
 
@@ -130,21 +139,7 @@ public class TechnicalIndicatorIndexer
         HashSet<long> existingKeys,
         CancellationToken cancellationToken)
     {
-        var closes = bars.Select(k => k.Close).ToList();
-        var ema12 = ComputeEma(closes, 12);
-        var ema26 = ComputeEma(closes, 26);
-        var ema50 = ComputeEma(closes, 50);
-        var ema200 = ComputeEma(closes, 200);
-        var sma50 = ComputeSma(closes, 50);
-        var sma200 = ComputeSma(closes, 200);
-        var rsi14 = ComputeRsi(closes, 14);
-        var bb = ComputeBollinger(closes, 20, 2.0);
-        var atr14 = ComputeAtr(bars, 14);
-        var obv = ComputeObv(bars);
-        var obvEma50 = ComputeEmaOfDouble(obv, 50);
-        var macd = ComputeMacd(ema12, ema26);
-        var vwap = ComputeVwap(bars, timeframe);
-        var rollingVwap = ComputeRollingVwap(bars, 24);
+        var indicators = CalculateIndicators(bars, Timeframes.IntervalToMs(timeframe));
 
         var batchSize = Math.Max(100, _options.TechnicalIndicatorsBatchSize);
         var batch = new List<TechnicalIndicator>(batchSize);
@@ -156,16 +151,16 @@ public class TechnicalIndicatorIndexer
             if (existingKeys.Contains(k.OpenTimeMs))
                 continue;
 
-            var atr = atr14[i];
+            var atr = indicators.Atr14[i];
             var atrValue = atr.GetValueOrDefault();
-            var macdNorm = macd.MacdLine[i].HasValue && atrValue > 0
-                ? (double?)(macd.MacdLine[i].GetValueOrDefault() / atrValue)
+            var macdNorm = indicators.Macd.MacdLine[i].HasValue && atrValue > 0
+                ? (double?)(indicators.Macd.MacdLine[i].GetValueOrDefault() / atrValue)
                 : null;
-            var macdSignalNorm = macd.SignalLine[i].HasValue && atrValue > 0
-                ? (double?)(macd.SignalLine[i].GetValueOrDefault() / atrValue)
+            var macdSignalNorm = indicators.Macd.SignalLine[i].HasValue && atrValue > 0
+                ? (double?)(indicators.Macd.SignalLine[i].GetValueOrDefault() / atrValue)
                 : null;
-            var macdHistogramNorm = macd.Histogram[i].HasValue && atrValue > 0
-                ? (double?)(macd.Histogram[i].GetValueOrDefault() / atrValue)
+            var macdHistogramNorm = indicators.Macd.Histogram[i].HasValue && atrValue > 0
+                ? (double?)(indicators.Macd.Histogram[i].GetValueOrDefault() / atrValue)
                 : null;
 
             batch.Add(new TechnicalIndicator
@@ -173,27 +168,27 @@ public class TechnicalIndicatorIndexer
                 Symbol = symbol,
                 Timeframe = timeframe,
                 OpenTimeMs = k.OpenTimeMs,
-                Rsi14 = rsi14[i],
-                Ema12 = ema12[i],
-                Ema26 = ema26[i],
-                Ema50 = ema50[i],
-                Ema200 = ema200[i],
-                Sma50 = sma50[i],
-                Sma200 = sma200[i],
-                Macd = macd.MacdLine[i],
-                MacdSignal = macd.SignalLine[i],
-                MacdHistogram = macd.Histogram[i],
+                Rsi14 = indicators.Rsi14[i],
+                Ema12 = indicators.Ema12[i],
+                Ema26 = indicators.Ema26[i],
+                Ema50 = indicators.Ema50[i],
+                Ema200 = indicators.Ema200[i],
+                Sma50 = indicators.Sma50[i],
+                Sma200 = indicators.Sma200[i],
+                Macd = indicators.Macd.MacdLine[i],
+                MacdSignal = indicators.Macd.SignalLine[i],
+                MacdHistogram = indicators.Macd.Histogram[i],
                 MacdNorm = macdNorm,
                 MacdSignalNorm = macdSignalNorm,
                 MacdHistogramNorm = macdHistogramNorm,
-                BollingerUpper = bb.Upper[i],
-                BollingerMiddle = bb.Middle[i],
-                BollingerLower = bb.Lower[i],
+                BollingerUpper = indicators.Bollinger.Upper[i],
+                BollingerMiddle = indicators.Bollinger.Middle[i],
+                BollingerLower = indicators.Bollinger.Lower[i],
                 Atr14 = atr,
-                Obv = obv[i],
-                ObvEma50 = obvEma50[i].HasValue ? (double?)obvEma50[i].GetValueOrDefault() : null,
-                Vwap = vwap[i],
-                RollingVwap24 = rollingVwap[i]
+                Obv = indicators.Obv[i],
+                ObvEma50 = indicators.ObvEma50[i].HasValue ? (double?)indicators.ObvEma50[i].GetValueOrDefault() : null,
+                Vwap = indicators.Vwap[i],
+                RollingVwap24 = indicators.RollingVwap24[i]
             });
 
             if (batch.Count >= batchSize)
@@ -248,9 +243,10 @@ public class TechnicalIndicatorIndexer
         long? endMs,
         CancellationToken cancellationToken)
     {
+        var finalizedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var query = _db.Klines
             .AsNoTracking()
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe);
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && k.CloseTimeMs <= finalizedAtMs);
 
         if (startMs.HasValue) query = query.Where(k => k.OpenTimeMs >= startMs.Value);
         if (endMs.HasValue) query = query.Where(k => k.OpenTimeMs <= endMs.Value);
@@ -271,7 +267,84 @@ public class TechnicalIndicatorIndexer
             .ToListAsync(cancellationToken);
     }
 
-    private static List<decimal?> ComputeEma(IReadOnlyList<decimal> prices, int period)
+    internal static IndicatorSeries CalculateIndicators(IReadOnlyList<Bar> bars, long intervalMs)
+    {
+        var series = IndicatorSeries.Empty(bars.Count);
+        if (bars.Count == 0)
+            return series;
+
+        var segmentStart = 0;
+        for (var i = 1; i <= bars.Count; i++)
+        {
+            // A gap makes prior-close and cumulative state unknowable. Restart
+            // every indicator and expose null warmup rather than bridge it.
+            if (i < bars.Count && intervalMs > 0 && bars[i].OpenTimeMs - bars[i - 1].OpenTimeMs == intervalMs)
+                continue;
+
+            FillSegment(series, bars, segmentStart, i - segmentStart);
+            segmentStart = i;
+        }
+        return series;
+    }
+
+    private static void FillSegment(IndicatorSeries target, IReadOnlyList<Bar> bars, int start, int count)
+    {
+        var segment = bars.Skip(start).Take(count).ToArray();
+        var closes = segment.Select(k => k.Close).ToList();
+        var ema12 = ComputeEma(closes, 12);
+        var ema26 = ComputeEma(closes, 26);
+        var ema50 = ComputeEma(closes, 50);
+        var ema200 = ComputeEma(closes, 200);
+        var sma50 = ComputeSma(closes, 50);
+        var sma200 = ComputeSma(closes, 200);
+        var rsi14 = ComputeRsi(closes, 14);
+        var bollinger = ComputeBollinger(closes, 20, 2.0);
+        var atr14 = ComputeAtr(segment, 14);
+        var obv = ComputeObv(segment);
+        var obvEma50 = ComputeEmaOfDouble(obv, 50);
+        var macd = ComputeMacd(ema12, ema26);
+        var vwap = ComputeVwap(segment);
+        var rollingVwap = ComputeRollingVwap(segment, 24);
+
+        for (var i = 0; i < count; i++)
+        {
+            var at = start + i;
+            target.Ema12[at] = ema12[i]; target.Ema26[at] = ema26[i];
+            target.Ema50[at] = ema50[i]; target.Ema200[at] = ema200[i];
+            target.Sma50[at] = sma50[i]; target.Sma200[at] = sma200[i];
+            target.Rsi14[at] = rsi14[i]; target.Atr14[at] = atr14[i];
+            target.Obv[at] = obv[i]; target.ObvEma50[at] = obvEma50[i];
+            target.Vwap[at] = vwap[i]; target.RollingVwap24[at] = rollingVwap[i];
+            target.Bollinger.Upper[at] = bollinger.Upper[i];
+            target.Bollinger.Middle[at] = bollinger.Middle[i];
+            target.Bollinger.Lower[at] = bollinger.Lower[i];
+            target.Macd.MacdLine[at] = macd.MacdLine[i];
+            target.Macd.SignalLine[at] = macd.SignalLine[i];
+            target.Macd.Histogram[at] = macd.Histogram[i];
+        }
+    }
+
+    internal sealed record IndicatorSeries(
+        List<decimal?> Ema12, List<decimal?> Ema26, List<decimal?> Ema50, List<decimal?> Ema200,
+        List<decimal?> Sma50, List<decimal?> Sma200, List<double?> Rsi14,
+        (List<decimal?> Upper, List<decimal?> Middle, List<decimal?> Lower) Bollinger,
+        List<double?> Atr14, List<double?> Obv, List<decimal?> ObvEma50,
+        (List<double?> MacdLine, List<double?> SignalLine, List<double?> Histogram) Macd,
+        List<decimal?> Vwap, List<decimal?> RollingVwap24)
+    {
+        public static IndicatorSeries Empty(int count) => new(
+            NullDecimals(count), NullDecimals(count), NullDecimals(count), NullDecimals(count),
+            NullDecimals(count), NullDecimals(count), NullDoubles(count),
+            (NullDecimals(count), NullDecimals(count), NullDecimals(count)),
+            NullDoubles(count), NullDoubles(count), NullDecimals(count),
+            (NullDoubles(count), NullDoubles(count), NullDoubles(count)),
+            NullDecimals(count), NullDecimals(count));
+
+        private static List<decimal?> NullDecimals(int count) => Enumerable.Repeat<decimal?>(null, count).ToList();
+        private static List<double?> NullDoubles(int count) => Enumerable.Repeat<double?>(null, count).ToList();
+    }
+
+    internal static List<decimal?> ComputeEma(IReadOnlyList<decimal> prices, int period)
     {
         var result = new List<decimal?>(prices.Count);
         decimal multiplier = 2m / (period + 1);
@@ -318,7 +391,7 @@ public class TechnicalIndicatorIndexer
         return result;
     }
 
-    private static List<double?> ComputeRsi(IReadOnlyList<decimal> prices, int period)
+    internal static List<double?> ComputeRsi(IReadOnlyList<decimal> prices, int period)
     {
         var result = new List<double?>(prices.Count);
         double avgGain = 0, avgLoss = 0;
@@ -334,23 +407,17 @@ public class TechnicalIndicatorIndexer
             var gain = delta > 0 ? delta : 0;
             var loss = delta < 0 ? -delta : 0;
 
-            if (i < period)
+            if (i <= period)
             {
                 avgGain += gain;
                 avgLoss += loss;
-                result.Add(null);
-                if (i == period - 1)
+                if (i < period)
                 {
-                    avgGain /= period;
-                    avgLoss /= period;
+                    result.Add(null);
+                    continue;
                 }
-                continue;
-            }
-
-            if (i == period)
-            {
-                avgGain = (avgGain + gain) / period; // smooth
-                avgLoss = (avgLoss + loss) / period;
+                avgGain /= period;
+                avgLoss /= period;
             }
             else
             {
@@ -359,7 +426,7 @@ public class TechnicalIndicatorIndexer
             }
 
             if (avgLoss == 0)
-                result.Add(100);
+                result.Add(avgGain == 0 ? 50 : 100);
             else
             {
                 var rs = avgGain / avgLoss;
@@ -412,7 +479,7 @@ public class TechnicalIndicatorIndexer
         return (upper, middle, lower);
     }
 
-    private static List<double?> ComputeAtr(IReadOnlyList<Bar> bars, int period)
+    internal static List<double?> ComputeAtr(IReadOnlyList<Bar> bars, int period)
     {
         var result = new List<double?>(bars.Count);
         var trs = new List<double>(period + 1);
@@ -425,14 +492,14 @@ public class TechnicalIndicatorIndexer
             var tr = Math.Max(high - low, Math.Max(Math.Abs(high - prevClose), Math.Abs(low - prevClose)));
             trs.Add(tr);
 
-            if (i < period)
+            if (i < period - 1)
             {
                 result.Add(null);
                 continue;
             }
-            if (i == period)
+            if (i == period - 1)
             {
-                var atr = trs.Take(period + 1).Average();
+                var atr = trs.Take(period).Average();
                 result.Add(atr);
             }
             else
@@ -453,7 +520,9 @@ public class TechnicalIndicatorIndexer
         {
             if (i == 0)
             {
-                obv = (double)bars[i].Volume;
+                // Conventional OBV starts at zero. The absolute level is
+                // arbitrary; only causal changes carry information.
+                obv = 0;
             }
             else
             {
@@ -524,7 +593,7 @@ public class TechnicalIndicatorIndexer
         return result;
     }
 
-    private static List<decimal?> ComputeVwap(IReadOnlyList<Bar> bars, string timeframe)
+    private static List<decimal?> ComputeVwap(IReadOnlyList<Bar> bars)
     {
         var result = new List<decimal?>(bars.Count);
         decimal cumTpVol = 0;

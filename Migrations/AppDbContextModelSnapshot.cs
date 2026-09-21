@@ -31,8 +31,31 @@ namespace Backend.Migrations
                     b.Property<DateTime?>("ArchivedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<long?>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeliveredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeliveryAttemptedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeliveryError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("DeliveryStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("EvidenceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean");
@@ -44,6 +67,11 @@ namespace Backend.Migrations
 
                     b.Property<decimal?>("PriceSnapshot")
                         .HasColumnType("numeric");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("SourceKey")
                         .HasMaxLength(512)
@@ -640,6 +668,14 @@ namespace Backend.Migrations
                     b.Property<double>("AvgReturn")
                         .HasColumnType("double precision");
 
+                    b.Property<double?>("BaselineWinRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("CapabilityState")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("ConditionsJson")
                         .IsRequired()
                         .HasColumnType("text");
@@ -654,25 +690,78 @@ namespace Backend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<long?>("DiscoveryRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("EvaluationEndTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("EvaluationStartTimeMs")
+                        .HasColumnType("bigint");
+
                     b.Property<bool>("IsAutoDiscovered")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");
 
+                    b.Property<double?>("LabelDeadZonePct")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("MethodVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<double?>("OosGrossAvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OosLift")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OosNetAvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("OosSampleCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("OosWinRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OosWinRateCi95High")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OosWinRateCi95Low")
+                        .HasColumnType("double precision");
+
                     b.Property<int>("Priority")
                         .HasColumnType("integer");
+
+                    b.Property<string>("RejectedReason")
+                        .HasColumnType("text");
 
                     b.Property<int>("RequiredBars")
                         .HasColumnType("integer");
 
+                    b.Property<double?>("RoundTripCostBps")
+                        .HasColumnType("double precision");
+
                     b.Property<int>("SampleCount")
                         .HasColumnType("integer");
+
+                    b.Property<long?>("SelectionEndTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("SelectionSampleCount")
+                        .HasColumnType("integer");
+
+                    b.Property<long?>("SelectionStartTimeMs")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Symbol")
                         .IsRequired()
@@ -692,6 +781,8 @@ namespace Backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DiscoveryRunId");
+
                     b.HasIndex("Symbol", "Timeframe", "IsEnabled");
 
                     b.ToTable("CandleSequenceRules");
@@ -705,15 +796,28 @@ namespace Backend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<long>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
                     b.Property<decimal>("ClosePrice")
                         .HasColumnType("numeric");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("EvidenceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("Message")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<long>("RuleId")
                         .HasColumnType("bigint");
@@ -736,6 +840,9 @@ namespace Backend.Migrations
                     b.HasIndex("RuleId", "CreatedAtUtc");
 
                     b.HasIndex("Symbol", "Timeframe", "CreatedAtUtc");
+
+                    b.HasIndex("RuleId", "Symbol", "Timeframe", "TriggerTimeMs")
+                        .IsUnique();
 
                     b.ToTable("CandleSequenceSignals");
                 });
@@ -937,6 +1044,9 @@ namespace Backend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<long?>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -946,8 +1056,17 @@ namespace Backend.Migrations
                     b.Property<double?>("GlobalLsRatio")
                         .HasColumnType("double precision");
 
+                    b.Property<bool>("IsReconstructed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<double?>("MarkPrice")
                         .HasColumnType("double precision");
+
+                    b.Property<string>("MarketType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<double?>("OpenInterest")
                         .HasColumnType("double precision");
@@ -956,6 +1075,16 @@ namespace Backend.Migrations
                         .HasColumnType("double precision");
 
                     b.Property<long>("OpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("ReceivedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long?>("SourceEventTimeMs")
                         .HasColumnType("bigint");
 
                     b.Property<string>("Symbol")
@@ -973,6 +1102,8 @@ namespace Backend.Migrations
                         .HasColumnType("double precision");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "AvailableTimeMs");
 
                     b.HasIndex("Symbol", "OpenTimeMs")
                         .IsUnique();
@@ -1154,17 +1285,29 @@ namespace Backend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<long?>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
                     b.Property<double?>("FundingRate")
                         .HasColumnType("double precision");
 
                     b.Property<double?>("FundingRateZscore")
                         .HasColumnType("double precision");
 
+                    b.Property<bool>("IsReconstructed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<double?>("LongLiquidationUsd")
                         .HasColumnType("double precision");
 
                     b.Property<double?>("LongShortRatio")
                         .HasColumnType("double precision");
+
+                    b.Property<string>("MarketType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<double?>("OiDeltaPct")
                         .HasColumnType("double precision");
@@ -1175,8 +1318,18 @@ namespace Backend.Migrations
                     b.Property<long>("OpenTimeMs")
                         .HasColumnType("bigint");
 
+                    b.Property<DateTimeOffset?>("ReceivedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<double?>("ShortLiquidationUsd")
                         .HasColumnType("double precision");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long?>("SourceEventTimeMs")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Symbol")
                         .IsRequired()
@@ -1189,6 +1342,8 @@ namespace Backend.Migrations
                         .HasColumnType("character varying(16)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "AvailableTimeMs");
 
                     b.HasIndex("Symbol", "Timeframe", "OpenTimeMs")
                         .IsUnique();
@@ -1870,9 +2025,140 @@ namespace Backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Symbol", "Timeframe", "TransitionTimeMs");
+                    b.HasIndex("Symbol", "Timeframe", "TransitionTimeMs")
+                        .IsUnique();
 
                     b.ToTable("RegimeTransitions");
+                });
+
+            modelBuilder.Entity("Backend.Data.RuleDiscoveryRun", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("CandidateBudget")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("EvaluationEndTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("EvaluationStartTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("FutureBars")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("LabelDeadZonePct")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("MethodVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<double>("RoundTripCostBps")
+                        .HasColumnType("double precision");
+
+                    b.Property<long>("SelectionEndTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("SelectionStartTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("TrialCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "CreatedAtUtc");
+
+                    b.ToTable("RuleDiscoveryRuns");
+                });
+
+            modelBuilder.Entity("Backend.Data.RuleDiscoveryTrial", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double?>("BaselineWinRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("CandidateKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ConditionsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double?>("EvaluationNetAvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("EvaluationSampleCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("EvaluationWinRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("EvaluationWinRateCi95High")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("EvaluationWinRateCi95Low")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("OosLift")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("RejectedReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<long>("RunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<double?>("SelectionNetAvgReturnPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("SelectionSampleCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("SelectionWinRate")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("TrialNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "TrialNumber")
+                        .IsUnique();
+
+                    b.ToTable("RuleDiscoveryTrials");
                 });
 
             modelBuilder.Entity("Backend.Data.SentimentSnapshot", b =>
@@ -1927,6 +2213,14 @@ namespace Backend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<long>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CalculationVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1947,8 +2241,17 @@ namespace Backend.Migrations
                     b.Property<double?>("LowPrice")
                         .HasColumnType("double precision");
 
+                    b.Property<long?>("MitigatedAtMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("OriginTimeMs")
+                        .HasColumnType("bigint");
+
                     b.Property<double>("Price")
                         .HasColumnType("double precision");
+
+                    b.Property<long?>("ReferenceTimeMs")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Symbol")
                         .IsRequired()
@@ -1963,7 +2266,13 @@ namespace Backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Symbol", "Timeframe", "AvailableTimeMs");
+
                     b.HasIndex("Symbol", "Timeframe", "TimeMs");
+
+                    b.HasIndex("Symbol", "Timeframe", "EventType", "OriginTimeMs", "AvailableTimeMs", "CalculationVersion")
+                        .IsUnique()
+                        .HasFilter("\"CalculationVersion\" = 'smc-causal-v2'");
 
                     b.ToTable("SmartMoneyStructures");
                 });
@@ -2405,6 +2714,17 @@ namespace Backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Article");
+                });
+
+            modelBuilder.Entity("Backend.Data.RuleDiscoveryTrial", b =>
+                {
+                    b.HasOne("Backend.Data.RuleDiscoveryRun", "Run")
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("Backend.Data.BacktestRun", b =>

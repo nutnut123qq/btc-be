@@ -75,13 +75,15 @@ public class DataAuditService : IDataAuditService
         var timeframeAudits = audits.ToArray();
         var news = await AuditNewsAsync(_db, cancellationToken);
         var rulesAlerts = await AuditRulesAlertsAsync(_db, symbol, cancellationToken);
+        var derivatives = await AuditDerivativesAsync(_db, symbol, cancellationToken);
 
         var response = new DataAuditResponse(
             symbol,
             DateTime.UtcNow,
             timeframeAudits,
             news,
-            rulesAlerts);
+            rulesAlerts,
+            derivatives);
         _cache.Set(symbol, includeInventory, response);
         return response;
     }
@@ -91,15 +93,21 @@ public class DataAuditService : IDataAuditService
         bool includeInventory,
         CancellationToken cancellationToken)
     {
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var nowUtc = DateTimeOffset.UtcNow;
+        var nowMs = nowUtc.ToUnixTimeMilliseconds();
         var startMs = _backfillStartMs ?? new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
         var klineRowsTask = InReadScopeAsync(db => QueryPostgresAggregatesAsync(
             db, PostgresKlineAggregateSql, symbol, startMs, nowMs, cancellationToken));
         var auxiliaryTask = InReadScopeAsync(db => AuditPostgresAuxiliaryAsync(
             db, symbol, startMs, nowMs, includeInventory, cancellationToken));
-        await Task.WhenAll(klineRowsTask, auxiliaryTask);
+        var qualityTask = InReadScopeAsync(async db => new PostgresQualityBundle(
+            await QueryPostgresQualityAsync(db, symbol, startMs, nowMs, cancellationToken),
+            await AuditDerivativesAsync(db, symbol, cancellationToken)));
+        await Task.WhenAll(klineRowsTask, auxiliaryTask, qualityTask);
         var auxiliary = await auxiliaryTask;
+        var qualityBundle = await qualityTask;
+        var qualities = qualityBundle.Klines.ToDictionary(x => x.Timeframe);
         var rows = (await klineRowsTask).Concat(auxiliary.Rows).ToArray();
         Dictionary<string, long> Counts(string metric) => rows.Where(x => x.Metric == metric)
             .ToDictionary(x => x.Timeframe, x => x.Count);
@@ -171,6 +179,12 @@ public class DataAuditService : IDataAuditService
                 ? Math.Max(0, (long)(DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(stats.MaxOpenTimeMs.Value)).TotalSeconds)
                 : (long?)null;
 
+            qualities.TryGetValue(timeframe, out var qualityRow);
+            var quality = BuildKlineQuality(qualityRow, intervalMs, nowMs);
+            var derived = includeInventory
+                ? BuildDerivedAudits(timeframe, quality.FinalizedRows, rows, nowMs)
+                : null;
+
             return new TimeframeAudit(timeframe, stats.TotalKlines, stats.MinOpenTimeMs, stats.MaxOpenTimeMs,
                 expectedBars, missingBars, liveGapRangeCounts.GetValueOrDefault(timeframe, stateRows.LongLength), coverage,
                 gaps.Length == 0 ? 0 : gaps.Max(x => x.EndOpenTimeMs - x.StartOpenTimeMs + intervalMs),
@@ -183,10 +197,11 @@ public class DataAuditService : IDataAuditService
                 includeInventory ? featureCounts.GetValueOrDefault(timeframe) : null,
                 includeInventory ? targetCounts.GetValueOrDefault(timeframe) : null,
                 includeInventory ? datasetCounts.GetValueOrDefault(timeframe) : null, gaps,
-                _timeframePolicy.IsActive(timeframe));
+                _timeframePolicy.IsActive(timeframe), quality, derived);
         }).ToArray();
 
-        return new DataAuditResponse(symbol, DateTime.UtcNow, timeframeAudits, auxiliary.News, auxiliary.Rules);
+        return new DataAuditResponse(symbol, DateTime.UtcNow, timeframeAudits, auxiliary.News, auxiliary.Rules,
+            qualityBundle.Derivatives);
     }
 
     private static async Task<TransientGapSnapshot> DiscoverTransientGapsAsync(
@@ -385,6 +400,185 @@ public class DataAuditService : IDataAuditService
         return rows;
     }
 
+    private static async Task<List<PostgresQualityRow>> QueryPostgresQualityAsync(
+        AppDbContext db,
+        string symbol,
+        long startMs,
+        long nowMs,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.OpenConnectionAsync(cancellationToken);
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = PostgresKlineQualitySql;
+        AddParameter(command, "symbol", symbol);
+        AddParameter(command, "startMs", startMs);
+        AddParameter(command, "nowMs", nowMs);
+        var rows = new List<PostgresQualityRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new PostgresQualityRow
+            {
+                Timeframe = reader.GetString(0),
+                FinalizedRows = reader.GetInt64(1),
+                FormingRows = reader.GetInt64(2),
+                InvalidRows = reader.GetInt64(3),
+                DuplicateRows = reader.GetInt64(4),
+                LatestFinalizedCloseTimeMs = reader.IsDBNull(5) ? null : reader.GetInt64(5)
+            });
+        }
+        return rows;
+    }
+
+    private static KlineQualityAudit BuildKlineQuality(PostgresQualityRow? row, long intervalMs, long nowMs)
+    {
+        var latestAge = row?.LatestFinalizedCloseTimeMs is long latest
+            ? Math.Max(0, (nowMs - latest) / 1000)
+            : (long?)null;
+        return new KlineQualityAudit(
+            row?.FinalizedRows ?? 0,
+            row?.FormingRows ?? 0,
+            row?.InvalidRows ?? 0,
+            row?.DuplicateRows ?? 0,
+            row?.LatestFinalizedCloseTimeMs,
+            latestAge,
+            !latestAge.HasValue || latestAge.Value * 1000 > intervalMs * 2 + 300_000);
+    }
+
+    private static IReadOnlyList<DerivedTableAudit> BuildDerivedAudits(
+        string timeframe,
+        long finalizedKlines,
+        IEnumerable<PostgresAggregateRow> rows,
+        long nowMs)
+    {
+        var onePerBar = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "TechnicalIndicators", "MlFeatureStores", "PriceTargets"
+        };
+        return rows.Where(x => x.Timeframe == timeframe && x.Metric != "Klines")
+            .Select(x => new DerivedTableAudit(
+                x.Metric,
+                x.Count,
+                x.MaxOpenTimeMs,
+                x.MaxOpenTimeMs.HasValue ? Math.Max(0, (nowMs - x.MaxOpenTimeMs.Value) / 1000) : null,
+                onePerBar.Contains(x.Metric),
+                onePerBar.Contains(x.Metric) ? Math.Max(0, finalizedKlines - x.Count) : null))
+            .OrderBy(x => x.Table)
+            .ToArray();
+    }
+
+    private static async Task<DerivativesAudit> AuditDerivativesAsync(
+        AppDbContext db,
+        string symbol,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var nowMs = nowUtc.ToUnixTimeMilliseconds();
+        var futures = await db.FuturesMetrics.AsNoTracking()
+            .Where(x => x.Symbol == symbol)
+            .GroupBy(x => 1)
+            .Select(g => new
+            {
+                Rows = g.LongCount(),
+                Latest = (long?)g.Max(x => x.OpenTimeMs),
+                MissingOi = g.LongCount(x => x.OpenInterest == null && x.OpenInterestValue == null),
+                MissingLs = g.LongCount(x => x.TopTraderLsCountRatio == null && x.TopTraderLsSumRatio == null && x.GlobalLsRatio == null),
+                MissingTaker = g.LongCount(x => x.TakerBuySellVolRatio == null),
+                MissingFunding = g.LongCount(x => x.FundingRate == null),
+                MissingMark = g.LongCount(x => x.MarkPrice == null),
+                MissingEvent = g.LongCount(x => x.SourceEventTimeMs == null),
+                MissingReceived = g.LongCount(x => x.ReceivedAtUtc == null),
+                MissingAvailable = g.LongCount(x => x.AvailableTimeMs == null),
+                MissingSource = g.LongCount(x => x.Source == null || x.Source == ""),
+                MissingMarketType = g.LongCount(x => x.MarketType == null || x.MarketType == ""),
+                Reconstructed = g.LongCount(x => x.IsReconstructed),
+                AsOfEligible = g.LongCount(x => x.SourceEventTimeMs != null && x.SourceEventTimeMs <= nowMs
+                    && x.ReceivedAtUtc != null && x.ReceivedAtUtc <= nowUtc
+                    && x.AvailableTimeMs != null && x.AvailableTimeMs <= nowMs),
+                Complete = g.LongCount(x => x.SourceEventTimeMs != null && x.ReceivedAtUtc != null
+                    && x.AvailableTimeMs != null && x.Source != null && x.Source != ""
+                    && x.MarketType != null && x.MarketType != "")
+            }).FirstOrDefaultAsync(cancellationToken);
+        var futuresDistinct = await db.FuturesMetrics.AsNoTracking()
+            .Where(x => x.Symbol == symbol).Select(x => x.OpenTimeMs).Distinct().LongCountAsync(cancellationToken);
+        var futuresQuality = new FuturesMetricQuality(
+            futures?.Rows ?? 0,
+            Math.Max(0, (futures?.Rows ?? 0) - futuresDistinct),
+            futures?.Latest,
+            futures?.Latest is long fLatest ? Math.Max(0, (nowMs - fLatest) / 1000) : null,
+            futures?.MissingOi ?? 0,
+            futures?.MissingLs ?? 0,
+            futures?.MissingTaker ?? 0,
+            futures?.MissingFunding ?? 0,
+            futures?.MissingMark ?? 0,
+            new DerivativeLineageQuality(
+                futures?.Complete ?? 0,
+                futures?.MissingEvent ?? 0,
+                futures?.MissingReceived ?? 0,
+                futures?.MissingAvailable ?? 0,
+                futures?.MissingSource ?? 0,
+                futures?.MissingMarketType ?? 0,
+                futures?.Reconstructed ?? 0,
+                futures?.AsOfEligible ?? 0));
+
+        var marketGroups = await db.MarketMetrics.AsNoTracking()
+            .Where(x => x.Symbol == symbol)
+            .GroupBy(x => x.Timeframe)
+            .Select(g => new
+            {
+                Timeframe = g.Key,
+                Rows = g.LongCount(),
+                Latest = (long?)g.Max(x => x.OpenTimeMs),
+                MissingFunding = g.LongCount(x => x.FundingRate == null),
+                MissingOi = g.LongCount(x => x.OpenInterest == null),
+                MissingLs = g.LongCount(x => x.LongShortRatio == null),
+                MissingLiquidations = g.LongCount(x => x.LongLiquidationUsd == null && x.ShortLiquidationUsd == null),
+                MissingEvent = g.LongCount(x => x.SourceEventTimeMs == null),
+                MissingReceived = g.LongCount(x => x.ReceivedAtUtc == null),
+                MissingAvailable = g.LongCount(x => x.AvailableTimeMs == null),
+                MissingSource = g.LongCount(x => x.Source == null || x.Source == ""),
+                MissingMarketType = g.LongCount(x => x.MarketType == null || x.MarketType == ""),
+                Reconstructed = g.LongCount(x => x.IsReconstructed),
+                AsOfEligible = g.LongCount(x => x.SourceEventTimeMs != null && x.SourceEventTimeMs <= nowMs
+                    && x.ReceivedAtUtc != null && x.ReceivedAtUtc <= nowUtc
+                    && x.AvailableTimeMs != null && x.AvailableTimeMs <= nowMs),
+                Complete = g.LongCount(x => x.SourceEventTimeMs != null && x.ReceivedAtUtc != null
+                    && x.AvailableTimeMs != null && x.Source != null && x.Source != ""
+                    && x.MarketType != null && x.MarketType != "")
+            }).ToListAsync(cancellationToken);
+        var marketQualities = new List<MarketMetricQuality>(marketGroups.Count);
+        foreach (var group in marketGroups)
+        {
+            var distinct = await db.MarketMetrics.AsNoTracking()
+                .Where(x => x.Symbol == symbol && x.Timeframe == group.Timeframe)
+                .Select(x => x.OpenTimeMs).Distinct().LongCountAsync(cancellationToken);
+            marketQualities.Add(new MarketMetricQuality(
+                group.Timeframe,
+                group.Rows,
+                Math.Max(0, group.Rows - distinct),
+                group.Latest,
+                group.Latest is long latest ? Math.Max(0, (nowMs - latest) / 1000) : null,
+                group.MissingFunding,
+                group.MissingOi,
+                group.MissingLs,
+                group.MissingLiquidations,
+                new DerivativeLineageQuality(
+                    group.Complete,
+                    group.MissingEvent,
+                    group.MissingReceived,
+                    group.MissingAvailable,
+                    group.MissingSource,
+                    group.MissingMarketType,
+                    group.Reconstructed,
+                    group.AsOfEligible)));
+        }
+
+        return new DerivativesAudit(
+            futuresQuality,
+            marketQualities,
+            "SourceEventTimeMs is upstream event time; ReceivedAtUtc/AvailableTimeMs are local observation lineage. Legacy rows keep null receipt/availability, are marked reconstructed, and are excluded from point-in-time joins until genuinely observed; timestamps are never inferred from event time.");
+    }
+
     private static void AddParameter(DbCommand command, string name, object value)
     {
         var parameter = command.CreateParameter();
@@ -409,6 +603,15 @@ public class DataAuditService : IDataAuditService
         public long? MinOpenTimeMs { get; set; }
         public long? MaxOpenTimeMs { get; set; }
     }
+    private sealed class PostgresQualityRow
+    {
+        public string Timeframe { get; set; } = "";
+        public long FinalizedRows { get; set; }
+        public long FormingRows { get; set; }
+        public long InvalidRows { get; set; }
+        public long DuplicateRows { get; set; }
+        public long? LatestFinalizedCloseTimeMs { get; set; }
+    }
 
     private const string PostgresKlineAggregateSql = """
         WITH config("Timeframe", interval_ms) AS (
@@ -430,18 +633,32 @@ public class DataAuditService : IDataAuditService
         FROM config c
         """;
     private const string PostgresDerivedAggregateSql = """
-        SELECT 'CandlePatterns' AS "Metric", "Timeframe", count(*)::bigint AS "Count", NULL::bigint AS "MinOpenTimeMs", NULL::bigint AS "MaxOpenTimeMs"
+        SELECT 'CandlePatterns' AS "Metric", "Timeframe", count(*)::bigint AS "Count", min("OpenTimeMs")::bigint AS "MinOpenTimeMs", max("OpenTimeMs")::bigint AS "MaxOpenTimeMs"
         FROM "CandlePatterns" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
-        UNION ALL SELECT 'TechnicalIndicators', "Timeframe", count(*)::bigint, NULL::bigint, NULL::bigint
+        UNION ALL SELECT 'TechnicalIndicators', "Timeframe", count(*)::bigint, min("OpenTimeMs")::bigint, max("OpenTimeMs")::bigint
         FROM "TechnicalIndicators" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
-        UNION ALL SELECT 'WindowVectors', "Timeframe", count(*)::bigint, NULL::bigint, NULL::bigint
+        UNION ALL SELECT 'WindowVectors', "Timeframe", count(*)::bigint, min("EndTimeMs")::bigint, max("EndTimeMs")::bigint
         FROM "WindowVectors" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
-        UNION ALL SELECT 'MlFeatureStores', "Timeframe", count(*)::bigint, NULL::bigint, NULL::bigint
+        UNION ALL SELECT 'MlFeatureStores', "Timeframe", count(*)::bigint, min("OpenTimeMs")::bigint, max("OpenTimeMs")::bigint
         FROM "MlFeatureStores" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
-        UNION ALL SELECT 'PriceTargets', "Timeframe", count(*)::bigint, NULL::bigint, NULL::bigint
+        UNION ALL SELECT 'PriceTargets', "Timeframe", count(*)::bigint, min("OpenTimeMs")::bigint, max("OpenTimeMs")::bigint
         FROM "PriceTargets" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
-        UNION ALL SELECT 'WindowClassificationDatasets', "Timeframe", count(*)::bigint, NULL::bigint, NULL::bigint
+        UNION ALL SELECT 'WindowClassificationDatasets', "Timeframe", count(*)::bigint, min("WindowEndMs")::bigint, max("WindowEndMs")::bigint
         FROM "WindowClassificationDatasets" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
+        """;
+    private const string PostgresKlineQualitySql = """
+        SELECT "Timeframe",
+               count(*) FILTER (WHERE "CloseTimeMs" <= @nowMs)::bigint AS finalized_rows,
+               count(*) FILTER (WHERE "CloseTimeMs" > @nowMs)::bigint AS forming_rows,
+               count(*) FILTER (WHERE "CloseTimeMs" < "OpenTimeMs" OR "Open" <= 0 OR "High" <= 0
+                    OR "Low" <= 0 OR "Close" <= 0 OR "High" < "Low"
+                    OR "High" < GREATEST("Open", "Close") OR "Low" > LEAST("Open", "Close")
+                    OR "Volume" < 0 OR "QuoteVolume" < 0 OR "TradeCount" < 0)::bigint AS invalid_rows,
+               (count(*) - count(DISTINCT "OpenTimeMs"))::bigint AS duplicate_rows,
+               max("CloseTimeMs") FILTER (WHERE "CloseTimeMs" <= @nowMs)::bigint AS latest_finalized_close
+        FROM "Klines"
+        WHERE "Symbol" = @symbol AND "OpenTimeMs" >= @startMs AND "OpenTimeMs" <= @nowMs
+        GROUP BY "Timeframe"
         """;
     private sealed record PostgresTimeframeSnapshot(
         string Timeframe,
@@ -454,6 +671,9 @@ public class DataAuditService : IDataAuditService
         IReadOnlyList<KlineGapState> GapStates,
         NewsAudit News,
         RulesAlertsAudit Rules);
+    private sealed record PostgresQualityBundle(
+        IReadOnlyList<PostgresQualityRow> Klines,
+        DerivativesAudit Derivatives);
     private sealed record TransientGapSnapshot(IReadOnlyList<KlineGapState> States, long RangeCount);
 
     private async Task<TimeframeAudit> AuditTimeframeAsync(
@@ -572,6 +792,45 @@ public class DataAuditService : IDataAuditService
             ? Math.Max(0, (long)(DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(maxOpenTime.Value)).TotalSeconds)
             : null;
 
+        var qualityRows = await klineQuery.AsNoTracking()
+            .Select(k => new { k.OpenTimeMs, k.CloseTimeMs, k.Open, k.High, k.Low, k.Close, k.Volume, k.QuoteVolume, k.TradeCount })
+            .ToListAsync(cancellationToken);
+        var finalized = qualityRows.Where(x => x.CloseTimeMs <= nowMs).ToArray();
+        var latestFinalizedClose = finalized.Length == 0 ? (long?)null : finalized.Max(x => x.CloseTimeMs);
+        var invalidRows = qualityRows.LongCount(x => x.CloseTimeMs < x.OpenTimeMs || x.Open <= 0 || x.High <= 0 ||
+            x.Low <= 0 || x.Close <= 0 || x.High < x.Low || x.High < Math.Max(x.Open, x.Close) ||
+            x.Low > Math.Min(x.Open, x.Close) || x.Volume < 0 || x.QuoteVolume < 0 || x.TradeCount < 0);
+        var duplicateRows = qualityRows.LongCount() - qualityRows.Select(x => x.OpenTimeMs).Distinct().LongCount();
+        var quality = new KlineQualityAudit(
+            finalized.LongLength,
+            qualityRows.LongCount(x => x.CloseTimeMs > nowMs),
+            invalidRows,
+            duplicateRows,
+            latestFinalizedClose,
+            latestFinalizedClose.HasValue ? Math.Max(0, (nowMs - latestFinalizedClose.Value) / 1000) : null,
+            !latestFinalizedClose.HasValue || nowMs - latestFinalizedClose.Value > intervalMs * 2 + 300_000);
+
+        IReadOnlyList<DerivedTableAudit>? derived = null;
+        if (includeInventory)
+        {
+            var derivedRows = new List<PostgresAggregateRow>
+            {
+                new() { Metric = "CandlePatterns", Timeframe = timeframe, Count = candlePatternsCount ?? 0,
+                    MaxOpenTimeMs = await db.CandlePatterns.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.OpenTimeMs, cancellationToken) },
+                new() { Metric = "TechnicalIndicators", Timeframe = timeframe, Count = technicalIndicatorsCount ?? 0,
+                    MaxOpenTimeMs = await db.TechnicalIndicators.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.OpenTimeMs, cancellationToken) },
+                new() { Metric = "WindowVectors", Timeframe = timeframe, Count = windowVectorsCount ?? 0,
+                    MaxOpenTimeMs = await db.WindowVectors.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.EndTimeMs, cancellationToken) },
+                new() { Metric = "MlFeatureStores", Timeframe = timeframe, Count = mlFeatureStoresCount ?? 0,
+                    MaxOpenTimeMs = await db.MlFeatureStores.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.OpenTimeMs, cancellationToken) },
+                new() { Metric = "PriceTargets", Timeframe = timeframe, Count = priceTargetsCount ?? 0,
+                    MaxOpenTimeMs = await db.PriceTargets.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.OpenTimeMs, cancellationToken) },
+                new() { Metric = "WindowClassificationDatasets", Timeframe = timeframe, Count = windowClassificationDatasetsCount ?? 0,
+                    MaxOpenTimeMs = await db.WindowClassificationDatasets.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.WindowEndMs, cancellationToken) }
+            };
+            derived = BuildDerivedAudits(timeframe, quality.FinalizedRows, derivedRows, nowMs);
+        }
+
         return new TimeframeAudit(
             timeframe,
             klineCount,
@@ -592,7 +851,10 @@ public class DataAuditService : IDataAuditService
             mlFeatureStoresCount,
             priceTargetsCount,
             windowClassificationDatasetsCount,
-            gaps);
+            gaps,
+            true,
+            quality,
+            derived);
     }
 
     private static async Task<NewsAudit> AuditNewsAsync(AppDbContext db, CancellationToken cancellationToken)

@@ -50,6 +50,9 @@ public class CandleSequenceRuleSignalDto
     public string Message { get; set; } = string.Empty;
     public decimal TriggerClose { get; set; }
     public long TriggerTimeMs { get; set; }
+    public long AvailableTimeMs { get; set; }
+    public string EvidenceKind { get; set; } = "observed-event";
+    public string Provenance { get; set; } = "candle-sequence-rule";
     public int Priority { get; set; }
 }
 

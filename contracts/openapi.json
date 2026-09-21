@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-09-archetype-fixed-horizon"
+    "version": "2026-09-research-evidence-v2"
   },
   "paths": {
     "/api/ai-chat/capabilities": {
@@ -1806,6 +1806,173 @@
         }
       }
     },
+    "/api/historical-analogs": {
+      "get": {
+        "tags": [
+          "HistoricalAnalogs"
+        ],
+        "parameters": [
+          {
+            "name": "Symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WindowSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "NeighborCount",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Page",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "PageSize",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "LookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "RoundTripCostPct",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "AtrMultiplier",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "MinimumMeanSimilarity",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "AsOfTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoricalAnalogResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoricalAnalogResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoricalAnalogResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Indexer/rebuild-derived": {
+      "post": {
+        "tags": [
+          "Indexer"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
     "/api/Indexer/technical-indicators": {
       "post": {
         "tags": [
@@ -2323,6 +2490,15 @@
           },
           {
             "name": "fillGaps",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "reconcileExisting",
             "in": "query",
             "style": "form",
             "schema": {
@@ -3778,6 +3954,35 @@
         }
       }
     },
+    "/api/research/specification": {
+      "get": {
+        "tags": [
+          "Research"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchSpecificationDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchSpecificationDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchSpecificationDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/discovery/run": {
       "post": {
         "tags": [
@@ -3839,7 +4044,7 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "default": 5
+              "default": 30
             }
           },
           {
@@ -3849,7 +4054,47 @@
             "schema": {
               "type": "number",
               "format": "double",
-              "default": 0.1
+              "default": 0
+            }
+          },
+          {
+            "name": "candidateBudget",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 128
+            }
+          },
+          {
+            "name": "selectionFraction",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 0.7
+            }
+          },
+          {
+            "name": "labelDeadZonePct",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 0.3
+            }
+          },
+          {
+            "name": "roundTripCostBps",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 30
             }
           },
           {
@@ -4711,6 +4956,36 @@
         },
         "additionalProperties": false
       },
+      "ArchetypeOccurrenceOhlcDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "open": {
+            "type": "number",
+            "format": "double"
+          },
+          "high": {
+            "type": "number",
+            "format": "double"
+          },
+          "low": {
+            "type": "number",
+            "format": "double"
+          },
+          "close": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "ArchetypeTransitionDto": {
         "type": "object",
         "properties": {
@@ -4814,6 +5089,9 @@
             "nullable": true
           },
           "fillGaps": {
+            "type": "boolean"
+          },
+          "reconcileExisting": {
             "type": "boolean"
           }
         },
@@ -5035,6 +5313,99 @@
           },
           "rulesAlerts": {
             "$ref": "#/components/schemas/RulesAlertsAudit"
+          },
+          "derivatives": {
+            "$ref": "#/components/schemas/DerivativesAudit"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DerivativeLineageQuality": {
+        "type": "object",
+        "properties": {
+          "completeRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingSourceEventTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingReceivedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingAvailableAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingSource": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingMarketType": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reconstructedRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "asOfEligibleRows": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DerivativesAudit": {
+        "type": "object",
+        "properties": {
+          "futuresMetrics": {
+            "$ref": "#/components/schemas/FuturesMetricQuality"
+          },
+          "marketMetrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketMetricQuality"
+            },
+            "nullable": true
+          },
+          "availabilityCaveat": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DerivedTableAudit": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "nullable": true
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestSourceTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "latestAgeSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "expectedOnePerFinalizedBar": {
+            "type": "boolean"
+          },
+          "missingRows": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -5182,6 +5553,91 @@
         },
         "additionalProperties": false
       },
+      "ExecutionCostSpecification": {
+        "type": "object",
+        "properties": {
+          "instrument": {
+            "type": "string",
+            "nullable": true
+          },
+          "feeBpsPerSide": {
+            "type": "number",
+            "format": "double"
+          },
+          "slippageBpsPerSide": {
+            "type": "number",
+            "format": "double"
+          },
+          "oneWayCostBps": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "roundTripCostBps": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "roundTripCostPct": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "roundTripCostFraction": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FuturesMetricQuality": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "duplicateOpenTimeRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "latestAgeSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "missingOpenInterest": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingLongShortRatio": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingTakerRatio": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingFundingRate": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingMarkPrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/DerivativeLineageQuality"
+          }
+        },
+        "additionalProperties": false
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -5205,6 +5661,483 @@
             "items": {
               "$ref": "#/components/schemas/KlineFreshness"
             },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogContextDto": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "nullable": true
+          },
+          "availableFeatureCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogEvidenceDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "artifactManifestSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluatedQueries": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogFreshnessDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "asOfTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "ageSeconds": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogIntervalDto": {
+        "type": "object",
+        "properties": {
+          "lower": {
+            "type": "number",
+            "format": "double"
+          },
+          "upper": {
+            "type": "number",
+            "format": "double"
+          },
+          "level": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogItemDto": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "windowId": {
+            "type": "string",
+            "nullable": true
+          },
+          "startTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "futureEndTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "shapeSimilarity": {
+            "type": "number",
+            "format": "double"
+          },
+          "contextSimilarity": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "contextComparableFeatureCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "atr14Pct": {
+            "type": "number",
+            "format": "double"
+          },
+          "thresholdPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "ohlc": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchetypeOccurrenceOhlcDto"
+            },
+            "nullable": true
+          },
+          "futureOhlc": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchetypeOccurrenceOhlcDto"
+            },
+            "nullable": true
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoricalAnalogOutcomeDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "barsAhead": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "targetClose": {
+            "type": "number",
+            "format": "double"
+          },
+          "returnPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "thresholdPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "direction": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogQueryDto": {
+        "type": "object",
+        "properties": {
+          "startTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "availableAtTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ohlc": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchetypeOccurrenceOhlcDto"
+            },
+            "nullable": true
+          },
+          "context": {
+            "$ref": "#/components/schemas/HistoricalAnalogContextDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogResponse": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "method": {
+            "type": "string",
+            "nullable": true
+          },
+          "methodVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "rankingMethod": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluationMethod": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "intervalMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "windowSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lookbackBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "neighborCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "exclusionBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "roundTripCostPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "atrMultiplier": {
+            "type": "number",
+            "format": "double"
+          },
+          "minimumMeanSimilarity": {
+            "type": "number",
+            "format": "double"
+          },
+          "meanSelectedSimilarity": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "decisionTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "signalBarState": {
+            "type": "string",
+            "nullable": true
+          },
+          "rawCandidateCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "independentCandidateCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "effectiveSampleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "capabilityState": {
+            "type": "string",
+            "nullable": true
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/HistoricalAnalogFreshnessDto"
+          },
+          "baselineName": {
+            "type": "string",
+            "nullable": true
+          },
+          "baselineScore": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lift": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "liftUnit": {
+            "type": "string",
+            "nullable": true
+          },
+          "liftConfidenceInterval": {
+            "$ref": "#/components/schemas/HistoricalAnalogIntervalDto"
+          },
+          "coverage": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "abstentionRate": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "abstained": {
+            "type": "boolean"
+          },
+          "qualityGatePassed": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "abstentionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/HistoricalAnalogEvidenceDto"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/HistoricalAnalogValidationDto"
+          },
+          "query": {
+            "$ref": "#/components/schemas/HistoricalAnalogQueryDto"
+          },
+          "summaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoricalAnalogSummaryDto"
+            },
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoricalAnalogItemDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogSummaryDto": {
+        "type": "object",
+        "properties": {
+          "barsAhead": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalSamples": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "upCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "downCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "neutralCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "upRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "downRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "neutralRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgReturnPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "medianReturnPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "dominantDirection": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "baselineName": {
+            "type": "string",
+            "nullable": true
+          },
+          "baselineScore": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lift": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "liftUnit": {
+            "type": "string",
+            "nullable": true
+          },
+          "liftConfidenceInterval": {
+            "$ref": "#/components/schemas/HistoricalAnalogIntervalDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoricalAnalogValidationDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "isOutOfSampleValidated": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -5291,6 +6224,88 @@
           },
           "active": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "KlineQualityAudit": {
+        "type": "object",
+        "properties": {
+          "finalizedRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "formingRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalidOhlcvRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "duplicateOpenTimeRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestFinalizedCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "latestFinalizedAgeSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "isStale": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MarketMetricQuality": {
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "duplicateOpenTimeRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "latestAgeSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "missingFundingRate": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingOpenInterest": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingLongShortRatio": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingLiquidations": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/DerivativeLineageQuality"
           }
         },
         "additionalProperties": false
@@ -5637,6 +6652,66 @@
         },
         "additionalProperties": false
       },
+      "ResearchSpecificationDto": {
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "venue": {
+            "type": "string",
+            "nullable": true
+          },
+          "marketType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceTimeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "horizonBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "horizonElapsed": {
+            "type": "string",
+            "nullable": true
+          },
+          "decisionTimeRule": {
+            "type": "string",
+            "nullable": true
+          },
+          "outcomeDefinition": {
+            "type": "string",
+            "nullable": true
+          },
+          "directionLabelDeadZonePct": {
+            "type": "number",
+            "format": "double"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/ExecutionCostSpecification"
+          },
+          "evidenceMaturity": {
+            "type": "string",
+            "nullable": true
+          },
+          "promotionEligible": {
+            "type": "boolean"
+          },
+          "promotionReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RulesAlertsAudit": {
         "type": "object",
         "properties": {
@@ -5866,6 +6941,16 @@
           },
           "active": {
             "type": "boolean"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/KlineQualityAudit"
+          },
+          "derivedTables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DerivedTableAudit"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false

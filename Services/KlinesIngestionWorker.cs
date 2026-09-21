@@ -546,19 +546,70 @@ public class KlinesIngestionWorker : BackgroundService
         if (batch.Count == 0)
             return 0;
 
-        var openTimes = batch.Select(x => x.OpenTimeMs).ToList();
-        var existing = await db.Klines
-            .AsNoTracking()
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && openTimes.Contains(k.OpenTimeMs))
-            .Select(k => k.OpenTimeMs)
-            .ToListAsync(cancellationToken);
-        var existingSet = new HashSet<long>(existing);
-
-        var toAdd = new List<Kline>(batch.Count);
-        foreach (var k in batch)
+        var finalizedAtMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var formingOpenTimes = batch
+            .Where(x => x.CloseTimeMs > finalizedAtMs)
+            .Select(x => x.OpenTimeMs)
+            .Distinct()
+            .ToArray();
+        if (formingOpenTimes.Length > 0)
         {
-            if (existingSet.Contains(k.OpenTimeMs))
+            if (db.Database.IsRelational())
+            {
+                await db.Klines
+                    .Where(k => k.Symbol == symbol && k.Timeframe == timeframe
+                        && formingOpenTimes.Contains(k.OpenTimeMs) && k.CloseTimeMs > finalizedAtMs)
+                    .ExecuteDeleteAsync(cancellationToken);
+            }
+            else
+            {
+                var staleForming = await db.Klines
+                    .Where(k => k.Symbol == symbol && k.Timeframe == timeframe
+                        && formingOpenTimes.Contains(k.OpenTimeMs) && k.CloseTimeMs > finalizedAtMs)
+                    .ToListAsync(cancellationToken);
+                if (staleForming.Count > 0)
+                {
+                    db.Klines.RemoveRange(staleForming);
+                    await db.SaveChangesAsync(cancellationToken);
+                    db.ChangeTracker.Clear();
+                }
+            }
+            _cache?.Invalidate(symbol);
+        }
+        var finalizedBatch = batch
+            .Where(x => x.CloseTimeMs <= finalizedAtMs)
+            .GroupBy(x => x.OpenTimeMs)
+            .Select(x => x.Last())
+            .ToList();
+        if (finalizedBatch.Count == 0)
+            return 0;
+
+        var openTimes = finalizedBatch.Select(x => x.OpenTimeMs).ToList();
+        var existing = await db.Klines
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && openTimes.Contains(k.OpenTimeMs))
+            .ToListAsync(cancellationToken);
+        var existingByOpenTime = existing.ToDictionary(k => k.OpenTimeMs);
+
+        var toAdd = new List<Kline>(finalizedBatch.Count);
+        foreach (var k in finalizedBatch)
+        {
+            if (existingByOpenTime.TryGetValue(k.OpenTimeMs, out var stored))
+            {
+                // Binance REST can return the still-forming last candle. Older
+                // versions inserted it once and then skipped it forever. A
+                // finalized response is authoritative and repairs that row.
+                stored.CloseTimeMs = k.CloseTimeMs;
+                stored.Open = k.Open;
+                stored.High = k.High;
+                stored.Low = k.Low;
+                stored.Close = k.Close;
+                stored.Volume = k.Volume;
+                stored.QuoteVolume = k.QuoteVolume;
+                stored.TradeCount = k.TradeCount;
+                stored.TakerBuyVolume = k.TakerBuyVolume;
+                stored.TakerBuyQuoteVolume = k.TakerBuyQuoteVolume;
                 continue;
+            }
 
             toAdd.Add(new Kline
             {
@@ -578,7 +629,7 @@ public class KlinesIngestionWorker : BackgroundService
             });
         }
 
-        if (toAdd.Count == 0)
+        if (toAdd.Count == 0 && !db.ChangeTracker.HasChanges())
             return 0;
 
         db.Klines.AddRange(toAdd);

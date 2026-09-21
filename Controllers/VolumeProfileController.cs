@@ -58,10 +58,19 @@ public class VolumeProfileController : ControllerBase
             result.Id,
             result.Symbol,
             result.Timeframe,
+            capabilityState = "descriptive",
+            estimatorKind = "ohlcv_uniform_range_approximation_v1",
+            isApproximation = true,
+            limitation = "Candle volume is spread uniformly across each candle's high-low bins; this is not observed traded-at-price volume.",
             result.PocPrice,
             result.VahPrice,
             result.ValPrice,
             bins,
+            inputVolume = result.InputVolume,
+            allocatedVolume = bins.Sum(x => x.Volume),
+            volumeConservationErrorPct = result.InputVolume is > 0
+                ? Math.Abs(bins.Sum(x => x.Volume) - result.InputVolume.Value) / result.InputVolume.Value * 100
+                : (double?)null,
             result.CreatedAtUtc
         };
     }

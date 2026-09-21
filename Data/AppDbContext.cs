@@ -17,6 +17,8 @@ public class AppDbContext : DbContext
     public DbSet<CandlePattern> CandlePatterns => Set<CandlePattern>();
     public DbSet<CandleSequenceRule> CandleSequenceRules => Set<CandleSequenceRule>();
     public DbSet<CandleSequenceSignal> CandleSequenceSignals => Set<CandleSequenceSignal>();
+    public DbSet<RuleDiscoveryRun> RuleDiscoveryRuns => Set<RuleDiscoveryRun>();
+    public DbSet<RuleDiscoveryTrial> RuleDiscoveryTrials => Set<RuleDiscoveryTrial>();
     public DbSet<CandleVolumeStats> CandleVolumeStats => Set<CandleVolumeStats>();
     public DbSet<Kline> Klines => Set<Kline>();
     public DbSet<TechnicalIndicator> TechnicalIndicators => Set<TechnicalIndicator>();
@@ -85,6 +87,10 @@ public class AppDbContext : DbContext
             e.Property(x => x.Title).HasMaxLength(512);
             e.Property(x => x.Message).HasMaxLength(4000);
             e.Property(x => x.SourceKey).HasMaxLength(512);
+            e.Property(x => x.EvidenceKind).HasMaxLength(32);
+            e.Property(x => x.Provenance).HasMaxLength(256);
+            e.Property(x => x.DeliveryStatus).HasMaxLength(32);
+            e.Property(x => x.DeliveryError).HasMaxLength(2000);
         });
 
         modelBuilder.Entity<PriceAlertSettings>(e =>
@@ -128,7 +134,10 @@ public class AppDbContext : DbContext
             e.Property(x => x.Symbol).HasMaxLength(32);
             e.Property(x => x.Timeframe).HasMaxLength(16);
             e.Property(x => x.Action).HasMaxLength(32);
+            e.Property(x => x.CapabilityState).HasMaxLength(32);
+            e.Property(x => x.MethodVersion).HasMaxLength(64);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.IsEnabled });
+            e.HasIndex(x => x.DiscoveryRunId);
         });
 
         modelBuilder.Entity<CandleSequenceSignal>(e =>
@@ -136,8 +145,30 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Symbol).HasMaxLength(32);
             e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.EvidenceKind).HasMaxLength(32);
+            e.Property(x => x.Provenance).HasMaxLength(256);
             e.HasIndex(x => new { x.RuleId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.RuleId, x.Symbol, x.Timeframe, x.TriggerTimeMs }).IsUnique();
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<RuleDiscoveryRun>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.MethodVersion).HasMaxLength(64);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<RuleDiscoveryTrial>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.CandidateKey).HasMaxLength(1000);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.RejectedReason).HasMaxLength(1000);
+            e.HasIndex(x => new { x.RunId, x.TrialNumber }).IsUnique();
+            e.HasOne(x => x.Run).WithMany().HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CandleVolumeStats>(e =>
@@ -191,7 +222,11 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Symbol).HasMaxLength(32);
             e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Source).HasMaxLength(128);
+            e.Property(x => x.MarketType).HasMaxLength(32);
+            e.Property(x => x.IsReconstructed).HasDefaultValue(true);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.OpenTimeMs }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.AvailableTimeMs });
         });
 
         modelBuilder.Entity<MlFeatureStore>(e =>
@@ -294,7 +329,11 @@ public class AppDbContext : DbContext
         {
             e.HasKey(x => x.Id);
             e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Source).HasMaxLength(128);
+            e.Property(x => x.MarketType).HasMaxLength(32);
+            e.Property(x => x.IsReconstructed).HasDefaultValue(true);
             e.HasIndex(x => new { x.Symbol, x.OpenTimeMs }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.AvailableTimeMs });
             e.ToTable("FuturesMetrics");
         });
 
@@ -378,7 +417,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<RegimeTransition>(e =>
         {
             e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TransitionTimeMs });
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TransitionTimeMs }).IsUnique();
         });
 
         modelBuilder.Entity<ConfluenceSnapshot>(e =>
@@ -396,7 +435,12 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<SmartMoneyStructure>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.CalculationVersion).HasMaxLength(64);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.TimeMs });
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.AvailableTimeMs });
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.EventType, x.OriginTimeMs, x.AvailableTimeMs, x.CalculationVersion })
+                .IsUnique()
+                .HasFilter("\"CalculationVersion\" = 'smc-causal-v2'");
         });
         modelBuilder.Entity<SentimentSnapshot>(e =>
         {

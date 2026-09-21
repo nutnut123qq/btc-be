@@ -5,6 +5,7 @@ namespace Backend.Services;
 
 public class SmartMoneyService : ISmartMoneyService
 {
+    internal const string CalculationVersion = "smc-causal-v2";
     private readonly AppDbContext _db;
     private readonly ProductionTimeframePolicy _timeframePolicy;
 
@@ -14,212 +15,214 @@ public class SmartMoneyService : ISmartMoneyService
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     }
 
-    public async Task<List<SmartMoneyStructure>> GetSmartMoneyStructuresAsync(string symbol, string timeframe, int lookbackBars, CancellationToken ct = default)
+    public async Task<List<SmartMoneyStructure>> GetSmartMoneyStructuresAsync(
+        string symbol,
+        string timeframe,
+        int lookbackBars,
+        CancellationToken ct = default)
     {
         timeframe = _timeframePolicy.EnsureActive(timeframe);
-        var klines = await _db.Klines
-            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe)
+        lookbackBars = Math.Clamp(lookbackBars, 5, 10_000);
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var klines = await _db.Klines.AsNoTracking()
+            .Where(k => k.Symbol == symbol && k.Timeframe == timeframe && k.CloseTimeMs <= nowMs)
             .OrderByDescending(k => k.OpenTimeMs)
             .Take(lookbackBars)
             .ToListAsync(ct);
 
-        if (klines.Count < 5) return new List<SmartMoneyStructure>();
+        if (klines.Count < 5) return [];
 
         var orderedKlines = klines.OrderBy(k => k.OpenTimeMs).ToList();
+        var structures = DetectStructures(orderedKlines, symbol, timeframe);
+        await PersistIdempotentlyAsync(structures, symbol, timeframe, ct);
+        return structures;
+    }
+
+    internal static List<SmartMoneyStructure> DetectStructures(
+        IReadOnlyList<Kline> orderedKlines,
+        string symbol,
+        string timeframe)
+    {
         var structures = new List<SmartMoneyStructure>();
-        
-        var swingHighs = new List<(int Index, double Price, long TimeMs)>();
-        var swingLows = new List<(int Index, double Price, long TimeMs)>();
+        if (orderedKlines.Count < 3) return structures;
 
-        // Detect Swing Highs/Lows (5-bar pivot: 2 before, 2 after)
-        for (int i = 2; i < orderedKlines.Count - 2; i++)
+        Pivot? activeHigh = null;
+        Pivot? activeLow = null;
+        var currentTrend = 0;
+
+        for (var i = 0; i < orderedKlines.Count; i++)
         {
-            var k = orderedKlines[i];
-            bool isSwingHigh = k.High > orderedKlines[i - 1].High &&
-                               k.High > orderedKlines[i - 2].High &&
-                               k.High > orderedKlines[i + 1].High &&
-                               k.High > orderedKlines[i + 2].High;
+            var current = orderedKlines[i];
+            var availableAt = CloseOrOpenTime(current);
 
-            bool isSwingLow = k.Low < orderedKlines[i - 1].Low &&
-                              k.Low < orderedKlines[i - 2].Low &&
-                              k.Low < orderedKlines[i + 1].Low &&
-                              k.Low < orderedKlines[i + 2].Low;
-
-            if (isSwingHigh)
+            // A five-bar pivot at i-2 becomes knowable only when bar i is finalized.
+            if (i >= 4)
             {
-                swingHighs.Add((i, (double)k.High, k.OpenTimeMs));
-                structures.Add(new SmartMoneyStructure
+                var pivotIndex = i - 2;
+                var pivot = orderedKlines[pivotIndex];
+                if (IsSwingHigh(orderedKlines, pivotIndex))
                 {
-                    Symbol = symbol,
-                    Timeframe = timeframe,
-                    TimeMs = k.OpenTimeMs,
-                    EventType = "SWING_HIGH",
-                    Price = (double)k.High,
-                    Description = "Swing High"
-                });
+                    activeHigh = new Pivot((double)pivot.High, pivot.OpenTimeMs);
+                    structures.Add(CreateEvent(symbol, timeframe, "SWING_HIGH", pivot.OpenTimeMs,
+                        availableAt, (double)pivot.High, "Swing High (confirmed after two bars)"));
+                }
+
+                if (IsSwingLow(orderedKlines, pivotIndex))
+                {
+                    activeLow = new Pivot((double)pivot.Low, pivot.OpenTimeMs);
+                    structures.Add(CreateEvent(symbol, timeframe, "SWING_LOW", pivot.OpenTimeMs,
+                        availableAt, (double)pivot.Low, "Swing Low (confirmed after two bars)"));
+                }
             }
 
-            if (isSwingLow)
+            if (activeHigh is not null && (double)current.Close > activeHigh.Price)
             {
-                swingLows.Add((i, (double)k.Low, k.OpenTimeMs));
-                structures.Add(new SmartMoneyStructure
+                var eventType = currentTrend == 1 ? "BOS_BULL" : "CHOCH_BULL";
+                structures.Add(CreateEvent(symbol, timeframe, eventType, current.OpenTimeMs, availableAt,
+                    (double)current.Close, eventType == "BOS_BULL" ? "Bullish BOS" : "Bullish CHOCH",
+                    activeHigh.OriginTimeMs));
+                activeHigh = null;
+                currentTrend = 1;
+            }
+
+            if (activeLow is not null && (double)current.Close < activeLow.Price)
+            {
+                var eventType = currentTrend == -1 ? "BOS_BEAR" : "CHOCH_BEAR";
+                structures.Add(CreateEvent(symbol, timeframe, eventType, current.OpenTimeMs, availableAt,
+                    (double)current.Close, eventType == "BOS_BEAR" ? "Bearish BOS" : "Bearish CHOCH",
+                    activeLow.OriginTimeMs));
+                activeLow = null;
+                currentTrend = -1;
+            }
+
+            // A three-candle FVG is available only after its final defining candle closes.
+            if (i >= 2)
+            {
+                var first = orderedKlines[i - 2];
+                var middle = orderedKlines[i - 1];
+                if (first.High < current.Low)
                 {
-                    Symbol = symbol,
-                    Timeframe = timeframe,
-                    TimeMs = k.OpenTimeMs,
-                    EventType = "SWING_LOW",
-                    Price = (double)k.Low,
-                    Description = "Swing Low"
-                });
+                    structures.Add(CreateFvg(symbol, timeframe, "FVG_BULL", first, middle, current, availableAt));
+                }
+                else if (first.Low > current.High)
+                {
+                    structures.Add(CreateFvg(symbol, timeframe, "FVG_BEAR", first, middle, current, availableAt));
+                }
+            }
+
+            foreach (var fvg in structures.Where(x => !x.IsMitigated && x.AvailableTimeMs < availableAt))
+            {
+                var mitigated = fvg.EventType == "FVG_BULL"
+                    ? fvg.LowPrice.HasValue && (double)current.Low <= fvg.LowPrice.Value
+                    : fvg.EventType == "FVG_BEAR" && fvg.HighPrice.HasValue && (double)current.High >= fvg.HighPrice.Value;
+                if (!mitigated) continue;
+                fvg.IsMitigated = true;
+                fvg.MitigatedAtMs = availableAt;
             }
         }
-
-        // BOS & CHOCH logic
-        int currentTrend = 0; // 1 = Bullish, -1 = Bearish, 0 = neutral
-        double lastSwingHigh = -1;
-        double lastSwingLow = -1;
-
-        for (int i = 0; i < orderedKlines.Count; i++)
-        {
-            var k = orderedKlines[i];
-
-            // update current last swings if we pass them
-            var sh = swingHighs.Where(x => x.Index <= i).LastOrDefault();
-            if (sh.Index != 0) lastSwingHigh = sh.Price;
-
-            var sl = swingLows.Where(x => x.Index <= i).LastOrDefault();
-            if (sl.Index != 0) lastSwingLow = sl.Price;
-
-            if (lastSwingHigh > 0 && (double)k.Close > lastSwingHigh)
-            {
-                if (currentTrend == 1)
-                {
-                    // BOS Bull
-                    if (!structures.Any(s => s.EventType == "BOS_BULL" && s.TimeMs == k.OpenTimeMs))
-                    {
-                        structures.Add(new SmartMoneyStructure
-                        {
-                            Symbol = symbol, Timeframe = timeframe, TimeMs = k.OpenTimeMs,
-                            EventType = "BOS_BULL", Price = (double)k.Close, Description = "Bullish BOS"
-                        });
-                        lastSwingHigh = -1; // consume it
-                    }
-                }
-                else if (currentTrend == -1 || currentTrend == 0)
-                {
-                    // CHOCH Bull
-                    if (!structures.Any(s => s.EventType == "CHOCH_BULL" && s.TimeMs == k.OpenTimeMs))
-                    {
-                        structures.Add(new SmartMoneyStructure
-                        {
-                            Symbol = symbol, Timeframe = timeframe, TimeMs = k.OpenTimeMs,
-                            EventType = "CHOCH_BULL", Price = (double)k.Close, Description = "Bullish CHOCH"
-                        });
-                        currentTrend = 1;
-                        lastSwingHigh = -1;
-                    }
-                }
-            }
-
-            if (lastSwingLow > 0 && (double)k.Close < lastSwingLow)
-            {
-                if (currentTrend == -1)
-                {
-                    // BOS Bear
-                    if (!structures.Any(s => s.EventType == "BOS_BEAR" && s.TimeMs == k.OpenTimeMs))
-                    {
-                        structures.Add(new SmartMoneyStructure
-                        {
-                            Symbol = symbol, Timeframe = timeframe, TimeMs = k.OpenTimeMs,
-                            EventType = "BOS_BEAR", Price = (double)k.Close, Description = "Bearish BOS"
-                        });
-                        lastSwingLow = -1; // consume it
-                    }
-                }
-                else if (currentTrend == 1 || currentTrend == 0)
-                {
-                    // CHOCH Bear
-                    if (!structures.Any(s => s.EventType == "CHOCH_BEAR" && s.TimeMs == k.OpenTimeMs))
-                    {
-                        structures.Add(new SmartMoneyStructure
-                        {
-                            Symbol = symbol, Timeframe = timeframe, TimeMs = k.OpenTimeMs,
-                            EventType = "CHOCH_BEAR", Price = (double)k.Close, Description = "Bearish CHOCH"
-                        });
-                        currentTrend = -1;
-                        lastSwingLow = -1;
-                    }
-                }
-            }
-        }
-
-        // FVG Logic
-        for (int i = 2; i < orderedKlines.Count; i++)
-        {
-            var k0 = orderedKlines[i - 2];
-            var k1 = orderedKlines[i - 1]; // the gap candle
-            var k2 = orderedKlines[i];
-
-            // Bullish FVG
-            if (k0.High < k2.Low)
-            {
-                var fvg = new SmartMoneyStructure
-                {
-                    Symbol = symbol,
-                    Timeframe = timeframe,
-                    TimeMs = k1.OpenTimeMs, // align to the gap candle
-                    EventType = "FVG_BULL",
-                    Price = (double)(k0.High + k2.Low) / 2, // mid price
-                    HighPrice = (double)k2.Low,
-                    LowPrice = (double)k0.High,
-                    IsMitigated = false,
-                    Description = "Bullish FVG"
-                };
-
-                // Check mitigation
-                for (int j = i + 1; j < orderedKlines.Count; j++)
-                {
-                    if ((double)orderedKlines[j].Low <= fvg.LowPrice)
-                    {
-                        fvg.IsMitigated = true;
-                        break;
-                    }
-                }
-                structures.Add(fvg);
-            }
-
-            // Bearish FVG
-            if (k0.Low > k2.High)
-            {
-                var fvg = new SmartMoneyStructure
-                {
-                    Symbol = symbol,
-                    Timeframe = timeframe,
-                    TimeMs = k1.OpenTimeMs,
-                    EventType = "FVG_BEAR",
-                    Price = (double)(k0.Low + k2.High) / 2,
-                    HighPrice = (double)k0.Low,
-                    LowPrice = (double)k2.High,
-                    IsMitigated = false,
-                    Description = "Bearish FVG"
-                };
-
-                // Check mitigation
-                for (int j = i + 1; j < orderedKlines.Count; j++)
-                {
-                    if ((double)orderedKlines[j].High >= fvg.HighPrice)
-                    {
-                        fvg.IsMitigated = true;
-                        break;
-                    }
-                }
-                structures.Add(fvg);
-            }
-        }
-
-        _db.SmartMoneyStructures.AddRange(structures);
-        await _db.SaveChangesAsync(ct);
 
         return structures;
     }
+
+    private async Task PersistIdempotentlyAsync(
+        IReadOnlyList<SmartMoneyStructure> calculated,
+        string symbol,
+        string timeframe,
+        CancellationToken ct)
+    {
+        if (calculated.Count == 0) return;
+        var minOrigin = calculated.Min(x => x.OriginTimeMs);
+        var existing = await _db.SmartMoneyStructures
+            .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && x.CalculationVersion == CalculationVersion && x.OriginTimeMs >= minOrigin)
+            .ToListAsync(ct);
+        var byKey = existing.ToDictionary(LogicalKey);
+
+        foreach (var item in calculated)
+        {
+            if (!byKey.TryGetValue(LogicalKey(item), out var stored))
+            {
+                _db.SmartMoneyStructures.Add(item);
+                continue;
+            }
+
+            stored.Price = item.Price;
+            stored.HighPrice = item.HighPrice;
+            stored.LowPrice = item.LowPrice;
+            stored.ReferenceTimeMs = item.ReferenceTimeMs;
+            stored.IsMitigated = item.IsMitigated;
+            stored.MitigatedAtMs = item.MitigatedAtMs;
+            stored.Description = item.Description;
+            item.Id = stored.Id;
+        }
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static SmartMoneyStructure CreateFvg(
+        string symbol,
+        string timeframe,
+        string eventType,
+        Kline first,
+        Kline middle,
+        Kline current,
+        long availableAt)
+    {
+        var bullish = eventType == "FVG_BULL";
+        var highPrice = bullish ? (double)current.Low : (double)first.Low;
+        var lowPrice = bullish ? (double)first.High : (double)current.High;
+        return new SmartMoneyStructure
+        {
+            Symbol = symbol,
+            Timeframe = timeframe,
+            TimeMs = middle.OpenTimeMs,
+            OriginTimeMs = middle.OpenTimeMs,
+            AvailableTimeMs = availableAt,
+            EventType = eventType,
+            Price = (highPrice + lowPrice) / 2,
+            HighPrice = highPrice,
+            LowPrice = lowPrice,
+            Description = bullish ? "Bullish FVG" : "Bearish FVG",
+            CalculationVersion = CalculationVersion
+        };
+    }
+
+    private static string LogicalKey(SmartMoneyStructure item) =>
+        $"{item.EventType}|{item.OriginTimeMs}|{item.AvailableTimeMs}|{item.CalculationVersion}";
+
+    private static SmartMoneyStructure CreateEvent(
+        string symbol,
+        string timeframe,
+        string eventType,
+        long originTimeMs,
+        long availableTimeMs,
+        double price,
+        string description,
+        long? referenceTimeMs = null) => new()
+        {
+            Symbol = symbol,
+            Timeframe = timeframe,
+            TimeMs = originTimeMs,
+            OriginTimeMs = originTimeMs,
+            AvailableTimeMs = availableTimeMs,
+            ReferenceTimeMs = referenceTimeMs,
+            EventType = eventType,
+            Price = price,
+            Description = description,
+            CalculationVersion = CalculationVersion
+        };
+
+    private static bool IsSwingHigh(IReadOnlyList<Kline> rows, int i) =>
+        i >= 2 && i + 2 < rows.Count
+        && rows[i].High > rows[i - 1].High && rows[i].High > rows[i - 2].High
+        && rows[i].High > rows[i + 1].High && rows[i].High > rows[i + 2].High;
+
+    private static bool IsSwingLow(IReadOnlyList<Kline> rows, int i) =>
+        i >= 2 && i + 2 < rows.Count
+        && rows[i].Low < rows[i - 1].Low && rows[i].Low < rows[i - 2].Low
+        && rows[i].Low < rows[i + 1].Low && rows[i].Low < rows[i + 2].Low;
+
+    private static long CloseOrOpenTime(Kline row) => row.CloseTimeMs > 0 ? row.CloseTimeMs : row.OpenTimeMs;
+
+    private sealed record Pivot(double Price, long OriginTimeMs);
 }

@@ -51,7 +51,7 @@ public class MlDatasetBuilder : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var mlService = scope.ServiceProvider.GetRequiredService<IMlDatasetService>();
 
-        var symbols = new[] { "BTCUSDT", "ETHUSDT", "SOLUSDT" };
+        var symbols = new[] { ProductionSymbolPolicy.Symbol };
         foreach (var symbol in symbols)
         {
             foreach (var tf in _timeframes)

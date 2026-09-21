@@ -8,11 +8,13 @@ public class EnsembleBacktestService : IEnsembleBacktestService
 {
     private readonly AppDbContext _db;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
-    public EnsembleBacktestService(AppDbContext db, ProductionTimeframePolicy? timeframePolicy = null)
+    public EnsembleBacktestService(AppDbContext db, ProductionTimeframePolicy? timeframePolicy = null, ProductionSymbolPolicy? symbolPolicy = null)
     {
         _db = db;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public async Task<(BacktestRun Summary, List<BacktestTrade> Trades, List<EquityCurvePointDto> EquityCurve)> RunEnsembleBacktestAsync(
@@ -26,7 +28,7 @@ public class EnsembleBacktestService : IEnsembleBacktestService
         Dictionary<string, double>? customWeights = null,
         CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
+        symbol = _symbolPolicy.EnsureActive(symbol);
         timeframe = _timeframePolicy.EnsureActive(timeframe);
         if (initialCapital <= 0) throw new ArgumentOutOfRangeException(nameof(initialCapital));
         if (feeBps < 0) throw new ArgumentOutOfRangeException(nameof(feeBps));

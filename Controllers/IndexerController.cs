@@ -14,17 +14,89 @@ public class IndexerController : ControllerBase
 {
     private readonly TechnicalIndicatorIndexer _techIndexer;
     private readonly IMlDatasetService _mlDatasetService;
+    private readonly FullReindexService _fullReindexService;
+    private readonly MlDatasetRebuildService _mlDatasetRebuildService;
     private readonly ILogger<IndexerController> _logger;
     private readonly DataAuditCache? _auditCache;
     private readonly ProductionTimeframePolicy _timeframePolicy;
 
-    public IndexerController(TechnicalIndicatorIndexer techIndexer, IMlDatasetService mlDatasetService, ILogger<IndexerController> logger, DataAuditCache? auditCache = null, ProductionTimeframePolicy? timeframePolicy = null)
+    public IndexerController(
+        TechnicalIndicatorIndexer techIndexer,
+        IMlDatasetService mlDatasetService,
+        FullReindexService fullReindexService,
+        MlDatasetRebuildService mlDatasetRebuildService,
+        ILogger<IndexerController> logger,
+        DataAuditCache? auditCache = null,
+        ProductionTimeframePolicy? timeframePolicy = null)
     {
         _techIndexer = techIndexer;
         _mlDatasetService = mlDatasetService;
+        _fullReindexService = fullReindexService;
+        _mlDatasetRebuildService = mlDatasetRebuildService;
         _logger = logger;
         _auditCache = auditCache;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+    }
+
+    /// <summary>
+    /// Rebuild all BTC derived technical tables, then rebuild downstream ML
+    /// datasets from those corrected indicators. Raw Klines are never deleted.
+    /// A literal confirmation token prevents accidental destructive calls.
+    /// </summary>
+    [HttpPost("rebuild-derived")]
+    public async Task<IActionResult> RebuildDerived(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string? timeframe = null,
+        [FromQuery] string? confirm = null,
+        CancellationToken cancellationToken = default)
+    {
+        var timeframes = string.IsNullOrWhiteSpace(timeframe)
+            ? _timeframePolicy.Active
+            : new[] { ProductionTimeframePolicy.Canonicalize(timeframe) };
+
+        var inactive = timeframes.FirstOrDefault(tf => !_timeframePolicy.IsActive(tf));
+        if (inactive is not null)
+            return InactiveTimeframe(inactive);
+
+        const string confirmation = "REBUILD_DERIVED";
+        if (!string.Equals(confirm, confirmation, StringComparison.Ordinal))
+        {
+            return BadRequest(new
+            {
+                code = "CONFIRMATION_REQUIRED",
+                message = $"Repeat with confirm={confirmation}. Raw Klines are preserved; derived technical and ML tables for the selected BTC timeframes are rebuilt.",
+                symbol,
+                timeframes
+            });
+        }
+
+        var technical = await _fullReindexService.ReindexAsync(
+            symbol, timeframes, cancellationToken: cancellationToken);
+        var successful = technical.Results.Values
+            .Where(result => result.Status == "ok")
+            .Select(result => result.Timeframe)
+            .ToArray();
+
+        MlDatasetRebuildResult? ml = null;
+        if (successful.Length > 0)
+        {
+            ml = await _mlDatasetRebuildService.RebuildAsync(
+                symbol,
+                successful,
+                MlDatasetRebuildService.DefaultHorizons,
+                cancellationToken: cancellationToken);
+        }
+
+        _auditCache?.Invalidate(symbol);
+        var mlSucceeded = ml is not null
+            && successful.All(tf => ml.PerTimeframe.TryGetValue(tf, out var result) && result.Status == "ok");
+        return Ok(new
+        {
+            status = successful.Length == timeframes.Count && mlSucceeded ? "ok" : "partial",
+            rawKlinesPreserved = true,
+            technical,
+            ml
+        });
     }
 
     /// <summary>

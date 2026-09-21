@@ -42,7 +42,14 @@ public class VolumeProfileService : IVolumeProfileService
         foreach (var k in orderedKlines)
         {
             totalVolume += (double)k.Volume;
-            if (k.High == k.Low) continue;
+            if (k.High == k.Low)
+            {
+                // A zero-range candle still traded volume. Allocate it to the
+                // containing price bin so the approximation conserves volume.
+                var priceBin = Math.Clamp((int)(((double)k.Close - minPrice) / binSize), 0, numBins - 1);
+                bins[priceBin] += (double)k.Volume;
+                continue;
+            }
 
             int startBin = Math.Clamp((int)(((double)k.Low - minPrice) / binSize), 0, numBins - 1);
             int endBin = Math.Clamp((int)(((double)k.High - minPrice) / binSize), 0, numBins - 1);
@@ -111,6 +118,7 @@ public class VolumeProfileService : IVolumeProfileService
             VahPrice = vahPrice,
             ValPrice = valPrice,
             ProfileBinsJson = JsonSerializer.Serialize(profileBins),
+            InputVolume = totalVolume,
             CreatedAtUtc = DateTime.UtcNow
         };
 

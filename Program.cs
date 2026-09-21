@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Filters;
 using Backend.Hubs;
 using Backend.Options;
 using Backend.Services;
@@ -11,7 +12,7 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<ProductionSymbolScopeFilter>());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiInfo
 {
@@ -79,6 +80,8 @@ builder.Services.Configure<KlinesIngestionOptions>(builder.Configuration.GetSect
 builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
 builder.Services.Configure<ProductionTimeframeOptions>(builder.Configuration.GetSection(ProductionTimeframeOptions.SectionName));
 builder.Services.AddSingleton<ProductionTimeframePolicy>();
+builder.Services.AddSingleton<ProductionSymbolPolicy>();
+builder.Services.AddSingleton<ProductionSymbolScopeFilter>();
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 builder.Services.Configure<BinanceTestnetOptions>(builder.Configuration.GetSection(BinanceTestnetOptions.SectionName));
 

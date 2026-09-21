@@ -101,7 +101,9 @@ public class CandleRuleDiscoveryEngineTests
         Assert.True(bodyRule.SampleCount >= 10, $"Expected sample count >= 10 but got {bodyRule.SampleCount}");
 
         // Max drawdown phải phản ánh chuỗi cumulative theo thởi gian, không phải sorted.
-        Assert.True(bodyRule.MaxDrawdownPct >= 15.0, $"Expected max drawdown >= 15.0 but got {bodyRule.MaxDrawdownPct}");
+        // The compatibility API now reports the held-out chronological segment, whose phase starts
+        // at a different point in this repeated pattern. It must still retain peak-to-trough order.
+        Assert.True(bodyRule.MaxDrawdownPct >= 8.0, $"Expected max drawdown >= 8.0 but got {bodyRule.MaxDrawdownPct}");
     }
 
     [Fact]
@@ -118,5 +120,106 @@ public class CandleRuleDiscoveryEngineTests
             if (dd > maxDd) maxDd = dd;
         }
         Assert.Equal(18.0, maxDd);
+    }
+
+    [Fact]
+    public void Discovery_RejectsCandidateThatOnlyWorksInSelectionInterval()
+    {
+        var bars = TrendingBars(300, selectionBars: 210, selectionReturnPct: 1, evaluationReturnPct: -1);
+        var result = CandleRuleDiscoveryEngine.DiscoverWithLedger(bars, "BTCUSDT", "4h", new()
+        {
+            FutureBars = 1, CandidateBudget = 4, SelectionFraction = .70,
+            MinSelectionSamples = 10, MinEvaluationSamples = 10,
+            MinWinRate = .50, MinNetAvgReturnPct = -100, LabelDeadZonePct = .1
+        });
+
+        Assert.Equal(4, result.TrialCount);
+        Assert.Empty(result.SelectedRules);
+        Assert.Contains(result.Trials, t => t.Selection?.WinRate > .9 &&
+            t.RejectedReason?.StartsWith("held_out:win_rate", StringComparison.Ordinal) == true);
+        Assert.True(result.SelectionEndTimeMs < result.EvaluationStartTimeMs);
+    }
+
+    [Fact]
+    public void Discovery_SeparatesLabelThresholdFromDeductedExecutionCost()
+    {
+        var bars = TrendingBars(300, 210, .2, .2);
+        var result = CandleRuleDiscoveryEngine.DiscoverWithLedger(bars, "BTCUSDT", "4h", new()
+        {
+            FutureBars = 1, CandidateBudget = 1, SelectionFraction = .70,
+            MinSelectionSamples = 10, MinEvaluationSamples = 10,
+            MinWinRate = .50, MinNetAvgReturnPct = 0,
+            LabelDeadZonePct = .1, RoundTripCostBps = 30
+        });
+
+        var trial = Assert.Single(result.Trials);
+        Assert.NotNull(trial.Selection);
+        Assert.True(trial.Selection!.WinRate > .9);
+        Assert.True(trial.Selection.NetAvgReturnPct < 0);
+        Assert.StartsWith("selection:net_avg", trial.RejectedReason);
+    }
+
+    [Fact]
+    public void Discovery_HandlesOverlappingOutcomeWindowsDeterministically()
+    {
+        var bars = TrendingBars(300, 210, 1, 1);
+        var options = new CandleRuleDiscoveryEngine.DiscoveryOptions
+        {
+            FutureBars = 3, CandidateBudget = 1, SelectionFraction = .70,
+            MinSelectionSamples = 5, MinEvaluationSamples = 5,
+            MinWinRate = 0, MinNetAvgReturnPct = -100
+        };
+        var first = CandleRuleDiscoveryEngine.DiscoverWithLedger(bars, "BTCUSDT", "4h", options);
+        var second = CandleRuleDiscoveryEngine.DiscoverWithLedger(bars, "BTCUSDT", "4h", options);
+
+        var sampleCount = Assert.Single(first.Trials).Evaluation!.SampleCount;
+        Assert.InRange(sampleCount, 20, 30); // ~90 OOS bars / three-bar non-overlapping windows
+        Assert.Equal(sampleCount, Assert.Single(second.Trials).Evaluation!.SampleCount);
+    }
+
+    [Fact]
+    public void Discovery_LedgerRetainsEveryRejectedTrial()
+    {
+        var bars = Enumerable.Range(0, 300).Select(i => new KlineDto
+        {
+            OpenTimeMs = i * 14_400_000L, Open = 100, High = 100, Low = 100, Close = 100, Volume = 0
+        }).ToList();
+        var result = CandleRuleDiscoveryEngine.DiscoverWithLedger(bars, "BTCUSDT", "4h", new()
+        {
+            CandidateBudget = 12, MinSelectionSamples = 5, MinEvaluationSamples = 5
+        });
+
+        Assert.Equal(12, result.TrialCount);
+        Assert.All(result.Trials, t => Assert.Equal("rejected", t.Status));
+        Assert.All(result.Trials, t => Assert.NotNull(t.RejectedReason));
+    }
+
+    [Fact]
+    public void WilsonInterval_ContainsObservedRate_AndShrinksWithMoreEvidence()
+    {
+        var small = CandleRuleDiscoveryEngine.Wilson95(6, 10);
+        var large = CandleRuleDiscoveryEngine.Wilson95(60, 100);
+
+        Assert.InRange(.6, small.Low, small.High);
+        Assert.InRange(.6, large.Low, large.High);
+        Assert.True(large.High - large.Low < small.High - small.Low);
+    }
+
+    private static List<KlineDto> TrendingBars(int count, int selectionBars, double selectionReturnPct, double evaluationReturnPct)
+    {
+        var result = new List<KlineDto>(count);
+        decimal close = 1000;
+        for (var i = 0; i < count; i++)
+        {
+            var change = i < selectionBars ? selectionReturnPct : evaluationReturnPct;
+            close *= 1 + (decimal)change / 100;
+            result.Add(new KlineDto
+            {
+                OpenTimeMs = i * 14_400_000L,
+                CloseTimeMs = (i + 1) * 14_400_000L - 1,
+                Open = close - 1, High = close + 2, Low = close - 2, Close = close, Volume = 100
+            });
+        }
+        return result;
     }
 }

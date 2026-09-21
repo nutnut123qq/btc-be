@@ -134,6 +134,12 @@ public class EnsembleController : ControllerBase
             r.ValidityStatus,
             r.InvalidReason,
             r.ArchivedAtUtc,
+            Availability = r.FinalDirection == "Unavailable" || r.ValidityStatus == Backend.Data.ValidityStatuses.Invalid
+                ? "Unavailable"
+                : r.ValidityStatus == Backend.Data.ValidityStatuses.Legacy ? "Legacy" : "Available",
+            AvailabilityReason = r.ValidityStatus == Backend.Data.ValidityStatuses.Valid && r.FinalDirection != "Unavailable"
+                ? null
+                : r.InvalidReason ?? "This historical record is not a promoted live estimate.",
             Validated = false,
             Maturity = "Experimental",
             PromotionEligible = false,

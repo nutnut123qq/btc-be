@@ -177,15 +177,141 @@ public sealed class HistoricalAnalogServiceTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = json.RootElement;
-        Assert.Equal("2026-09-historical-analogs", root.GetProperty("contractVersion").GetString());
-        Assert.Equal("historical-analog-returns-shape-v1", root.GetProperty("method").GetString());
-        Assert.Equal("shape-similarity-desc-context-audit-only", root.GetProperty("rankingMethod").GetString());
+        Assert.Equal("2026-09-historical-analogs-v2", root.GetProperty("contractVersion").GetString());
+        Assert.Equal("historical-analog-returns-shape-v2", root.GetProperty("method").GetString());
+        Assert.Equal("returns_shape_v2_signed", root.GetProperty("methodVersion").GetString());
+        Assert.Equal("cosine-similarity-desc-point-in-time", root.GetProperty("rankingMethod").GetString());
         Assert.Equal("fixed-horizon-close-to-close-economic-threshold", root.GetProperty("evaluationMethod").GetString());
         Assert.Equal(21, root.GetProperty("exclusionBars").GetInt32());
         Assert.False(root.GetProperty("validation").GetProperty("isOutOfSampleValidated").GetBoolean());
         Assert.True(root.TryGetProperty("rawCandidateCount", out _));
         Assert.True(root.TryGetProperty("independentCandidateCount", out _));
         Assert.True(root.TryGetProperty("effectiveSampleCount", out _));
+        Assert.Equal("unavailable", root.GetProperty("evidence").GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("baselineScore").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("lift").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("liftConfidenceInterval").ValueKind);
+    }
+
+    [Fact]
+    public void ReturnsShapeV2_MatchesPythonGoldenVector_AndSeparatesDirection()
+    {
+        var bullish = DirectionalWindow([1m, 1m, 1m, 1m]);
+        var bearish = DirectionalWindow([-1m, -1m, -1m, -1m]);
+        var mixed = DirectionalWindow([1m, 1m, -1m, -1m]);
+
+        var bullishVector = HistoricalAnalogV2Representation.BuildVector(bullish, 0, 4)!;
+        var bearishVector = HistoricalAnalogV2Representation.BuildVector(bearish, 0, 4)!;
+        var mixedVector = HistoricalAnalogV2Representation.BuildVector(mixed, 0, 4)!;
+        var expectedBullish = new float[]
+        {
+            0f, 0.333333343f, 0.166666672f, 0.166666672f,
+            0.333333343f, 0.333333343f, 0.166666672f, 0.166666672f,
+            0.333333343f, 0.333333343f, 0.166666672f, 0.166666672f,
+            0.333333343f, 0.333333343f, 0.166666672f, 0.166666672f
+        };
+
+        Assert.Equal(expectedBullish.Length, bullishVector.Length);
+        for (var index = 0; index < expectedBullish.Length; index++)
+            Assert.Equal(expectedBullish[index], bullishVector[index], 6);
+
+        var bullishSimilarity = Similarity(bullishVector, bullishVector);
+        var mixedSimilarity = Similarity(bullishVector, mixedVector);
+        var bearishSimilarity = Similarity(bullishVector, bearishVector);
+        Assert.Equal(1.000000119, bullishSimilarity, 6);
+        Assert.Equal(0.111111119, mixedSimilarity, 6);
+        Assert.Equal(-0.555555582, bearishSimilarity, 6);
+        Assert.True(bullishSimilarity > mixedSimilarity && mixedSimilarity > bearishSimilarity);
+        Assert.True(bearishSimilarity < 0.25, "opposite candle direction must not rank as a close analog");
+    }
+
+    [Fact]
+    public async Task SearchAsync_FixedAsOf_IsInvariantWhenFutureCandlesAreAppended()
+    {
+        await using var db = CreateDb();
+        SeedCandles(db, 220);
+        await db.SaveChangesAsync();
+        var service = CreateService(db);
+        var cutoff = db.Klines.Max(row => row.CloseTimeMs);
+        var request = new HistoricalAnalogRequest
+        {
+            Timeframe = "1h", WindowSize = 15, NeighborCount = 30, PageSize = 50,
+            LookbackBars = 200, MinimumMeanSimilarity = -1, AsOfTimeMs = cutoff
+        };
+
+        var before = await service.SearchAsync(request, "before-append");
+        SeedCandles(db, 20, 220);
+        await db.SaveChangesAsync();
+        var after = await service.SearchAsync(request, "after-append");
+
+        Assert.Equal(before.Query!.StartTimeMs, after.Query!.StartTimeMs);
+        Assert.Equal(before.Query.EndTimeMs, after.Query.EndTimeMs);
+        Assert.Equal(before.Query.AvailableAtTimeMs, after.Query.AvailableAtTimeMs);
+        Assert.Equal(before.Items.Select(item => item.WindowId), after.Items.Select(item => item.WindowId));
+        Assert.Equal(before.Items.Select(item => item.ShapeSimilarity), after.Items.Select(item => item.ShapeSimilarity));
+        Assert.Equal(before.Summaries.Select(summary => summary.DominantDirection), after.Summaries.Select(summary => summary.DominantDirection));
+    }
+
+    [Fact]
+    public async Task SearchAsync_QualityGateAbstainsWithoutFabricatingEvidence()
+    {
+        await using var db = CreateDb();
+        SeedCandles(db, 220);
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).SearchAsync(new HistoricalAnalogRequest
+        {
+            Timeframe = "1h", WindowSize = 15, NeighborCount = 30, PageSize = 50,
+            LookbackBars = 200, MinimumMeanSimilarity = 1.0
+        }, "quality-abstention");
+
+        Assert.True(result.Abstained);
+        Assert.False(result.QualityGatePassed);
+        Assert.Null(result.Coverage);
+        Assert.Null(result.AbstentionRate);
+        Assert.NotNull(result.AbstentionReason);
+        Assert.Empty(result.Items);
+        Assert.Empty(result.Summaries);
+        Assert.Null(result.BaselineName);
+        Assert.Null(result.BaselineScore);
+        Assert.Null(result.Lift);
+        Assert.Null(result.LiftConfidenceInterval);
+        Assert.Equal("unavailable", result.Evidence.Status);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ExcludesFormingCandleFromQueryWindow()
+    {
+        await using var db = CreateDb();
+        SeedCandles(db, 220);
+        await db.SaveChangesAsync();
+        var lastFinalizedOpenTime = db.Klines.Max(row => row.OpenTimeMs);
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        db.Klines.Add(new Kline
+        {
+            Id = 221,
+            Symbol = "BTCUSDT",
+            Timeframe = "1h",
+            OpenTimeMs = lastFinalizedOpenTime + Interval,
+            CloseTimeMs = nowMs + Interval,
+            Open = 21_000m,
+            High = 21_100m,
+            Low = 20_900m,
+            Close = 21_050m,
+            Volume = 100
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).SearchAsync(new HistoricalAnalogRequest
+        {
+            Timeframe = "1h", WindowSize = 15, NeighborCount = 20,
+            LookbackBars = 200, MinimumMeanSimilarity = -1, AsOfTimeMs = nowMs
+        }, "closed-bars-only");
+
+        Assert.NotNull(result.Query);
+        Assert.Equal(lastFinalizedOpenTime, result.Query!.EndTimeMs);
+        Assert.Equal("closed", result.SignalBarState);
+        Assert.DoesNotContain(result.Query.Ohlc, row => row.OpenTimeMs > lastFinalizedOpenTime);
     }
 
     private static AppDbContext CreateDb()
@@ -199,10 +325,38 @@ public sealed class HistoricalAnalogServiceTests
     private static HistoricalAnalogService CreateService(AppDbContext db) =>
         new(db, new ProductionTimeframePolicy(), NullLogger<HistoricalAnalogService>.Instance);
 
-    private static void SeedCandles(AppDbContext db, int count)
+    private static double Similarity(float[] left, float[] right)
     {
-        for (var index = 0; index < count; index++)
+        var leftNorm = (float)Math.Sqrt(left.Sum(value => value * value));
+        var rightNorm = (float)Math.Sqrt(right.Sum(value => value * value));
+        return PatternVectorSimilarity.Cosine(left, leftNorm, right, rightNorm);
+    }
+
+    private static List<KlineDto> DirectionalWindow(IReadOnlyList<decimal> moves)
+    {
+        var rows = new List<KlineDto>();
+        var previous = 100m;
+        foreach (var move in moves)
         {
+            var close = previous + move;
+            rows.Add(new KlineDto
+            {
+                Open = previous,
+                High = Math.Max(previous, close) + 0.5m,
+                Low = Math.Min(previous, close) - 0.5m,
+                Close = close,
+                Volume = 1
+            });
+            previous = close;
+        }
+        return rows;
+    }
+
+    private static void SeedCandles(AppDbContext db, int count, int startIndex = 0)
+    {
+        for (var offset = 0; offset < count; offset++)
+        {
+            var index = startIndex + offset;
             var baseline = 20_000m + index * 3m + (decimal)(Math.Sin(index * 0.37) * 120);
             var close = baseline + (decimal)(Math.Sin(index * 0.83) * 45);
             db.Klines.Add(new Kline

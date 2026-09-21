@@ -12,15 +12,18 @@ public class EnsemblePaperTraderService : IEnsemblePaperTraderService
     private readonly AppDbContext _db;
     private readonly IBinanceKlinesService _binance;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     public EnsemblePaperTraderService(
         AppDbContext db,
         IBinanceKlinesService binance,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _db = db;
         _binance = binance;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     public async Task<EnsemblePaperTradeEvalResult> EvaluateAndTradeAsync(
@@ -28,9 +31,8 @@ public class EnsemblePaperTraderService : IEnsemblePaperTraderService
         string timeframe = "4h",
         CancellationToken ct = default)
     {
-        symbol = symbol.Trim().ToUpperInvariant();
+        symbol = _symbolPolicy.EnsureActive(symbol);
         timeframe = _timeframePolicy.EnsureActive(timeframe);
-        if (string.IsNullOrWhiteSpace(symbol)) throw new ArgumentException("Paper trading symbol is required.", nameof(symbol));
         var timeframeMs = TimeframeMilliseconds(timeframe);
         var klines = await _binance.GetKlinesAsync(symbol, timeframe, 2, cancellationToken: ct);
 

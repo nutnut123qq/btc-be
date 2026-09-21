@@ -98,7 +98,9 @@ public class PriceAlertWorker : BackgroundService
         // --- Classic price alerts ---
         if (settings.PriceAboveUsd.HasValue || settings.PriceBelowUsd.HasValue)
         {
-            var priceKlines = await binance.GetBtcKlinesAsync(interval, limit: 1, cancellationToken);
+            var fetchedPriceKlines = await binance.GetBtcKlinesAsync(interval, limit: 2, cancellationToken);
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var priceKlines = fetchedPriceKlines.Where(k => k.CloseTimeMs > 0 && k.CloseTimeMs <= nowMs).ToList();
             if (priceKlines.Count > 0)
             {
                 var close = priceKlines[^1].Close;
@@ -106,13 +108,15 @@ public class PriceAlertWorker : BackgroundService
                 {
                     var sourceKey = BuildPriceSourceKey(userId, "above", settings.PriceAboveUsd.Value, interval, priceKlines[^1].OpenTimeMs);
                     await TryCreateAlertAsync(db, telegram, userId, "price_above", "BTC vượt ngưỡng giá",
-                        $"Giá đóng nến ({interval}) {close:F2} USDT > {settings.PriceAboveUsd.Value:F2} USDT.", close, sourceKey, cooldown, cancellationToken);
+                        $"Giá đóng nến ({interval}) {close:F2} USDT > {settings.PriceAboveUsd.Value:F2} USDT.", close, sourceKey, cooldown, cancellationToken,
+                        "observed-event", "binance-spot-finalized-candle", priceKlines[^1].CloseTimeMs);
                 }
                 if (settings.PriceBelowUsd.HasValue && close < settings.PriceBelowUsd.Value)
                 {
                     var sourceKey = BuildPriceSourceKey(userId, "below", settings.PriceBelowUsd.Value, interval, priceKlines[^1].OpenTimeMs);
                     await TryCreateAlertAsync(db, telegram, userId, "price_below", "BTC dưới ngưỡng giá",
-                        $"Giá đóng nến ({interval}) {close:F2} USDT < {settings.PriceBelowUsd.Value:F2} USDT.", close, sourceKey, cooldown, cancellationToken);
+                        $"Giá đóng nến ({interval}) {close:F2} USDT < {settings.PriceBelowUsd.Value:F2} USDT.", close, sourceKey, cooldown, cancellationToken,
+                        "observed-event", "binance-spot-finalized-candle", priceKlines[^1].CloseTimeMs);
                 }
             }
         }
@@ -136,15 +140,18 @@ public class PriceAlertWorker : BackgroundService
                     .Select(r => (int?)r.RequiredBars)
                     .MaxAsync(cancellationToken) ?? 10;
 
-                var limit = Math.Max(50, maxBars);
-                var klines = await binance.GetBtcKlinesAsync(tf, limit: limit, cancellationToken);
+                var limit = Math.Max(50, maxBars + 1);
+                var fetchedKlines = await binance.GetBtcKlinesAsync(tf, limit: limit, cancellationToken);
+                var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var klines = fetchedKlines.Where(k => k.CloseTimeMs > 0 && k.CloseTimeMs <= nowMs).ToList();
                 if (klines.Count == 0) continue;
 
                 var signals = await seqEngine.EvaluateAsync("BTCUSDT", tf, klines, cancellationToken);
                 foreach (var signal in signals)
                 {
                     var sourceKey = BuildSequenceSourceKey(userId, signal.RuleId, signal.Symbol, signal.Timeframe, signal.TriggerTimeMs);
-                    var created = await TryCreateAlertAsync(db, telegram, userId, "sequence_rule", signal.RuleName, signal.Message, signal.TriggerClose, sourceKey, cooldown, cancellationToken);
+                    var created = await TryCreateAlertAsync(db, telegram, userId, "sequence_rule", signal.RuleName, signal.Message, signal.TriggerClose, sourceKey, cooldown, cancellationToken,
+                        signal.EvidenceKind, signal.Provenance, signal.AvailableTimeMs);
                     if (!created) continue;
 
                     db.CandleSequenceSignals.Add(new CandleSequenceSignal
@@ -155,6 +162,9 @@ public class PriceAlertWorker : BackgroundService
                         TriggerTimeMs = signal.TriggerTimeMs,
                         ClosePrice = signal.TriggerClose,
                         Message = signal.Message,
+                        AvailableTimeMs = signal.AvailableTimeMs,
+                        EvidenceKind = signal.EvidenceKind,
+                        Provenance = signal.Provenance,
                         CreatedAtUtc = DateTime.UtcNow
                     });
                 }
@@ -204,7 +214,10 @@ public class PriceAlertWorker : BackgroundService
         decimal priceSnapshot,
         string sourceKey,
         int cooldownMinutes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string evidenceKind = "observed-event",
+        string provenance = "price-alert-worker",
+        long? availableTimeMs = null)
     {
         var since = DateTimeOffset.UtcNow.AddMinutes(-Math.Max(1, cooldownMinutes));
         var recent = await db.AppAlerts.AnyAsync(
@@ -226,7 +239,11 @@ public class PriceAlertWorker : BackgroundService
             PriceSnapshot = priceSnapshot,
             CreatedAt = DateTimeOffset.UtcNow,
             IsRead = false,
-            SourceKey = sourceKey
+            SourceKey = sourceKey,
+            EvidenceKind = evidenceKind,
+            Provenance = provenance,
+            AvailableTimeMs = availableTimeMs,
+            DeliveryStatus = telegram is null ? "not-configured" : "pending"
         };
         db.AppAlerts.Add(alert);
 
@@ -242,10 +259,34 @@ public class PriceAlertWorker : BackgroundService
 
         if (telegram != null)
         {
-            var encTitle = System.Net.WebUtility.HtmlEncode(alert.Title);
-            var encMsg = System.Net.WebUtility.HtmlEncode(alert.Message);
-            var tgMsg = $"🔔 <b>Cảnh báo BTC</b>\n📍 Giá: ${alert.PriceSnapshot:N0}\n⚡ {encTitle}\n📝 {encMsg}";
-            await telegram.SendMessageAsync(tgMsg, cancellationToken);
+            // Claim before the external call. On crash/restart this produces at-most-once delivery;
+            // the canonical DB alert remains queryable even when the best-effort Telegram delivery fails.
+            alert.DeliveryStatus = "attempting";
+            alert.DeliveryAttemptedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                var encTitle = System.Net.WebUtility.HtmlEncode(alert.Title);
+                var encMsg = System.Net.WebUtility.HtmlEncode(alert.Message);
+                var tgMsg = $"🔔 <b>Cảnh báo BTC</b>\n📍 Giá: ${alert.PriceSnapshot:N0}\n⚡ {encTitle}\n📝 {encMsg}";
+                var delivered = await telegram.SendMessageAsync(tgMsg, cancellationToken);
+                if (delivered)
+                {
+                    alert.DeliveryStatus = "delivered";
+                    alert.DeliveredAtUtc = DateTime.UtcNow;
+                }
+                else
+                {
+                    alert.DeliveryStatus = "failed-at-most-once";
+                    alert.DeliveryError = "Telegram provider returned false; delivery was not acknowledged and will not be retried under the at-most-once policy.";
+                }
+            }
+            catch (Exception ex)
+            {
+                alert.DeliveryStatus = "failed-at-most-once";
+                alert.DeliveryError = ex.Message.Length <= 2000 ? ex.Message : ex.Message[..2000];
+            }
+            await db.SaveChangesAsync(cancellationToken);
         }
 
         return true;

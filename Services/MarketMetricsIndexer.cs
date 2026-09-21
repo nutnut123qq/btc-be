@@ -13,15 +13,18 @@ public class MarketMetricsIndexer
     private readonly AppDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<MarketMetricsIndexer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public MarketMetricsIndexer(
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
-        ILogger<MarketMetricsIndexer> logger)
+        ILogger<MarketMetricsIndexer> logger,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<int> IndexFundingRateAsync(
@@ -42,6 +45,8 @@ public class MarketMetricsIndexer
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
             if (doc.RootElement.ValueKind != JsonValueKind.Array) return 0;
+            var receivedAt = _timeProvider.GetUtcNow();
+            var availableTimeMs = receivedAt.ToUnixTimeMilliseconds();
 
             var existing = await _db.MarketMetrics
                 .AsNoTracking()
@@ -62,7 +67,13 @@ public class MarketMetricsIndexer
                     Symbol = symbol,
                     Timeframe = "8h",
                     OpenTimeMs = fundingTime,
-                    FundingRate = rate
+                    FundingRate = rate,
+                    SourceEventTimeMs = fundingTime,
+                    ReceivedAtUtc = receivedAt,
+                    AvailableTimeMs = availableTimeMs,
+                    Source = "binance-usdm-rest/fundingRate",
+                    MarketType = "usd-m-perpetual",
+                    IsReconstructed = false
                 });
             }
 
@@ -123,6 +134,8 @@ public class MarketMetricsIndexer
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
             if (doc.RootElement.ValueKind != JsonValueKind.Array) return 0;
+            var receivedAt = _timeProvider.GetUtcNow();
+            var availableTimeMs = receivedAt.ToUnixTimeMilliseconds();
 
             var existing = await _db.MarketMetrics
                 .AsNoTracking()
@@ -143,7 +156,13 @@ public class MarketMetricsIndexer
                     Symbol = symbol,
                     Timeframe = timeframe,
                     OpenTimeMs = openTime,
-                    OpenInterest = oi
+                    OpenInterest = oi,
+                    SourceEventTimeMs = openTime,
+                    ReceivedAtUtc = receivedAt,
+                    AvailableTimeMs = availableTimeMs,
+                    Source = "binance-usdm-rest/openInterest",
+                    MarketType = "usd-m-perpetual",
+                    IsReconstructed = false
                 });
             }
 
@@ -207,6 +226,8 @@ public class MarketMetricsIndexer
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
             if (doc.RootElement.ValueKind != JsonValueKind.Array) return 0;
+            var receivedAt = _timeProvider.GetUtcNow();
+            var availableTimeMs = receivedAt.ToUnixTimeMilliseconds();
 
             // Aggregate by hour
             var buckets = new Dictionary<long, (double LongUsd, double ShortUsd)>();
@@ -245,7 +266,13 @@ public class MarketMetricsIndexer
                     Timeframe = "1h",
                     OpenTimeMs = kv.Key,
                     LongLiquidationUsd = kv.Value.LongUsd,
-                    ShortLiquidationUsd = kv.Value.ShortUsd
+                    ShortLiquidationUsd = kv.Value.ShortUsd,
+                    SourceEventTimeMs = kv.Key,
+                    ReceivedAtUtc = receivedAt,
+                    AvailableTimeMs = availableTimeMs,
+                    Source = "binance-usdm-rest/forceOrders",
+                    MarketType = "usd-m-perpetual",
+                    IsReconstructed = false
                 });
             }
 

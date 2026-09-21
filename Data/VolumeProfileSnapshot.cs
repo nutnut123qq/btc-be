@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace Backend.Data;
 
 public class VolumeProfileSnapshot
@@ -11,5 +13,7 @@ public class VolumeProfileSnapshot
     public double VahPrice { get; set; }
     public double ValPrice { get; set; }
     public string ProfileBinsJson { get; set; } = "[]";
+    [NotMapped]
+    public double? InputVolume { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
