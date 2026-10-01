@@ -2,8 +2,11 @@ param(
     [string]$DatabasePassword = $env:PGPASSWORD,
     [string]$AdminKey = $env:AdminApiKey,
     [switch]$PromptForGeminiApiKey,
+    [switch]$PromptForOpenRouterApiKey,
     [string]$LlmProvider = $env:LLM_PROVIDER,
-    [string]$GeminiModel = $env:GEMINI_MODEL
+    [string]$GeminiModel = $env:GEMINI_MODEL,
+    [string]$OpenRouterModel = $env:OPENROUTER_MODEL,
+    [string]$OpenRouterBaseUrl = $env:OPENROUTER_BASE_URL
 )
 . "$PSScriptRoot/common.ps1"
 Initialize-OpsDirectories
@@ -13,8 +16,11 @@ if ([string]::IsNullOrWhiteSpace($DatabasePassword)) { $DatabasePassword = $env:
 if ([string]::IsNullOrWhiteSpace($AdminKey)) { $AdminKey = $env:AdminApiKey }
 if ([string]::IsNullOrWhiteSpace($LlmProvider)) { $LlmProvider = "none" }
 if ([string]::IsNullOrWhiteSpace($GeminiModel)) { $GeminiModel = "gemini-3.8-flash" }
-if ($LlmProvider -notin @("none", "ollama", "gemini", "blackbox")) { throw "Unsupported LlmProvider: $LlmProvider" }
+if ([string]::IsNullOrWhiteSpace($OpenRouterModel)) { $OpenRouterModel = "openai/gpt-4o-mini" }
+if ([string]::IsNullOrWhiteSpace($OpenRouterBaseUrl)) { $OpenRouterBaseUrl = "https://openrouter.ai/api/v1" }
+if ($LlmProvider -notin @("none", "ollama", "gemini", "blackbox", "openrouter")) { throw "Unsupported LlmProvider: $LlmProvider" }
 if ($GeminiModel -notmatch '^gemini-[a-z0-9.-]+$') { throw "Invalid GeminiModel." }
+if ($OpenRouterBaseUrl -notmatch '^https://[a-zA-Z0-9.-]+(/[a-zA-Z0-9./_-]*)?$') { throw "Invalid OpenRouterBaseUrl." }
 if ([string]::IsNullOrWhiteSpace($DatabasePassword)) { throw "DatabasePassword or PGPASSWORD is required." }
 if ([string]::IsNullOrWhiteSpace($AdminKey)) {
     $bytes = New-Object byte[] 32
@@ -25,11 +31,24 @@ if ([string]::IsNullOrWhiteSpace($AdminKey)) {
 }
 
 $existingGeminiApiKey = $null
+$existingOpenRouterApiKey = $null
 if (Test-Path -LiteralPath $script:SecretsPath) {
     $existingSecrets = Import-Clixml -LiteralPath $script:SecretsPath
     $existingProperty = $existingSecrets.PSObject.Properties["GEMINI_API_KEY"]
     if ($existingProperty -and $existingProperty.Value -is [Security.SecureString]) {
         $existingGeminiApiKey = $existingProperty.Value
+    }
+    $existingOpenRouterProperty = $existingSecrets.PSObject.Properties["OPENROUTER_API_KEY"]
+    if ($existingOpenRouterProperty -and $existingOpenRouterProperty.Value -is [Security.SecureString]) {
+        $existingOpenRouterApiKey = $existingOpenRouterProperty.Value
+    }
+    if (-not $env:OPENROUTER_MODEL) {
+        $p = $existingSecrets.PSObject.Properties["OPENROUTER_MODEL"]
+        if ($p -and $p.Value) { $OpenRouterModel = [string]$p.Value }
+    }
+    if (-not $env:OPENROUTER_BASE_URL) {
+        $p = $existingSecrets.PSObject.Properties["OPENROUTER_BASE_URL"]
+        if ($p -and $p.Value) { $OpenRouterBaseUrl = [string]$p.Value }
     }
 }
 $geminiApiKey = if ($PromptForGeminiApiKey) {
@@ -40,6 +59,15 @@ $geminiApiKey = if ($PromptForGeminiApiKey) {
 if ($PromptForGeminiApiKey -and $geminiApiKey.Length -eq 0) { throw "Gemini API key cannot be empty." }
 if ($LlmProvider -eq "gemini" -and (-not $geminiApiKey -or $geminiApiKey.Length -eq 0)) {
     throw "Gemini requires a protected API key. Run with -PromptForGeminiApiKey."
+}
+$openRouterApiKey = if ($PromptForOpenRouterApiKey) {
+    Read-Host "OpenRouter API key" -AsSecureString
+} else {
+    $existingOpenRouterApiKey
+}
+if ($PromptForOpenRouterApiKey -and $openRouterApiKey.Length -eq 0) { throw "OpenRouter API key cannot be empty." }
+if ($LlmProvider -eq "openrouter" -and (-not $openRouterApiKey -or $openRouterApiKey.Length -eq 0)) {
+    throw "OpenRouter requires a protected API key. Run with -PromptForOpenRouterApiKey."
 }
 
 $protectedSecrets = [ordered]@{
@@ -52,8 +80,11 @@ $protectedSecrets = [ordered]@{
     AdminApiKey = ConvertTo-SecureString $AdminKey -AsPlainText -Force
     LLM_PROVIDER = $LlmProvider
     GEMINI_MODEL = $GeminiModel
+    OPENROUTER_MODEL = $OpenRouterModel
+    OPENROUTER_BASE_URL = $OpenRouterBaseUrl
 }
 if ($geminiApiKey) { $protectedSecrets.GEMINI_API_KEY = $geminiApiKey }
+if ($openRouterApiKey) { $protectedSecrets.OPENROUTER_API_KEY = $openRouterApiKey }
 [pscustomobject]$protectedSecrets | Export-Clixml -LiteralPath $script:SecretsPath -Force
 Set-OpsSecretsFileAcl $script:SecretsPath
 Write-Host "Protected local runtime secrets configured at $script:SecretsPath"

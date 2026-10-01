@@ -28,7 +28,26 @@ try {
     $pg.detail = $server.detail
 }
 catch { $pg.detail = $_.Exception.Message }
-$all = @($pg) + @($checks)
+# Data-plane health: a reachable API can still serve stale data when workers
+# stall (the previous silent-stale incident). freshness.status is "healthy" only
+# when every active timeframe is fresh; workers are healthy unless stale/failed.
+$dataHealth = [pscustomobject]@{ component = "backend-data"; process = $null; ready = $false; detail = "not checked" }
+$backendCheck = @($checks | Where-Object { $_.component -eq "backend" }) | Select-Object -First 1
+if ($backendCheck -and $backendCheck.ready) {
+    try {
+        $freshness = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/health/freshness" -TimeoutSec 10
+        $workers = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/health/workers" -TimeoutSec 10
+        $unhealthyWorkers = @($workers.workers | Where-Object { $_.status -ne "healthy" })
+        $dataHealth.ready = ($freshness.status -eq "healthy") -and $unhealthyWorkers.Count -eq 0
+        $dataHealth.detail = "freshness=$($freshness.status)" + $(if ($unhealthyWorkers.Count -gt 0) {
+            "; workers not healthy: $($unhealthyWorkers.name -join ', ')"
+        } else { "; workers ok" })
+    }
+    catch { $dataHealth.detail = $_.Exception.Message }
+}
+else { $dataHealth.detail = "backend not ready" }
+
+$all = @($pg) + @($checks) + @($dataHealth)
 
 if ($Json) { $all | ConvertTo-Json -Depth 3 }
 else { $all | Format-Table -AutoSize }

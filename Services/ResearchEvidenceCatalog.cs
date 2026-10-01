@@ -930,6 +930,20 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         JsonElement? statisticalEvidence = report.TryGetProperty("statisticalEvidence", out var statisticalValue)
             ? statisticalValue.Clone()
             : null;
+        JsonElement? sensitivityAudit = report.TryGetProperty("sensitivityAudit", out var sensitivityValue)
+            && sensitivityValue.ValueKind == JsonValueKind.Object
+            ? sensitivityValue.Clone()
+            : null;
+        JsonElement? reportExclusions = report.TryGetProperty("counts", out var reportCounts)
+            && reportCounts.ValueKind == JsonValueKind.Object
+            && reportCounts.TryGetProperty("exclusionReasons", out var exclusionReasons)
+            && exclusionReasons.ValueKind == JsonValueKind.Object
+            ? exclusionReasons.Clone()
+            : null;
+        JsonElement? eventTypeDetail = report.TryGetProperty("eventTypes", out var eventTypesDetail)
+            && eventTypesDetail.ValueKind == JsonValueKind.Object
+            ? eventTypesDetail.Clone()
+            : null;
         var detail = new ResearchEvidenceDetailDto(
             id,
             definition.Kind,
@@ -973,7 +987,10 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             artifacts,
             integrity,
             evidenceProfiles,
-            statisticalEvidence);
+            statisticalEvidence,
+            sensitivityAudit,
+            reportExclusions,
+            eventTypeDetail);
         return new LoadedArtifact(id, definition.Kind, createdAtUtc, item, detail);
     }
 

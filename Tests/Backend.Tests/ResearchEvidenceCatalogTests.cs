@@ -188,6 +188,36 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
     }
 
     [Fact]
+    public void Catalog_RoundTripsSensitivityAuditExclusionsAndEventTypeDetail()
+    {
+        var ids = WriteAtomicTechnicalRun();
+        var detail = Assert.IsType<ResearchEvidenceDetailDto>(CreateService().GetDetail(ids[1]));
+
+        Assert.True(detail.SensitivityAudit.HasValue);
+        var audit = detail.SensitivityAudit.Value;
+        Assert.Equal("one_axis_at_a_time", audit.GetProperty("method").GetString());
+        var variant = Assert.Single(audit.GetProperty("variants").EnumerateArray());
+        Assert.Equal("rsi-period-21", variant.GetProperty("variantId").GetString());
+        Assert.Equal(0.5, variant.GetProperty("eligibleDecisionTimeJaccardVsBaseline").GetDouble());
+        Assert.Equal(0.002, variant.GetProperty("horizons").GetProperty("1")
+            .GetProperty("metrics").GetProperty("forwardReturn").GetProperty("meanDeltaVsBaseline").GetDouble());
+
+        Assert.True(detail.ReportExclusions.HasValue);
+        Assert.Equal(1L, detail.ReportExclusions.Value.GetProperty("unknown_availability").GetInt64());
+
+        Assert.True(detail.EventTypeDetail.HasValue);
+        var bosBull = detail.EventTypeDetail.Value.GetProperty("BOS_BULL");
+        Assert.Equal(1L, bosBull.GetProperty("horizons").GetProperty("1").GetProperty("matchedControls").GetInt64());
+        Assert.Equal(1L, bosBull.GetProperty("lifecycleCoverage").GetProperty("unavailable").GetInt64());
+        Assert.True(bosBull.TryGetProperty("timeToFirstTouchBars", out _));
+
+        var json = JsonSerializer.Serialize(detail, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Contains("\"sensitivityAudit\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"reportExclusions\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"eventTypeDetail\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Catalog_FailsClosed_WhenTechnicalDescriptiveLedgerIsTampered()
     {
         WriteAtomicTechnicalRun(tamper4hLedger: true);
@@ -814,6 +844,46 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
                     ["hypotheses"] = 42L
                 },
                 ["method"] = "moving-block-bootstrap"
+            },
+            ["sensitivityAudit"] = new SortedDictionary<string, object?>
+            {
+                ["method"] = "one_axis_at_a_time",
+                ["promotionAllowed"] = false,
+                ["resultSelection"] = false,
+                ["variantCount"] = 1L,
+                ["variants"] = new object[]
+                {
+                    new SortedDictionary<string, object?>
+                    {
+                        ["module"] = "technicalIndicators",
+                        ["variantId"] = "rsi-period-21",
+                        ["parameters"] = new SortedDictionary<string, object?> { ["rsiPeriod"] = 21L },
+                        ["stored"] = 2L,
+                        ["eligible"] = 1L,
+                        ["excluded"] = 1L,
+                        ["realizedAtMaxHorizon"] = 1L,
+                        ["exclusionReasons"] = new SortedDictionary<string, object?> { ["unknown_availability"] = 1L },
+                        ["overlapCandidatesExcluded"] = 0L,
+                        ["eligibleDecisionTimeJaccardVsBaseline"] = 0.5,
+                        ["horizons"] = new SortedDictionary<string, object?>
+                        {
+                            ["1"] = new SortedDictionary<string, object?>
+                            {
+                                ["elapsedTimeMs"] = 14_400_000L,
+                                ["realized"] = 1L,
+                                ["metrics"] = new SortedDictionary<string, object?>
+                                {
+                                    ["forwardReturn"] = new SortedDictionary<string, object?>
+                                    {
+                                        ["variant"] = summary,
+                                        ["baselineMean"] = 0.008,
+                                        ["meanDeltaVsBaseline"] = 0.002
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             },
             ["eventTypes"] = new SortedDictionary<string, object?>
             {

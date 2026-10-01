@@ -168,4 +168,7 @@ public sealed record ResearchEvidenceDetailDto(
     [property: Required] IReadOnlyList<ResearchEvidenceArtifactDto> Artifacts,
     [property: Required] EvidenceIntegrityDto Integrity,
     JsonElement? EvidenceProfiles = null,
-    JsonElement? StatisticalEvidence = null);
+    JsonElement? StatisticalEvidence = null,
+    JsonElement? SensitivityAudit = null,
+    JsonElement? ReportExclusions = null,
+    JsonElement? EventTypeDetail = null);

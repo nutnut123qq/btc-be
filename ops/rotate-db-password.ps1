@@ -6,13 +6,11 @@ if ($running.Count -gt 0) {
     throw "Stop the managed stack before rotating the database password. Running: $($running.name -join ', ')"
 }
 $taskNames = @(
-    "BTC_AI_Server_Watchdog",
-    "BTC_Futures_Metrics_Collector",
-    "BTC_Paper_Trading_Runner",
-    "BTC_Ensemble_Paper_Runner",
-    "BTC_Liquidation_Collector",
-    "BTC_Sentiment_Collector",
-    "BTC_Confluence_Collector",
+    "BTCServiceWatchdog",
+    "BTCFuturesCollector",
+    "BTCPaperTrader",
+    "BTCTechnicalDescriptiveEvidence",
+    "Bitcoin Analyst DB Backup",
     "Bitcoin Analyst DB Backup"
 )
 if (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue) {
@@ -53,6 +51,8 @@ foreach ($required in @("AdminApiKey")) {
 }
 
 $existingGeminiModel = $existing.PSObject.Properties["GEMINI_MODEL"]
+$existingOpenRouterModel = $existing.PSObject.Properties["OPENROUTER_MODEL"]
+$existingOpenRouterBaseUrl = $existing.PSObject.Properties["OPENROUTER_BASE_URL"]
 $protectedSecrets = [ordered]@{
     PGHOST = $(if ($existing.PGHOST) { [string]$existing.PGHOST } else { "127.0.0.1" })
     PGPORT = $(if ($existing.PGPORT) { [string]$existing.PGPORT } else { "5432" })
@@ -63,11 +63,18 @@ $protectedSecrets = [ordered]@{
     AdminApiKey = $existing.AdminApiKey
     LLM_PROVIDER = $(if ($existing.LLM_PROVIDER) { [string]$existing.LLM_PROVIDER } else { "none" })
     GEMINI_MODEL = $(if ($existingGeminiModel -and $existingGeminiModel.Value) { [string]$existingGeminiModel.Value } else { "gemini-3.8-flash" })
+    OPENROUTER_MODEL = $(if ($existingOpenRouterModel -and $existingOpenRouterModel.Value) { [string]$existingOpenRouterModel.Value } else { "openai/gpt-4o-mini" })
+    OPENROUTER_BASE_URL = $(if ($existingOpenRouterBaseUrl -and $existingOpenRouterBaseUrl.Value) { [string]$existingOpenRouterBaseUrl.Value } else { "https://openrouter.ai/api/v1" })
 }
 $geminiProperty = $existing.PSObject.Properties["GEMINI_API_KEY"]
 if ($geminiProperty) {
     if ($geminiProperty.Value -isnot [Security.SecureString]) { throw "Invalid protected value: GEMINI_API_KEY" }
     $protectedSecrets.GEMINI_API_KEY = $geminiProperty.Value
+}
+$openRouterProperty = $existing.PSObject.Properties["OPENROUTER_API_KEY"]
+if ($openRouterProperty) {
+    if ($openRouterProperty.Value -isnot [Security.SecureString]) { throw "Invalid protected value: OPENROUTER_API_KEY" }
+    $protectedSecrets.OPENROUTER_API_KEY = $openRouterProperty.Value
 }
 
 $stagedPath = Join-Path $script:RuntimeDir "secrets.rotation-$([Guid]::NewGuid().ToString('N')).clixml"
