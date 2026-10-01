@@ -36,9 +36,14 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
     private readonly string _rootPath;
     private readonly long _maxArtifactBytes;
     private readonly long _maxBundleArtifactBytes;
+    private readonly TimeSpan _verificationInterval;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ResearchEvidenceCatalog> _logger;
     private readonly ITechnicalModuleContractProvider? _technicalContract;
+    private readonly object _cacheLock = new();
+    private string? _cacheFingerprint;
+    private LoadResult? _cachedLoad;
+    private DateTimeOffset _cacheVerifiedAtUtc;
 
     public ResearchEvidenceCatalog(
         IHostEnvironment environment,
@@ -56,6 +61,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             : Path.Combine(environment.ContentRootPath, configured));
         _maxArtifactBytes = Math.Clamp(options.Value.MaxArtifactBytes, 1_024, 32L * 1024 * 1024);
         _maxBundleArtifactBytes = Math.Clamp(options.Value.MaxBundleArtifactBytes, _maxArtifactBytes, 8L * 1024 * 1024 * 1024);
+        _verificationInterval = TimeSpan.FromSeconds(Math.Clamp(options.Value.CacheVerificationSeconds, 0, 86_400));
         _timeProvider = timeProvider;
         _logger = logger;
         _technicalContract = technicalContract;
@@ -200,6 +206,62 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
     }
 
     private LoadResult LoadVerifiedArtifacts()
+    {
+        var fingerprint = ComputeArtifactsFingerprint();
+        var now = _timeProvider.GetUtcNow();
+        lock (_cacheLock)
+        {
+            if (_cachedLoad is not null
+                && string.Equals(fingerprint, _cacheFingerprint, StringComparison.Ordinal)
+                && now - _cacheVerifiedAtUtc < _verificationInterval)
+                return _cachedLoad;
+            var load = LoadVerifiedArtifactsUncached();
+            _cachedLoad = load;
+            _cacheFingerprint = fingerprint;
+            _cacheVerifiedAtUtc = now;
+            return load;
+        }
+    }
+
+    // Cheap identity of the on-disk artifact set: file inventory (name, size,
+    // mtime) plus the content hash of the atomic latest-success pointer. Any
+    // publish, retention delete or ordinary tamper changes it and forces a full
+    // re-verification; mtime-preserving tamper is still caught by the TTL.
+    private string ComputeArtifactsFingerprint()
+    {
+        var builder = new StringBuilder(256);
+        foreach (var supported in SupportedKinds.Keys.OrderBy(x => x, StringComparer.Ordinal))
+        {
+            var directory = Path.Combine(_rootPath, supported);
+            if (!Directory.Exists(directory))
+                continue;
+            builder.Append(supported).Append('\n');
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly).OrderBy(x => x, StringComparer.Ordinal))
+                {
+                    var info = new FileInfo(file);
+                    builder.Append(info.Name).Append('|').Append(info.Length).Append('|')
+                        .Append(info.LastWriteTimeUtc.Ticks).Append('\n');
+                }
+                if (supported == "technical-descriptive")
+                {
+                    var pointerPath = Path.Combine(directory, "latest-success.json");
+                    builder.Append("pointer|").Append(File.Exists(pointerPath) ? HashFile(pointerPath) : "missing").Append('\n');
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Directory mutating mid-scan (publish/retention race): make the
+                // fingerprint unique so the request falls through to the full
+                // verification path rather than serving a stale snapshot.
+                builder.Append("unstable|").Append(Guid.NewGuid()).Append('\n');
+            }
+        }
+        return HashBytes(Encoding.UTF8.GetBytes(builder.ToString()));
+    }
+
+    private LoadResult LoadVerifiedArtifactsUncached()
     {
         if (!Directory.Exists(_rootPath))
             return new LoadResult([], 0, 0, null);

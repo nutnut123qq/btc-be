@@ -38,6 +38,12 @@ if ($llmProvider -eq "gemini") {
     $aiEnvironment["GOOGLE_API_KEY"] = $env:GEMINI_API_KEY
     $aiEnvironment["GEMINI_MODEL"] = $(if ($env:GEMINI_MODEL) { $env:GEMINI_MODEL } else { "gemini-3.8-flash" })
 }
+if ($llmProvider -eq "openrouter") {
+    if ([string]::IsNullOrWhiteSpace($env:OPENROUTER_API_KEY)) { throw "OpenRouter API key is not configured." }
+    $aiEnvironment["OPENROUTER_API_KEY"] = $env:OPENROUTER_API_KEY
+    $aiEnvironment["OPENROUTER_MODEL"] = $(if ($env:OPENROUTER_MODEL) { $env:OPENROUTER_MODEL } else { "openai/gpt-4o-mini" })
+    if ($env:OPENROUTER_BASE_URL) { $aiEnvironment["OPENROUTER_BASE_URL"] = $env:OPENROUTER_BASE_URL }
+}
 
 $processes = @()
 try {

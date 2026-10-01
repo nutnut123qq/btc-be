@@ -319,10 +319,52 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         Assert.IsType<NotFoundResult>(controller.GetDetail("missing").Result);
     }
 
-    private ResearchEvidenceCatalog CreateService() => new(
+    [Fact]
+    public void Catalog_CachesUntilInterval_ThenReverifies()
+    {
+        var time = new MutableTimeProvider(FixedNow);
+        var service = CreateService(time, cacheSeconds: 60);
+        var id = WriteEmbeddedReport("ml-v2", tamperAfterHash: false);
+        var path = Path.Combine(_root, "ml-v2", $"{id}.report.json");
+        var mtime = File.GetLastWriteTimeUtc(path);
+
+        Assert.Single(service.GetCatalog().Items);
+
+        // mtime-preserving tamper keeps the fingerprint identical: the cached
+        // result is served until the verification interval elapses.
+        WriteEmbeddedReport("ml-v2", tamperAfterHash: true);
+        File.SetLastWriteTimeUtc(path, mtime);
+        Assert.Single(service.GetCatalog().Items);
+
+        time.Advance(TimeSpan.FromSeconds(61));
+        var catalog = service.GetCatalog();
+        Assert.Empty(catalog.Items);
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+    }
+
+    [Fact]
+    public void Catalog_Reverifies_WhenArtifactSetChanges()
+    {
+        var service = CreateService();
+        var id = WriteEmbeddedReport("ml-v2", tamperAfterHash: false);
+        Assert.Single(service.GetCatalog().Items);
+
+        File.Delete(Path.Combine(_root, "ml-v2", $"{id}.report.json"));
+        var catalog = service.GetCatalog();
+        Assert.Empty(catalog.Items);
+    }
+
+    private ResearchEvidenceCatalog CreateService(
+        TimeProvider? timeProvider = null,
+        int cacheSeconds = 300) => new(
         new FakeEnvironment { ContentRootPath = _root },
-        Microsoft.Extensions.Options.Options.Create(new EvidenceCatalogOptions { RootPath = ".", MaxArtifactBytes = 1_000_000 }),
-        new FixedTimeProvider(FixedNow),
+        Microsoft.Extensions.Options.Options.Create(new EvidenceCatalogOptions
+        {
+            RootPath = ".",
+            MaxArtifactBytes = 1_000_000,
+            CacheVerificationSeconds = cacheSeconds
+        }),
+        timeProvider ?? new FixedTimeProvider(FixedNow),
         new TestLogger());
 
     private string WriteEmbeddedReport(
@@ -954,6 +996,13 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        private DateTimeOffset _now = now;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan delta) => _now += delta;
     }
 
     private sealed class TestLogger : ILogger<ResearchEvidenceCatalog>

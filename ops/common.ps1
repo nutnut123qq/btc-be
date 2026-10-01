@@ -32,7 +32,7 @@ function Set-OpsSecretsFileAcl([string]$Path) {
 function Import-OpsSecrets {
     if (-not (Test-Path -LiteralPath $script:SecretsPath)) { return }
     $secrets = Import-Clixml -LiteralPath $script:SecretsPath
-    foreach ($name in @("PGPASSWORD", "DB_PASS", "AdminApiKey", "GEMINI_API_KEY")) {
+    foreach ($name in @("PGPASSWORD", "DB_PASS", "AdminApiKey", "GEMINI_API_KEY", "OPENROUTER_API_KEY")) {
         $property = $secrets.PSObject.Properties[$name]
         if (-not [Environment]::GetEnvironmentVariable($name, "Process") -and $property) {
             $secureValue = $property.Value
@@ -44,7 +44,7 @@ function Import-OpsSecrets {
             )
         }
     }
-    foreach ($name in @("PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "LLM_PROVIDER", "GEMINI_MODEL")) {
+    foreach ($name in @("PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "LLM_PROVIDER", "GEMINI_MODEL", "OPENROUTER_MODEL", "OPENROUTER_BASE_URL")) {
         $property = $secrets.PSObject.Properties[$name]
         if (-not [Environment]::GetEnvironmentVariable($name, "Process") -and $property -and $property.Value) {
             [Environment]::SetEnvironmentVariable($name, [string]$property.Value, "Process")
