@@ -86,7 +86,7 @@ try {
     }
     if ($snapshotError) { throw $snapshotError }
 
-    $dumpHash = (Get-FileHash -LiteralPath $dumpPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $dumpHash = Get-Sha256Hex -LiteralPath $dumpPath
     "$dumpHash  $([IO.Path]::GetFileName($dumpPath))" | Set-Content -LiteralPath $dumpChecksumPath -Encoding ascii
 
     $modelFiles = @()
@@ -97,12 +97,12 @@ try {
             $files = @(Get-ChildItem -LiteralPath $modelsDir -File | Where-Object Extension -in ".joblib", ".json")
             if ($files.Count -gt 0) {
                 Compress-Archive -LiteralPath $files.FullName -DestinationPath $modelArchive -CompressionLevel Optimal
-                $modelArchiveHash = (Get-FileHash -LiteralPath $modelArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+                $modelArchiveHash = Get-Sha256Hex -LiteralPath $modelArchive
                 $modelFiles = @($files | Sort-Object Name | ForEach-Object {
                     [ordered]@{
                         name = $_.Name
                         size = $_.Length
-                        sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                        sha256 = Get-Sha256Hex -LiteralPath $_.FullName
                     }
                 })
             }
@@ -132,7 +132,7 @@ try {
         }
     }
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8
-    $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $manifestHash = Get-Sha256Hex -LiteralPath $manifestPath
     "$manifestHash  $([IO.Path]::GetFileName($manifestPath))" | Set-Content -LiteralPath $manifestChecksumPath -Encoding ascii
 
     & "$PSScriptRoot/restore-verify.ps1" -BackupPath $dumpPath -Mode ListOnly

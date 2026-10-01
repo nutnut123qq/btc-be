@@ -1,5 +1,6 @@
 using Backend.Data;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 
 namespace Backend.Services.Models;
 
@@ -15,6 +16,30 @@ public sealed record EvidenceIntegritySummaryDto(
     int ScannedArtifactCount,
     int PublishedArtifactCount,
     int RejectedArtifactCount);
+
+public sealed record ResearchEvidencePipelineTimeframeStatusDto(
+    [property: Required] string Timeframe,
+    long CutoffMs,
+    [property: Required] string ManifestSha256,
+    long Stored,
+    long Eligible,
+    long Excluded,
+    long RealizedAtMaxHorizon,
+    string? DefinitionsSha256,
+    bool SemanticVerification);
+
+public sealed record ResearchEvidencePipelineStatusDto(
+    [property: Required] string State,
+    bool IntegrityVerified,
+    bool Running,
+    bool Locked,
+    DateTime? LastStartedAtUtc,
+    DateTime? LastSucceededAtUtc,
+    DateTime? LastFailedAtUtc,
+    string? LastError,
+    DateTime? UpdatedAtUtc,
+    DateTime? StaleAfterUtc,
+    [property: Required] IReadOnlyList<ResearchEvidencePipelineTimeframeStatusDto> Timeframes);
 
 public sealed record EvidenceIntegrityDto(
     bool Verified,
@@ -43,13 +68,15 @@ public sealed record ResearchEvidenceCatalogResponse(
     [property: Required] string Symbol,
     [property: Required] DateTime GeneratedAtUtc,
     [property: Required] IReadOnlyList<ResearchEvidenceCatalogItemDto> Items,
-    [property: Required] EvidenceIntegritySummaryDto Integrity)
+    [property: Required] EvidenceIntegritySummaryDto Integrity,
+    ResearchEvidencePipelineStatusDto? Pipeline = null)
 {
     public static ResearchEvidenceCatalogResponse Create(
         DateTime generatedAtUtc,
         IReadOnlyList<ResearchEvidenceCatalogItemDto> items,
-        EvidenceIntegritySummaryDto integrity) =>
-        new(ResearchVersions.ResearchEvidenceCatalog, "BTCUSDT", generatedAtUtc, items, integrity);
+        EvidenceIntegritySummaryDto integrity,
+        ResearchEvidencePipelineStatusDto? pipeline = null) =>
+        new(ResearchVersions.ResearchEvidenceCatalog, "BTCUSDT", generatedAtUtc, items, integrity, pipeline);
 }
 
 public sealed record ResearchEvidenceDatasetDto(
@@ -139,4 +166,6 @@ public sealed record ResearchEvidenceDetailDto(
     [property: Required] IReadOnlyList<string> Limitations,
     [property: Required] ResearchEvidenceProvenanceDto Provenance,
     [property: Required] IReadOnlyList<ResearchEvidenceArtifactDto> Artifacts,
-    [property: Required] EvidenceIntegrityDto Integrity);
+    [property: Required] EvidenceIntegrityDto Integrity,
+    JsonElement? EvidenceProfiles = null,
+    JsonElement? StatisticalEvidence = null);

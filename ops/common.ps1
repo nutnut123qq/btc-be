@@ -211,6 +211,27 @@ function Invoke-BoundedProcess {
     finally { $process.Dispose() }
 }
 
+function Get-Sha256Hex {
+    param([Parameter(Mandatory)][string]$LiteralPath)
+
+    $resolved = [IO.Path]::GetFullPath($LiteralPath)
+    if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+        throw "Cannot hash missing file: $resolved"
+    }
+
+    $stream = $null
+    $sha = $null
+    try {
+        $stream = [IO.File]::OpenRead($resolved)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        if ($sha) { $sha.Dispose() }
+        if ($stream) { $stream.Dispose() }
+    }
+}
+
 function Resolve-PgTool([string]$Name) {
     $command = Get-Command $Name -ErrorAction SilentlyContinue
     if ($command) { $path = $command.Source }

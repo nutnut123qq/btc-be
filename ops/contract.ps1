@@ -62,8 +62,8 @@ if ($generatedVersion -ne $expectedVersion) {
 }
 if ($Check) {
     if (-not (Test-Path -LiteralPath $contractPath)) { throw "Committed contract is missing: $contractPath" }
-    $expectedHash = (Get-FileHash -LiteralPath $contractPath -Algorithm SHA256).Hash
-    $actualHash = (Get-FileHash -LiteralPath $tempContract -Algorithm SHA256).Hash
+    $expectedHash = Get-Sha256Hex -LiteralPath $contractPath
+    $actualHash = Get-Sha256Hex -LiteralPath $tempContract
     if ($expectedHash -ne $actualHash) {
         throw "OpenAPI contract changed. Run ops/contract.ps1, review contracts/openapi.json, and increment apiContractVersion."
     }

@@ -29,7 +29,8 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             ["ml-v3"] = new("model", "Reproducible ML evidence bundle"),
             ["ml-v2"] = new("model", "ML walk-forward evidence"),
             ["feature-groups"] = new("feature", "Feature-group ablation"),
-            ["technical-events"] = new("event", "Technical-event evidence")
+            ["technical-events"] = new("event", "Technical-event predictive screen"),
+            ["technical-descriptive"] = new("event", "Technical-event descriptive history")
         };
 
     private readonly string _rootPath;
@@ -37,12 +38,14 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
     private readonly long _maxBundleArtifactBytes;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ResearchEvidenceCatalog> _logger;
+    private readonly ITechnicalModuleContractProvider? _technicalContract;
 
     public ResearchEvidenceCatalog(
         IHostEnvironment environment,
         IOptions<EvidenceCatalogOptions> options,
         TimeProvider timeProvider,
-        ILogger<ResearchEvidenceCatalog> logger)
+        ILogger<ResearchEvidenceCatalog> logger,
+        ITechnicalModuleContractProvider? technicalContract = null)
     {
         var configured = options.Value.RootPath;
         if (string.IsNullOrWhiteSpace(configured))
@@ -55,6 +58,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         _maxBundleArtifactBytes = Math.Clamp(options.Value.MaxBundleArtifactBytes, _maxArtifactBytes, 8L * 1024 * 1024 * 1024);
         _timeProvider = timeProvider;
         _logger = logger;
+        _technicalContract = technicalContract;
     }
 
     public ResearchEvidenceCatalogResponse GetCatalog()
@@ -68,7 +72,122 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         return ResearchEvidenceCatalogResponse.Create(
             _timeProvider.GetUtcNow().UtcDateTime,
             items,
-            new EvidenceIntegritySummaryDto(load.Scanned, items.Length, load.Rejected));
+            new EvidenceIntegritySummaryDto(load.Scanned, items.Length, load.Rejected),
+            LoadPipelineStatus(load.Artifacts.Select(x => x.Id).ToHashSet(StringComparer.Ordinal), load.AtomicRun));
+    }
+
+    private ResearchEvidencePipelineStatusDto? LoadPipelineStatus(
+        IReadOnlySet<string> verifiedManifestIds,
+        AtomicTechnicalRun? atomicRun)
+    {
+        var directory = Path.Combine(_rootPath, "technical-descriptive");
+        var statusPath = Path.Combine(directory, "pipeline-status.json");
+        if (!File.Exists(statusPath))
+            return null;
+        try
+        {
+            var bytes = ReadBounded(statusPath);
+            using var document = JsonDocument.Parse(bytes, StrictJsonOptions);
+            var status = document.RootElement;
+            RequireObject(status, "technical evidence pipeline status");
+            if (!string.Equals(RequiredString(status, "schema"), "btc-technical-evidence-pipeline-status/v1", StringComparison.Ordinal))
+                throw new InvalidDataException("Unsupported technical evidence pipeline status schema.");
+            var declaredHash = RequiredString(status, "statusSha256");
+            if (!Sha256Pattern().IsMatch(declaredHash)
+                || !FixedTimeEquals(ComputeCanonicalHash(status, "statusSha256"), declaredHash))
+                throw new InvalidDataException("Technical evidence pipeline status hash verification failed.");
+
+            var started = OptionalUtcDateTime(status, "lastStartedAtUtc");
+            var succeeded = OptionalUtcDateTime(status, "lastSucceededAtUtc");
+            var failed = OptionalUtcDateTime(status, "lastFailedAtUtc");
+            var updated = OptionalUtcDateTime(status, "updatedAtUtc");
+            var staleAfter = OptionalUtcDateTime(status, "staleAfterUtc");
+            if (updated is null || staleAfter is null)
+                throw new InvalidDataException("Technical evidence pipeline status timestamps are missing.");
+            var actuallyLocked = File.Exists(Path.Combine(directory, ".pipeline.lock"));
+            if (staleAfter < _timeProvider.GetUtcNow().UtcDateTime)
+                return new ResearchEvidencePipelineStatusDto(
+                    "stale", true, false, actuallyLocked, started, succeeded, failed,
+                    "Pipeline status expired; inspect the scheduler and lock locally.", updated, staleAfter, []);
+
+            var running = OptionalBoolean(status, "running")
+                ?? throw new InvalidDataException("Pipeline running state is invalid.");
+            var declaredLocked = OptionalBoolean(status, "locked")
+                ?? throw new InvalidDataException("Pipeline locked state is invalid.");
+            if (running && (!declaredLocked || !actuallyLocked))
+                throw new InvalidDataException("Pipeline claims to run without an active lock.");
+            var statusIndexFile = OptionalString(status, "runIndexFileName");
+            var statusIndexHash = OptionalString(status, "runIndexSha256");
+
+            var timeframes = new List<ResearchEvidencePipelineTimeframeStatusDto>();
+            var values = RequiredProperty(status, "timeframes");
+            if (values.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("Pipeline timeframe status must be an array.");
+            foreach (var value in values.EnumerateArray())
+            {
+                RequireObject(value, "pipeline timeframe");
+                var timeframe = RequiredString(value, "timeframe");
+                if (timeframe is not ("1h" or "4h" or "1d") || timeframes.Any(x => x.Timeframe == timeframe))
+                    throw new InvalidDataException("Pipeline timeframe is unsupported or duplicated.");
+                var manifest = RequiredString(value, "manifestSha256");
+                var definitions = OptionalString(value, "definitionsSha256");
+                if (!Sha256Pattern().IsMatch(manifest) || !verifiedManifestIds.Contains(manifest)
+                    || definitions is not null && !Sha256Pattern().IsMatch(definitions))
+                    throw new InvalidDataException("Pipeline references an unverified manifest or contract hash.");
+                var cutoff = OptionalInt64(value, "cutoffMs");
+                var stored = OptionalInt64(value, "stored");
+                var eligible = OptionalInt64(value, "eligible");
+                var excluded = OptionalInt64(value, "excluded");
+                var realized = OptionalInt64(value, "realizedAtMaxHorizon");
+                var semantic = OptionalBoolean(value, "semanticVerification");
+                if (cutoff is null or <= 0 || stored is null or < 0 || eligible is null or < 0
+                    || excluded is null or < 0 || realized is null or < 0 || stored != eligible + excluded
+                    || realized > eligible || semantic is not true)
+                    throw new InvalidDataException("Pipeline timeframe coverage is inconsistent.");
+                timeframes.Add(new ResearchEvidencePipelineTimeframeStatusDto(
+                    timeframe, cutoff.Value, manifest, stored.Value, eligible.Value, excluded.Value,
+                    realized.Value, definitions, true));
+            }
+            var lastError = OptionalString(status, "lastError");
+            if (lastError?.Length > 240 || lastError?.Contains("://", StringComparison.Ordinal) == true)
+                lastError = "Pipeline failed; inspect local service logs.";
+            var state = running ? "running"
+                : failed is not null && (succeeded is null || failed > succeeded) ? "failed"
+                : succeeded is not null ? "succeeded"
+                : "idle";
+            if (state == "succeeded" && !timeframes.Select(x => x.Timeframe).ToHashSet(StringComparer.Ordinal)
+                    .SetEquals(["1h", "4h", "1d"]))
+                throw new InvalidDataException("Successful pipeline status does not cover 1h, 4h and 1d.");
+            if (state == "succeeded" && (atomicRun is null
+                || !string.Equals(statusIndexFile, atomicRun.RunIndexFileName, StringComparison.Ordinal)
+                || !string.Equals(statusIndexHash, atomicRun.RunIndexSha256, StringComparison.Ordinal)))
+                throw new InvalidDataException("Successful pipeline status does not match the atomic latest-success run.");
+            if (state == "succeeded" && atomicRun is not null)
+            {
+                foreach (var bundle in atomicRun.Bundles)
+                {
+                    var statusBundle = timeframes.Single(x => x.Timeframe == bundle.Timeframe);
+                    if (!string.Equals(statusBundle.ManifestSha256, bundle.ManifestSha256, StringComparison.Ordinal)
+                        || statusBundle.CutoffMs != bundle.CutoffMs || statusBundle.Stored != bundle.Stored
+                        || statusBundle.Eligible != bundle.Eligible || statusBundle.Excluded != bundle.Excluded
+                        || statusBundle.RealizedAtMaxHorizon != bundle.RealizedAtMaxHorizon
+                        || !string.Equals(statusBundle.DefinitionsSha256, atomicRun.ContractDefinitionsSha256, StringComparison.Ordinal))
+                        throw new InvalidDataException("Pipeline timeframe status does not match the atomic run index.");
+                }
+            }
+            return new ResearchEvidencePipelineStatusDto(
+                state, true, running, actuallyLocked, started, succeeded, failed, lastError,
+                updated, staleAfter, timeframes.OrderBy(x => x.Timeframe, StringComparer.Ordinal).ToArray());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+            or InvalidOperationException or JsonException or CryptographicException or FormatException)
+        {
+            _logger.LogWarning("Rejected technical evidence pipeline status: {Reason}", ex.Message);
+            return new ResearchEvidencePipelineStatusDto(
+                "unavailable", false, false, File.Exists(Path.Combine(directory, ".pipeline.lock")),
+                null, null, null, "Pipeline status unavailable because integrity validation failed.",
+                null, null, []);
+        }
     }
 
     public ResearchEvidenceDetailDto? GetDetail(string id)
@@ -83,18 +202,45 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
     private LoadResult LoadVerifiedArtifacts()
     {
         if (!Directory.Exists(_rootPath))
-            return new LoadResult([], 0, 0);
+            return new LoadResult([], 0, 0, null);
 
         var artifacts = new List<LoadedArtifact>();
         var scanned = 0;
         var rejected = 0;
         var ids = new HashSet<string>(StringComparer.Ordinal);
+        AtomicTechnicalRun? atomicRun = null;
 
         foreach (var supported in SupportedKinds)
         {
             var directory = Path.Combine(_rootPath, supported.Key);
             if (!Directory.Exists(directory))
                 continue;
+
+            if (supported.Key == "technical-descriptive")
+            {
+                if (!File.Exists(Path.Combine(directory, "latest-success.json")))
+                    continue;
+                scanned += 5;
+                try
+                {
+                    atomicRun = LoadAtomicTechnicalRun(directory, supported.Value);
+                    foreach (var artifact in atomicRun.Artifacts)
+                    {
+                        if (!ids.Add(artifact.Id))
+                            throw new InvalidDataException("Duplicate evidence id.");
+                        artifacts.Add(artifact);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                    or InvalidDataException or InvalidOperationException or JsonException or CryptographicException
+                    or FormatException)
+                {
+                    rejected++;
+                    atomicRun = null;
+                    _logger.LogWarning("Rejected atomic technical evidence run: {Reason}", ex.Message);
+                }
+                continue;
+            }
 
             if (supported.Key == "ml-v3")
             {
@@ -150,7 +296,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             }
         }
 
-        return new LoadResult(artifacts, scanned, rejected);
+        return new LoadResult(artifacts, scanned, rejected, atomicRun);
     }
 
     private LoadedArtifact LoadBundleArtifact(
@@ -286,6 +432,267 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             value.TryGetProperty("dataProvenance", out var data) ? OptionalInt64(data, "rowCount") : null;
     }
 
+    private AtomicTechnicalRun LoadAtomicTechnicalRun(
+        string directory,
+        EvidenceKindDefinition definition)
+    {
+        var pointerPath = Path.Combine(directory, "latest-success.json");
+        var pointerBytes = ReadBounded(pointerPath);
+        using var pointerDocument = JsonDocument.Parse(pointerBytes, StrictJsonOptions);
+        var pointer = pointerDocument.RootElement;
+        RequireObject(pointer, "technical run pointer");
+        if (!string.Equals(RequiredString(pointer, "schema"), "btc-technical-evidence-run-pointer/v1", StringComparison.Ordinal))
+            throw new InvalidDataException("Unsupported technical run pointer schema.");
+        var pointerHash = RequiredString(pointer, "pointerSha256");
+        if (!Sha256Pattern().IsMatch(pointerHash)
+            || !FixedTimeEquals(ComputeCanonicalHash(pointer, "pointerSha256"), pointerHash))
+            throw new InvalidDataException("Technical run pointer hash verification failed.");
+        _ = OptionalUtcDateTime(pointer, "updatedAtUtc")
+            ?? throw new InvalidDataException("Technical run pointer timestamp is missing.");
+        var indexHash = RequiredString(pointer, "runIndexSha256");
+        var indexFile = RequiredString(pointer, "runIndexFileName");
+        if (!Sha256Pattern().IsMatch(indexHash)
+            || !string.Equals(indexFile, $"{indexHash}.run-index.json", StringComparison.Ordinal)
+            || !string.Equals(indexFile, Path.GetFileName(indexFile), StringComparison.Ordinal))
+            throw new InvalidDataException("Technical run index reference is unsafe or not content-addressed.");
+
+        var indexPath = Path.Combine(directory, indexFile);
+        var indexBytes = ReadBounded(indexPath);
+        if (!FixedTimeEquals(HashBytes(indexBytes), indexHash))
+            throw new InvalidDataException("Technical run index byte hash verification failed.");
+        using var indexDocument = JsonDocument.Parse(indexBytes, StrictJsonOptions);
+        var index = indexDocument.RootElement;
+        RequireObject(index, "technical run index");
+        if (!string.Equals(RequiredString(index, "schema"), "btc-technical-evidence-run-index/v1", StringComparison.Ordinal)
+            || !string.Equals(RequiredString(index, "claimType"), "descriptive_technical_event_history", StringComparison.Ordinal)
+            || !string.Equals(RequiredString(index, "symbol"), "BTCUSDT", StringComparison.Ordinal)
+            || !string.Equals(RequiredString(index, "status"), "succeeded", StringComparison.Ordinal))
+            throw new InvalidDataException("Technical run index scope, status or claim type is invalid.");
+        _ = OptionalUtcDateTime(index, "completedAtUtc")
+            ?? throw new InvalidDataException("Technical run completion timestamp is missing.");
+        var definitions = RequiredString(index, "contractDefinitionsSha256");
+        if (!Sha256Pattern().IsMatch(definitions)
+            || _technicalContract is not null
+                && !FixedTimeEquals(definitions, _technicalContract.Sha256))
+            throw new InvalidDataException("Technical run contract definitions hash is invalid or stale.");
+
+        var bundlesElement = RequiredProperty(index, "bundles");
+        if (bundlesElement.ValueKind != JsonValueKind.Array || bundlesElement.GetArrayLength() != 3)
+            throw new InvalidDataException("Technical run index must reference exactly three bundles.");
+        string[] expectedTimeframes = ["1h", "4h", "1d"];
+        var references = new List<AtomicBundleReference>(3);
+        for (var i = 0; i < expectedTimeframes.Length; i++)
+        {
+            var bundle = bundlesElement[i];
+            RequireObject(bundle, "technical run bundle reference");
+            var timeframe = RequiredString(bundle, "timeframe");
+            var manifestHash = RequiredString(bundle, "manifestSha256");
+            var manifestFile = RequiredString(bundle, "manifestFileName");
+            var cutoff = OptionalInt64(bundle, "cutoffMs");
+            var stored = OptionalInt64(bundle, "stored");
+            var eligible = OptionalInt64(bundle, "eligible");
+            var excluded = OptionalInt64(bundle, "excluded");
+            var realized = OptionalInt64(bundle, "realizedAtMaxHorizon");
+            var semantic = OptionalBoolean(bundle, "semanticVerification");
+            if (!string.Equals(timeframe, expectedTimeframes[i], StringComparison.Ordinal)
+                || !Sha256Pattern().IsMatch(manifestHash)
+                || !string.Equals(manifestFile, $"{manifestHash}.manifest.json", StringComparison.Ordinal)
+                || !string.Equals(manifestFile, Path.GetFileName(manifestFile), StringComparison.Ordinal)
+                || cutoff is null or <= 0 || stored is null or < 0 || eligible is null or < 0
+                || excluded is null or < 0 || realized is null or < 0
+                || stored != eligible + excluded || realized > eligible || semantic is not true)
+                throw new InvalidDataException("Technical run bundle reference is inconsistent.");
+            references.Add(new AtomicBundleReference(timeframe, cutoff.Value, manifestFile, manifestHash,
+                stored.Value, eligible.Value, excluded.Value, realized.Value));
+        }
+
+        var artifacts = references.Select(reference => LoadDescriptiveBundleArtifact(
+            Path.Combine(directory, reference.ManifestFileName), reference.ManifestSha256, definition, reference)).ToArray();
+        return new AtomicTechnicalRun(indexFile, indexHash, definitions, references, artifacts);
+    }
+
+    private LoadedArtifact LoadDescriptiveBundleArtifact(
+        string manifestPath,
+        string id,
+        EvidenceKindDefinition definition,
+        AtomicBundleReference? expected = null)
+    {
+        var manifestBytes = ReadBounded(manifestPath);
+        if (!FixedTimeEquals(HashBytes(manifestBytes), id))
+            throw new InvalidDataException("Descriptive bundle manifest filename hash mismatch.");
+
+        using var manifestDocument = JsonDocument.Parse(manifestBytes, StrictJsonOptions);
+        var manifest = manifestDocument.RootElement;
+        RequireObject(manifest, "descriptive bundle manifest");
+        if (!string.Equals(RequiredString(manifest, "schema"), "btc-technical-event-descriptive-evidence/v1", StringComparison.Ordinal)
+            || !string.Equals(RequiredString(manifest, "claimType"), "descriptive_technical_event_history", StringComparison.Ordinal))
+            throw new InvalidDataException("Unsupported technical descriptive bundle schema or claim type.");
+
+        var scope = RequiredProperty(manifest, "scope");
+        RequireObject(scope, "descriptive bundle scope");
+        var symbol = RequiredString(scope, "symbol");
+        var timeframe = RequiredString(scope, "timeframe");
+        var cutoffMs = OptionalInt64(scope, "cutoffMs");
+        if (!string.Equals(symbol, "BTCUSDT", StringComparison.Ordinal)
+            || timeframe is not ("1h" or "4h" or "1d")
+            || cutoffMs is null
+            || cutoffMs != OptionalInt64(manifest, "createdFromCutoffMs"))
+            throw new InvalidDataException("Descriptive evidence is outside the BTCUSDT 1h/4h/1d cutoff scope.");
+        if (expected is not null && (!string.Equals(expected.Timeframe, timeframe, StringComparison.Ordinal)
+            || expected.CutoffMs != cutoffMs || !string.Equals(expected.ManifestSha256, id, StringComparison.Ordinal)))
+            throw new InvalidDataException("Atomic run index scope does not match the descriptive manifest.");
+
+        var sourceLineage = RequiredProperty(manifest, "sourceLineage");
+        RequireObject(sourceLineage, "source lineage");
+        if (SafeDescriptor(RequiredString(sourceLineage, "source")) is null
+            || SafeDescriptor(RequiredString(sourceLineage, "sourceVersion")) is null
+            || !Sha256Pattern().IsMatch(RequiredString(sourceLineage, "contentSha256")))
+            throw new InvalidDataException("Descriptive source lineage is invalid.");
+
+        var declarations = RequiredProperty(manifest, "artifacts");
+        RequireObject(declarations, "descriptive bundle artifacts");
+        string[] requiredRoles = ["snapshot", "ledger", "report"];
+        if (!declarations.EnumerateObject().Select(x => x.Name).ToHashSet(StringComparer.Ordinal)
+                .SetEquals(requiredRoles))
+            throw new InvalidDataException("Descriptive bundle artifact roles do not match the schema.");
+
+        var directory = Path.GetDirectoryName(manifestPath)!;
+        var verified = new List<ResearchEvidenceArtifactDto>();
+        string? reportPath = null;
+        string? ledgerPath = null;
+        string? reportHash = null;
+        foreach (var role in requiredRoles)
+        {
+            var declaration = RequiredProperty(declarations, role);
+            RequireObject(declaration, $"descriptive artifact {role}");
+            var file = RequiredString(declaration, "fileName");
+            if (!string.Equals(file, Path.GetFileName(file), StringComparison.Ordinal)
+                || file.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw new InvalidDataException($"Descriptive artifact '{role}' has an unsafe filename.");
+            var expectedHash = RequiredString(declaration, "sha256");
+            if (!Sha256Pattern().IsMatch(expectedHash))
+                throw new InvalidDataException($"Descriptive artifact '{role}' has an invalid hash.");
+            var expectedSuffix = role switch
+            {
+                "snapshot" => "snapshot.json",
+                "ledger" => "ledger.jsonl",
+                "report" => "report.json",
+                _ => throw new InvalidDataException("Unsupported descriptive artifact role.")
+            };
+            if (!string.Equals(file, $"{expectedHash}.{expectedSuffix}", StringComparison.Ordinal))
+                throw new InvalidDataException($"Descriptive artifact '{role}' filename is not content-addressed.");
+            var expectedBytes = OptionalInt64(declaration, "sizeBytes");
+            var maxBytes = role == "report" ? _maxArtifactBytes : _maxBundleArtifactBytes;
+            if (expectedBytes is null || expectedBytes < 0 || expectedBytes > maxBytes
+                || role != "ledger" && expectedBytes == 0)
+                throw new InvalidDataException($"Descriptive artifact '{role}' has an invalid size.");
+            var artifactPath = Path.Combine(directory, file);
+            var info = new FileInfo(artifactPath);
+            if (!info.Exists || info.Length != expectedBytes)
+                throw new InvalidDataException($"Descriptive artifact '{role}' size verification failed.");
+            var actualHash = HashFile(artifactPath);
+            if (!FixedTimeEquals(actualHash, expectedHash))
+                throw new InvalidDataException($"Descriptive artifact '{role}' hash verification failed.");
+            verified.Add(new ResearchEvidenceArtifactDto(role, actualHash, info.Length, null));
+            if (role == "report")
+            {
+                reportPath = artifactPath;
+                reportHash = actualHash;
+            }
+            else if (role == "ledger")
+            {
+                ledgerPath = artifactPath;
+            }
+        }
+
+        if (reportPath is null || ledgerPath is null || reportHash is null)
+            throw new InvalidDataException("Descriptive bundle is incomplete.");
+        var reportBytes = ReadBounded(reportPath);
+        if (!FixedTimeEquals(HashBytes(reportBytes), reportHash))
+            throw new InvalidDataException("Descriptive report changed during verification.");
+        using var reportDocument = JsonDocument.Parse(reportBytes, StrictJsonOptions);
+        var report = reportDocument.RootElement;
+        RequireObject(report, "descriptive report");
+        if (!string.Equals(RequiredString(report, "schema"), "btc-technical-event-descriptive-evidence/v1", StringComparison.Ordinal)
+            || !string.Equals(RequiredString(report, "claimType"), "descriptive_technical_event_history", StringComparison.Ordinal)
+            || OptionalBoolean(report, "predictiveEvidence") is not false
+            || OptionalBoolean(report, "probabilityClaim") is not false
+            || OptionalBoolean(report, "economicClaim") is not false
+            || OptionalBoolean(report, "promotionAllowed") is not false)
+            throw new InvalidDataException("Descriptive report attempts an unsupported claim.");
+        var reportScope = RequiredProperty(report, "scope");
+        if (!string.Equals(OptionalString(reportScope, "symbol"), symbol, StringComparison.Ordinal)
+            || !string.Equals(OptionalString(reportScope, "timeframe"), timeframe, StringComparison.Ordinal)
+            || OptionalInt64(reportScope, "cutoffMs") != cutoffMs)
+            throw new InvalidDataException("Descriptive report scope does not match its manifest.");
+
+        var counts = RequiredProperty(report, "counts");
+        RequireObject(counts, "descriptive counts");
+        var stored = OptionalInt64(counts, "stored");
+        var eligible = OptionalInt64(counts, "eligible");
+        var excluded = OptionalInt64(counts, "excluded");
+        var realized = OptionalInt64(counts, "realizedAtMaxHorizon");
+        if (stored is null or < 0 || eligible is null or < 0 || excluded is null or < 0
+            || realized is null or < 0 || eligible + excluded != stored || realized > eligible)
+            throw new InvalidDataException("Descriptive report counts are inconsistent.");
+        if (expected is not null && (expected.Stored != stored || expected.Eligible != eligible
+            || expected.Excluded != excluded || expected.RealizedAtMaxHorizon != realized))
+            throw new InvalidDataException("Atomic run index counts do not match the descriptive report.");
+        if (CountJsonLines(ledgerPath) != stored)
+            throw new InvalidDataException("Descriptive ledger row count does not match the report.");
+
+        var candleRows = report.TryGetProperty("modules", out var modules)
+            && modules.TryGetProperty("finalizedCandles", out var candleModule)
+            ? OptionalInt64(candleModule, "includedRows")
+            : null;
+        verified = verified.Select(x => x with
+        {
+            RowCount = x.Role switch
+            {
+                "snapshot" => candleRows,
+                "ledger" => stored,
+                _ => null
+            }
+        }).ToList();
+
+        var integrity = new EvidenceIntegrityDto(
+            Verified: true,
+            ManifestHashVerified: true,
+            ReportHashVerified: true,
+            ReportHashEmbedded: false,
+            VerificationMode: "content-addressed-manifest-all-artifacts-and-ledger-count");
+        var createdAtUtc = File.GetLastWriteTimeUtc(manifestPath);
+        return NormalizeDescriptiveBundle(
+            id,
+            definition,
+            manifest,
+            report,
+            symbol,
+            timeframe,
+            reportHash,
+            createdAtUtc == DateTime.MinValue ? null : DateTime.SpecifyKind(createdAtUtc, DateTimeKind.Utc),
+            stored.Value,
+            eligible.Value,
+            realized.Value,
+            candleRows,
+            integrity,
+            verified);
+    }
+
+    private static long CountJsonLines(string path)
+    {
+        long count = 0;
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                throw new InvalidDataException("Descriptive ledger contains a blank row.");
+            using var row = JsonDocument.Parse(line, StrictJsonOptions);
+            RequireObject(row.RootElement, "descriptive ledger row");
+            count++;
+        }
+        return count;
+    }
+
     private LoadedArtifact LoadArtifact(
         string reportPath,
         string id,
@@ -401,6 +808,226 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             artifacts,
             integrity);
         return new LoadedArtifact(id, definition.Kind, createdAtUtc, item, detail);
+    }
+
+    private static LoadedArtifact NormalizeDescriptiveBundle(
+        string id,
+        EvidenceKindDefinition definition,
+        JsonElement manifest,
+        JsonElement report,
+        string symbol,
+        string timeframe,
+        string reportSha256,
+        DateTime? createdAtUtc,
+        long stored,
+        long eligible,
+        long realized,
+        long? candleRows,
+        EvidenceIntegrityDto integrity,
+        IReadOnlyList<ResearchEvidenceArtifactDto> artifacts)
+    {
+        var sourceLineage = RequiredProperty(manifest, "sourceLineage");
+        var source = SafeDescriptor(OptionalString(sourceLineage, "source")) ?? "versioned immutable research input";
+        var datasetHash = OptionalString(sourceLineage, "contentSha256");
+        var summary = $"Descriptive history for {eligible:N0} causally eligible technical events from {stored:N0} stored BTCUSDT {timeframe} rows; {realized:N0} have a realized six-bar horizon.";
+        var limitations = new List<string>
+        {
+            "Historical event distributions are not probabilities or predictions for a current event.",
+            "Outcome windows may overlap after deterministic same-type deduplication; independence is not claimed.",
+            "Context-matched controls are historical comparisons, not randomized counterfactuals.",
+            "Fees, fills, slippage, position sizing, trades and PnL are outside this artifact."
+        };
+        if (report.TryGetProperty("modules", out var modules)
+            && modules.TryGetProperty("causalSmc", out var smcModule))
+        {
+            var moduleStatus = OptionalString(smcModule, "status");
+            var legacyRows = OptionalInt64(smcModule, "excludedLegacyOrUnknownAvailabilityRows") ?? 0;
+            if (moduleStatus is "partial" or "unavailable")
+                limitations.Add($"Causal SMC coverage is {moduleStatus}; {legacyRows:N0} legacy or unknown-availability rows were excluded.");
+        }
+        if (report.TryGetProperty("modules", out var dataModules)
+            && dataModules.TryGetProperty("finalizedCandles", out var candleModule))
+        {
+            var malformed = OptionalInt64(candleModule, "excludedInvalidDurationRows") ?? 0;
+            if (malformed > 0)
+                limitations.Add($"{malformed:N0} malformed-duration candle rows were excluded before context and outcome calculations.");
+        }
+
+        var item = new ResearchEvidenceCatalogItemDto(
+            id, definition.Kind, definition.Title, ResearchEvidenceStatuses.Inconclusive, "descriptive",
+            symbol, timeframe, createdAtUtc, id, reportSha256, summary, limitations, integrity);
+
+        var code = RequiredProperty(manifest, "code");
+        var git = code.TryGetProperty("git", out var gitValue) ? gitValue : default;
+        var configuration = RequiredProperty(manifest, "configuration");
+        var dependence = RequiredProperty(report, "dependence");
+        var alpha = OptionalDouble(configuration, "alpha");
+        JsonElement? evidenceProfiles = report.TryGetProperty("evidenceProfiles", out var profileValue)
+            ? profileValue.Clone()
+            : null;
+        JsonElement? statisticalEvidence = report.TryGetProperty("statisticalEvidence", out var statisticalValue)
+            ? statisticalValue.Clone()
+            : null;
+        var detail = new ResearchEvidenceDetailDto(
+            id,
+            definition.Kind,
+            definition.Title,
+            ResearchEvidenceStatuses.Inconclusive,
+            "descriptive",
+            symbol,
+            timeframe,
+            createdAtUtc,
+            id,
+            reportSha256,
+            summary,
+            "Describe the historical post-event distribution and lifecycle of every causally eligible technical event without estimating a current probability or trading outcome.",
+            new ResearchEvidenceDatasetDto(source, candleRows, null, OptionalInt64(manifest, "createdFromCutoffMs"), datasetHash),
+            new ResearchEvidenceProtocolDto(
+                RequiredString(manifest, "schema"),
+                "after explicit event availability on a finalized candle",
+                "close-to-close return with intrabar high/low excursions",
+                true,
+                $"No result-based selection; matched controls require controlIndex + 6 < eventDecisionIndex; {OptionalString(dependence, "intervalMethod") ?? "moving block bootstrap"}"),
+            [new ResearchEvidenceBaselineDto(
+                "prior_context_match",
+                "Most recent unused earlier finalized candle with the same declared causal context whose complete six-bar maximum-horizon outcome ended strictly before the event decision; descriptive comparison only.")],
+            DescriptiveMetrics(report),
+            DescriptiveFindings(report),
+            DescriptiveUncertainty(report, alpha is { } a ? 1d - a : null),
+            new ResearchEvidenceCoverageDto(
+                realized,
+                eligible,
+                stored > 0 ? (double)eligible / stored : null,
+                null),
+            "This artifact describes historical event behavior and lifecycle only. It establishes no predictive probability, economic value, promotion decision or trading claim.",
+            limitations,
+            new ResearchEvidenceProvenanceDto(
+                RequiredString(manifest, "schema"),
+                "technical-event-descriptive-history",
+                OptionalString(code, "sha256"),
+                null,
+                git.ValueKind == JsonValueKind.Object ? SafeDescriptor(OptionalString(git, "commit")) : null,
+                git.ValueKind == JsonValueKind.Object ? OptionalBoolean(git, "dirty") : null),
+            artifacts,
+            integrity,
+            evidenceProfiles,
+            statisticalEvidence);
+        return new LoadedArtifact(id, definition.Kind, createdAtUtc, item, detail);
+    }
+
+    private static IReadOnlyList<ResearchEvidenceMetricDto> DescriptiveMetrics(JsonElement report)
+    {
+        var result = new List<ResearchEvidenceMetricDto>();
+        var counts = RequiredProperty(report, "counts");
+        AddMetric(result, "events.stored", "Stored event rows", OptionalDouble(counts, "stored"), "count", null);
+        AddMetric(result, "events.eligible", "Causally eligible events", OptionalDouble(counts, "eligible"), "count", null);
+        AddMetric(result, "events.excluded", "Excluded event rows", OptionalDouble(counts, "excluded"), "count", null);
+        AddMetric(result, "events.realized6Bars", "Events realized at six bars", OptionalDouble(counts, "realizedAtMaxHorizon"), "count", null);
+        if (report.TryGetProperty("dependence", out var dependence))
+            AddMetric(result, "events.overlapExcluded", "Overlap candidates deduplicated",
+                OptionalDouble(dependence, "overlapCandidatesExcluded"), "count", null);
+        if (report.TryGetProperty("eventTypes", out var eventTypes) && eventTypes.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var eventType in eventTypes.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+            {
+                if (!EvidenceNamePattern().IsMatch(eventType.Name))
+                    continue;
+                AddMetric(result, $"event.{eventType.Name}.eligible", $"{eventType.Name} eligible events",
+                    OptionalDouble(eventType.Value, "eligible"), "count", null);
+            }
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<ResearchEvidenceFindingDto> DescriptiveFindings(JsonElement report)
+    {
+        var result = new List<ResearchEvidenceFindingDto>();
+        if (!report.TryGetProperty("eventTypes", out var eventTypes) || eventTypes.ValueKind != JsonValueKind.Object)
+            return result;
+        foreach (var eventType in eventTypes.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+        {
+            if (!EvidenceNamePattern().IsMatch(eventType.Name)
+                || !eventType.Value.TryGetProperty("horizons", out var horizons)
+                || horizons.ValueKind != JsonValueKind.Object)
+                continue;
+            foreach (var horizon in horizons.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+            {
+                if (!long.TryParse(horizon.Name, out var bars)
+                    || !horizon.Value.TryGetProperty("metrics", out var metrics)
+                    || metrics.ValueKind != JsonValueKind.Object)
+                    continue;
+                foreach (var metric in metrics.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+                {
+                    if (!EvidenceNamePattern().IsMatch(metric.Name))
+                        continue;
+                    AddDescriptiveFinding(result, eventType.Name, bars, metric.Name, "event", metric.Value, "descriptive");
+                    AddDescriptiveFinding(result, eventType.Name, bars, metric.Name, "matchedControlDifference", metric.Value, "descriptive-comparison");
+                }
+            }
+        }
+        return result;
+    }
+
+    private static void AddDescriptiveFinding(
+        List<ResearchEvidenceFindingDto> result,
+        string eventType,
+        long horizonBars,
+        string metricName,
+        string comparison,
+        JsonElement metric,
+        string status)
+    {
+        if (!metric.TryGetProperty(comparison, out var summary) || summary.ValueKind != JsonValueKind.Object)
+            return;
+        var interval = OptionalObjectInterval(summary, "meanBlockBootstrapInterval");
+        result.Add(new ResearchEvidenceFindingDto(
+            $"{eventType}:{horizonBars}:{metricName}:{comparison}",
+            comparison == "event"
+                ? $"{eventType} {metricName} after {horizonBars} bars"
+                : $"{eventType} {metricName} minus matched context after {horizonBars} bars",
+            status,
+            metricName,
+            OptionalDouble(summary, "mean"),
+            interval?.Lower,
+            interval?.Upper,
+            OptionalInt64(summary, "count")));
+    }
+
+    private static IReadOnlyList<ResearchEvidenceUncertaintyDto> DescriptiveUncertainty(
+        JsonElement report,
+        double? confidenceLevel)
+    {
+        var result = new List<ResearchEvidenceUncertaintyDto>();
+        if (!report.TryGetProperty("eventTypes", out var eventTypes) || eventTypes.ValueKind != JsonValueKind.Object)
+            return result;
+        foreach (var eventType in eventTypes.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+        {
+            if (!EvidenceNamePattern().IsMatch(eventType.Name)
+                || !eventType.Value.TryGetProperty("horizons", out var horizons)
+                || horizons.ValueKind != JsonValueKind.Object)
+                continue;
+            foreach (var horizon in horizons.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+            {
+                if (!horizon.Value.TryGetProperty("metrics", out var metrics) || metrics.ValueKind != JsonValueKind.Object)
+                    continue;
+                foreach (var metric in metrics.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+                {
+                    foreach (var comparison in new[] { "event", "matchedControlDifference" })
+                    {
+                        if (!metric.Value.TryGetProperty(comparison, out var summary)
+                            || OptionalObjectInterval(summary, "meanBlockBootstrapInterval") is not { } interval)
+                            continue;
+                        result.Add(new ResearchEvidenceUncertaintyDto(
+                            $"{eventType.Name}.{horizon.Name}.{metric.Name}.{comparison}.mean",
+                            interval.Lower,
+                            interval.Upper,
+                            confidenceLevel,
+                            false));
+                    }
+                }
+            }
+        }
+        return result;
     }
 
     private byte[] ReadBounded(string path)
@@ -1023,10 +1650,33 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         return lower is not null && upper is not null ? new EvidenceInterval(lower.Value, upper.Value) : null;
     }
 
+    private static EvidenceInterval? OptionalObjectInterval(JsonElement element, string property)
+    {
+        if (element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.Object)
+            return null;
+        var lower = OptionalDouble(value, "lower");
+        var upper = OptionalDouble(value, "upper");
+        return lower is not null && upper is not null ? new EvidenceInterval(lower.Value, upper.Value) : null;
+    }
+
     private static bool? OptionalBoolean(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
             ? value.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null }
             : null;
+
+    private static DateTime? OptionalUtcDateTime(JsonElement element, string property)
+    {
+        var value = OptionalString(element, property);
+        if (value is null)
+            return null;
+        if (!DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+            throw new InvalidDataException($"Evidence timestamp '{property}' is invalid.");
+        return parsed.UtcDateTime;
+    }
 
     private static string? SafeDescriptor(string? value) =>
         value is not null && SafeDescriptorPattern().IsMatch(value) ? value : null;
@@ -1050,6 +1700,9 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$", RegexOptions.CultureInvariant)]
     private static partial Regex SafeDescriptorPattern();
 
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9_:-]{0,63}$", RegexOptions.CultureInvariant)]
+    private static partial Regex EvidenceNamePattern();
+
     private sealed record EvidenceKindDefinition(string Kind, string Title);
     private sealed record EvidenceInterval(double Lower, double Upper);
     private sealed record LoadedArtifact(
@@ -1058,5 +1711,24 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         DateTime? CreatedAtUtc,
         ResearchEvidenceCatalogItemDto Item,
         ResearchEvidenceDetailDto Detail);
-    private sealed record LoadResult(IReadOnlyList<LoadedArtifact> Artifacts, int Scanned, int Rejected);
+    private sealed record AtomicBundleReference(
+        string Timeframe,
+        long CutoffMs,
+        string ManifestFileName,
+        string ManifestSha256,
+        long Stored,
+        long Eligible,
+        long Excluded,
+        long RealizedAtMaxHorizon);
+    private sealed record AtomicTechnicalRun(
+        string RunIndexFileName,
+        string RunIndexSha256,
+        string ContractDefinitionsSha256,
+        IReadOnlyList<AtomicBundleReference> Bundles,
+        IReadOnlyList<LoadedArtifact> Artifacts);
+    private sealed record LoadResult(
+        IReadOnlyList<LoadedArtifact> Artifacts,
+        int Scanned,
+        int Rejected,
+        AtomicTechnicalRun? AtomicRun);
 }

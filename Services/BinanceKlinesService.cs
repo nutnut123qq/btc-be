@@ -42,6 +42,18 @@ public class BinanceKlinesService : IBinanceKlinesService
         return fresh;
     }
 
+    public Task<IReadOnlyList<KlineDto>> GetKlinesForVerificationAsync(
+        string symbol,
+        string interval,
+        int limit,
+        long startTimeMs,
+        long endTimeMs,
+        CancellationToken cancellationToken = default)
+    {
+        symbol = _symbolPolicy.EnsureActive(symbol);
+        return FetchKlinesAsync(symbol, interval, limit, startTimeMs, endTimeMs, cancellationToken);
+    }
+
     private async Task<IReadOnlyList<KlineDto>> FetchKlinesAsync(
         string symbol,
         string interval,

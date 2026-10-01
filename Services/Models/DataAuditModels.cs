@@ -43,6 +43,7 @@ public record KlineQualityAudit(
     long FinalizedRows,
     long FormingRows,
     long InvalidOhlcvRows,
+    long InvalidDurationRows,
     long DuplicateOpenTimeRows,
     long? LatestFinalizedCloseTimeMs,
     long? LatestFinalizedAgeSeconds,

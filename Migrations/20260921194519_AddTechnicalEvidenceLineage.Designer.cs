@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921194519_AddTechnicalEvidenceLineage")]
+    partial class AddTechnicalEvidenceLineage
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -898,169 +901,6 @@ namespace Backend.Migrations
                     b.ToTable("CandleVolumeStats");
                 });
 
-            modelBuilder.Entity("Backend.Data.CausalSmartMoneyEvent", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("AnalysisCandleCount")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("AvailableTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("CalculationVersion")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DecisionEvidenceJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("DecisionEvidenceSha256")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<int>("DecisionSourceCandleCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("DecisionSourceOpenTimeMsJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<long>("EvaluatedThroughCloseTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("EventId")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<double?>("HighPrice")
-                        .HasColumnType("double precision");
-
-                    b.Property<double?>("LowPrice")
-                        .HasColumnType("double precision");
-
-                    b.Property<long?>("MitigatedAtMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("MitigationSourceOpenTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("OriginTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<double>("Price")
-                        .HasColumnType("double precision");
-
-                    b.Property<long?>("ReferenceTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("SegmentStartOpenTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Timeframe")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Symbol", "Timeframe", "AvailableTimeMs");
-
-                    b.HasIndex("Symbol", "Timeframe", "MitigatedAtMs");
-
-                    b.HasIndex("Symbol", "Timeframe", "EventId", "CalculationVersion")
-                        .IsUnique();
-
-                    b.ToTable("CausalSmartMoneyEvents");
-                });
-
-            modelBuilder.Entity("Backend.Data.CausalSmartMoneyRebuildCheckpoint", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("CalculationVersion")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<long?>("CoverageStartOpenTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<long?>("LastProcessedOpenTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("LatestSegmentStartOpenTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("MaterializedEventCount")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("ProcessedCandleCount")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Timeframe")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Symbol", "Timeframe", "CalculationVersion")
-                        .IsUnique();
-
-                    b.ToTable("CausalSmartMoneyRebuildCheckpoints");
-                });
-
             modelBuilder.Entity("Backend.Data.ConfluenceSnapshot", b =>
                 {
                     b.Property<long>("Id")
@@ -1333,96 +1173,6 @@ namespace Backend.Migrations
                         .IsUnique();
 
                     b.ToTable("Klines");
-                });
-
-            modelBuilder.Entity("Backend.Data.KlineDataRepairRun", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("AppliedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("BeforeEvidenceJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<long>("EndOpenTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("InsertedBars")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("IssueType")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<int>("NoopBars")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("PlanSha256")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<int>("ReplacedBars")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RequestedBars")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("SourceCheckedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("SourceClassification")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("SourceEvidenceJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("SourceEvidenceSha256")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<long>("StartOpenTimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Timeframe")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<int>("UnresolvedBars")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("UnresolvedOpenTimeMsJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<int>("VerifiedSourceBars")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PlanSha256")
-                        .IsUnique();
-
-                    b.HasIndex("Symbol", "Timeframe", "AppliedAtUtc");
-
-                    b.ToTable("KlineDataRepairRuns");
                 });
 
             modelBuilder.Entity("Backend.Data.KlineGapState", b =>

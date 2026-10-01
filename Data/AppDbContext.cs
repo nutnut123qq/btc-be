@@ -40,13 +40,18 @@ public class AppDbContext : DbContext
     public DbSet<RegimeTransition> RegimeTransitions => Set<RegimeTransition>();
     public DbSet<ConfluenceSnapshot> ConfluenceSnapshots => Set<ConfluenceSnapshot>();
     public DbSet<VolumeProfileSnapshot> VolumeProfileSnapshots => Set<VolumeProfileSnapshot>();
+    public DbSet<TechnicalEvidenceRecord> TechnicalEvidenceRecords => Set<TechnicalEvidenceRecord>();
+    public DbSet<TechnicalEvidenceRebuildCheckpoint> TechnicalEvidenceRebuildCheckpoints => Set<TechnicalEvidenceRebuildCheckpoint>();
     public DbSet<SmartMoneyStructure> SmartMoneyStructures => Set<SmartMoneyStructure>();
+    public DbSet<CausalSmartMoneyEvent> CausalSmartMoneyEvents => Set<CausalSmartMoneyEvent>();
+    public DbSet<CausalSmartMoneyRebuildCheckpoint> CausalSmartMoneyRebuildCheckpoints => Set<CausalSmartMoneyRebuildCheckpoint>();
     public DbSet<SentimentSnapshot> SentimentSnapshots => Set<SentimentSnapshot>();
     public DbSet<EnsemblePredictionRecord> EnsemblePredictionRecords => Set<EnsemblePredictionRecord>();
     public DbSet<FuturesMetric> FuturesMetrics => Set<FuturesMetric>();
     public DbSet<LiquidationSnapshot> LiquidationSnapshots => Set<LiquidationSnapshot>();
     public DbSet<WalletBalanceSnapshot> WalletBalanceSnapshots => Set<WalletBalanceSnapshot>();
     public DbSet<KlineGapState> KlineGapStates => Set<KlineGapState>();
+    public DbSet<KlineDataRepairRun> KlineDataRepairRuns => Set<KlineDataRepairRun>();
     public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
 
 
@@ -199,6 +204,22 @@ public class AppDbContext : DbContext
             e.Property(x => x.Reason).HasMaxLength(1000);
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.StartOpenTimeMs, x.EndOpenTimeMs }).IsUnique();
             e.HasIndex(x => new { x.Status, x.NextRetryAtUtc });
+        });
+
+        modelBuilder.Entity<KlineDataRepairRun>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PlanSha256).HasMaxLength(64);
+            e.Property(x => x.SourceEvidenceSha256).HasMaxLength(64);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.IssueType).HasMaxLength(64);
+            e.Property(x => x.SourceClassification).HasMaxLength(64);
+            e.Property(x => x.SourceEvidenceJson).HasColumnType("jsonb");
+            e.Property(x => x.BeforeEvidenceJson).HasColumnType("jsonb");
+            e.Property(x => x.UnresolvedOpenTimeMsJson).HasColumnType("jsonb");
+            e.HasIndex(x => x.PlanSha256).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.AppliedAtUtc });
         });
 
         modelBuilder.Entity<WorkerHeartbeat>(e =>
@@ -432,6 +453,35 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.WindowEndMs });
         });
 
+        modelBuilder.Entity<TechnicalEvidenceRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.LayerKey).HasMaxLength(64);
+            e.Property(x => x.ModuleContractVersion).HasMaxLength(128);
+            e.Property(x => x.ModuleContractSha256).HasMaxLength(64);
+            e.Property(x => x.CalculationVersion).HasMaxLength(128);
+            e.Property(x => x.Availability).HasMaxLength(32);
+            e.HasIndex(x => new
+                { x.Symbol, x.Timeframe, x.LayerKey, x.AsOfTimeMs, x.ModuleContractVersion,
+                    x.ModuleContractSha256, x.CalculationVersion })
+                .IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.AsOfTimeMs });
+        });
+
+        modelBuilder.Entity<TechnicalEvidenceRebuildCheckpoint>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.ModuleContractVersion).HasMaxLength(128);
+            e.Property(x => x.ModuleContractSha256).HasMaxLength(64);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.LastError).HasMaxLength(2000);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.ModuleContractVersion, x.ModuleContractSha256 }).IsUnique();
+        });
+
         modelBuilder.Entity<SmartMoneyStructure>(e =>
         {
             e.HasKey(x => x.Id);
@@ -441,6 +491,30 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.EventType, x.OriginTimeMs, x.AvailableTimeMs, x.CalculationVersion })
                 .IsUnique()
                 .HasFilter("\"CalculationVersion\" = 'smc-causal-v2'");
+        });
+        modelBuilder.Entity<CausalSmartMoneyEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.EventId).HasMaxLength(512);
+            e.Property(x => x.EventType).HasMaxLength(32);
+            e.Property(x => x.State).HasMaxLength(32);
+            e.Property(x => x.CalculationVersion).HasMaxLength(64);
+            e.Property(x => x.DecisionEvidenceSha256).HasMaxLength(64);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.EventId, x.CalculationVersion }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.AvailableTimeMs });
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.MitigatedAtMs });
+        });
+        modelBuilder.Entity<CausalSmartMoneyRebuildCheckpoint>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.CalculationVersion).HasMaxLength(64);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.LastError).HasMaxLength(2000);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CalculationVersion }).IsUnique();
         });
         modelBuilder.Entity<SentimentSnapshot>(e =>
         {

@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-09-research-evidence-v4"
+    "version": "2026-09-research-evidence-v9"
   },
   "paths": {
     "/api/ai-chat/capabilities": {
@@ -1057,6 +1057,211 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/market/data-quality/issues": {
+      "get": {
+        "tags": [
+          "DataQuality"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "4h"
+            }
+          },
+          {
+            "name": "startOpenTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "endOpenTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/KlineDataIssuesResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KlineDataIssuesResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KlineDataIssuesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/data-quality/repair": {
+      "post": {
+        "tags": [
+          "DataQuality"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KlineDataRepairRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KlineDataRepairRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/KlineDataRepairRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/KlineDataRepairResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KlineDataRepairResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KlineDataRepairResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Server Error",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -4619,6 +4824,320 @@
         }
       }
     },
+    "/api/smart-money/causal-rebuild": {
+      "post": {
+        "tags": [
+          "SmartMoney"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CausalSmartMoneyRebuildRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CausalSmartMoneyRebuildRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CausalSmartMoneyRebuildRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CausalSmartMoneyRebuildResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CausalSmartMoneyRebuildResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CausalSmartMoneyRebuildResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/smart-money/causal-coverage": {
+      "get": {
+        "tags": [
+          "SmartMoney"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "4h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CausalSmartMoneyCoverageResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CausalSmartMoneyCoverageResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CausalSmartMoneyCoverageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/smart-money/replay/rebuild": {
+      "post": {
+        "tags": [
+          "SmartMoney"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TechnicalEvidenceRebuildRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TechnicalEvidenceRebuildRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/TechnicalEvidenceRebuildRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalEvidenceRebuildResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalEvidenceRebuildResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalEvidenceRebuildResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/smart-money/replay/coverage": {
+      "get": {
+        "tags": [
+          "SmartMoney"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "4h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalEvidenceCoverageResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalEvidenceCoverageResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalEvidenceCoverageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/smart-money/structures": {
       "get": {
         "tags": [
@@ -4699,6 +5218,114 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/smart-money/replay": {
+      "get": {
+        "tags": [
+          "SmartMoney"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "4h"
+            }
+          },
+          {
+            "name": "asOfTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "lookbackBars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalReplayResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalReplayResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechnicalReplayResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -5535,6 +6162,84 @@
         },
         "additionalProperties": false
       },
+      "CandlePatternEventDto": {
+        "type": "object",
+        "properties": {
+          "patternType": {
+            "type": "string",
+            "nullable": true
+          },
+          "patternCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "trendDirection": {
+            "type": "string",
+            "nullable": true
+          },
+          "originTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sourceOpenTimeMs": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CandlePatternReplayDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CandlePatternEventDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CandlePatternReplayDtoTechnicalLayerEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/TechnicalLayerLineageDto"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "payload": {
+            "$ref": "#/components/schemas/CandlePatternReplayDto"
+          }
+        },
+        "additionalProperties": false
+      },
       "CandlesAroundResponse": {
         "type": "object",
         "properties": {
@@ -5565,6 +6270,347 @@
               "$ref": "#/components/schemas/KlineDto"
             },
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CausalSmartMoneyCoverageResponse": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "calculationVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastProcessedOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "coverageStartOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "latestSegmentStartOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "processedCandleCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "materializedEventCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "checkpointStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "persistedEventCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "eventsByType": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "nullable": true
+          },
+          "invalidDurationRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "historicalPendingGapRanges": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unavailableGapRanges": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "trailingNotYetFinalizedGapRanges": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "legacyStorageStatus": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CausalSmartMoneyGapBoundaryDto": {
+        "type": "object",
+        "properties": {
+          "previousOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "nextOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "invalidOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "missingBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "boundaryType": {
+            "type": "string",
+            "nullable": true
+          },
+          "ledgerStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "gapStateId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CausalSmartMoneyRebuildRequest": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "previewFromBeginning": {
+            "type": "boolean"
+          },
+          "maxCandles": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CausalSmartMoneyRebuildResult": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "calculationVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "previousCheckpointOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "coverageStartOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "batchStartOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "lastProcessedOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "candidateCandles": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "validCandidateCandles": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "invalidDurationCandles": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "contextCandles": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "contiguousSegments": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimatedEvents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimatedEvidenceBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "insertedEvents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedEvents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "existingEvents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "gapBoundaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CausalSmartMoneyGapBoundaryDto"
+            },
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfluenceModuleVoteDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "vote": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfluenceReplayDto": {
+        "type": "object",
+        "properties": {
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "eventType": {
+            "type": "string",
+            "nullable": true
+          },
+          "triggeredEvents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "score": {
+            "type": "number",
+            "format": "double"
+          },
+          "scoreKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "isProbability": {
+            "type": "boolean"
+          },
+          "overallDirection": {
+            "type": "string",
+            "nullable": true
+          },
+          "hasConflict": {
+            "type": "boolean"
+          },
+          "alignedDirectionalModules": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "moduleVotes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfluenceModuleVoteDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfluenceReplayDtoTechnicalLayerEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/TechnicalLayerLineageDto"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ConfluenceReplayDto"
           }
         },
         "additionalProperties": false
@@ -5909,6 +6955,92 @@
             "type": "number",
             "format": "double",
             "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FibonacciLevelDto": {
+        "type": "object",
+        "properties": {
+          "ratio": {
+            "type": "number",
+            "format": "double"
+          },
+          "price": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FibonacciReplayDto": {
+        "type": "object",
+        "properties": {
+          "eventType": {
+            "type": "string",
+            "nullable": true
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "direction": {
+            "type": "string",
+            "nullable": true
+          },
+          "anchorStartTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "anchorEndTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "anchorLow": {
+            "type": "number",
+            "format": "double"
+          },
+          "anchorHigh": {
+            "type": "number",
+            "format": "double"
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FibonacciLevelDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FibonacciReplayDtoTechnicalLayerEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/TechnicalLayerLineageDto"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "payload": {
+            "$ref": "#/components/schemas/FibonacciReplayDto"
           }
         },
         "additionalProperties": false
@@ -6465,6 +7597,307 @@
         },
         "additionalProperties": false
       },
+      "KlineDataIssueDto": {
+        "required": [
+          "affectedDownstreamArtifacts",
+          "causeCode",
+          "evidence",
+          "issueKey",
+          "issueType",
+          "resolutionState",
+          "symbol",
+          "timeframe"
+        ],
+        "type": "object",
+        "properties": {
+          "issueKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "issueType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "causeCode": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "resolutionState": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "startOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "affectedBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expectedDurationMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actualDurationMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "firstDetectedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "repairable": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/KlineIssueEvidenceDto"
+          },
+          "affectedDownstreamArtifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "KlineDataIssuesResponse": {
+        "required": [
+          "issues",
+          "limitations",
+          "recentRepairs",
+          "symbol",
+          "taxonomyVersion",
+          "timeframe"
+        ],
+        "type": "object",
+        "properties": {
+          "taxonomyVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "auditEndOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalKnownIssues": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KlineDataIssueDto"
+            }
+          },
+          "recentRepairs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KlineRepairAuditDto"
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "KlineDataRepairRequest": {
+        "required": [
+          "issueType"
+        ],
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "issueType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "startOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "expectedPlanSha256": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "KlineDataRepairResponse": {
+        "required": [
+          "affectedDownstreamArtifacts",
+          "issueType",
+          "limitations",
+          "planSha256",
+          "sourceClassification",
+          "sourceEndpoint",
+          "sourceEvidenceSha256",
+          "symbol",
+          "taxonomyVersion",
+          "timeframe",
+          "unresolvedOpenTimeMs"
+        ],
+        "type": "object",
+        "properties": {
+          "taxonomyVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "issueType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "alreadyApplied": {
+            "type": "boolean"
+          },
+          "startOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requestedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sourceRows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "verifiedSourceBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "insertedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replacedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "noopBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unresolvedOpenTimeMs": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "sourceClassification": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceEndpoint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceCheckedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sourceEvidenceSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "planSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "repairAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "derivedRebuildRequired": {
+            "type": "boolean"
+          },
+          "affectedDownstreamArtifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "KlineDto": {
         "type": "object",
         "properties": {
@@ -6550,6 +7983,47 @@
         },
         "additionalProperties": false
       },
+      "KlineIssueEvidenceDto": {
+        "required": [
+          "authoritativeRepairSource",
+          "detectionMethod",
+          "sourceClassification"
+        ],
+        "type": "object",
+        "properties": {
+          "detectionMethod": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceClassification": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "authoritativeRepairSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceAttemptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastSourceAttemptAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "nextSourceRetryAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "KlineQualityAudit": {
         "type": "object",
         "properties": {
@@ -6562,6 +8036,10 @@
             "format": "int64"
           },
           "invalidOhlcvRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalidDurationRows": {
             "type": "integer",
             "format": "int64"
           },
@@ -6581,6 +8059,78 @@
           },
           "isStale": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "KlineRepairAuditDto": {
+        "required": [
+          "issueType",
+          "planSha256",
+          "sourceClassification",
+          "sourceEvidenceSha256"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "planSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceEvidenceSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "issueType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "startOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requestedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "verifiedSourceBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "insertedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replacedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "noopBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unresolvedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sourceClassification": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceCheckedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "appliedAtUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -6628,6 +8178,87 @@
           },
           "lineage": {
             "$ref": "#/components/schemas/DerivativeLineageQuality"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MarketRegimeReplayDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "regimeType": {
+            "type": "string",
+            "nullable": true
+          },
+          "trend": {
+            "type": "string",
+            "nullable": true
+          },
+          "volatility": {
+            "type": "string",
+            "nullable": true
+          },
+          "eventType": {
+            "type": "string",
+            "nullable": true
+          },
+          "upChanges": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "downChanges": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentTrueRangePct": {
+            "type": "number",
+            "format": "double"
+          },
+          "priorMedianTrueRangePct": {
+            "type": "number",
+            "format": "double"
+          },
+          "rangeRatio": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MarketRegimeReplayDtoTechnicalLayerEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/TechnicalLayerLineageDto"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "payload": {
+            "$ref": "#/components/schemas/MarketRegimeReplayDto"
           }
         },
         "additionalProperties": false
@@ -7303,6 +8934,9 @@
           },
           "integrity": {
             "$ref": "#/components/schemas/EvidenceIntegritySummaryDto"
+          },
+          "pipeline": {
+            "$ref": "#/components/schemas/ResearchEvidencePipelineStatusDto"
           }
         },
         "additionalProperties": false
@@ -7496,6 +9130,12 @@
           },
           "integrity": {
             "$ref": "#/components/schemas/EvidenceIntegrityDto"
+          },
+          "evidenceProfiles": {
+            "nullable": true
+          },
+          "statisticalEvidence": {
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -7580,6 +9220,109 @@
           "interpretation": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidencePipelineStatusDto": {
+        "required": [
+          "state",
+          "timeframes"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "integrityVerified": {
+            "type": "boolean"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "lastStartedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSucceededAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastFailedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "staleAfterUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "timeframes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidencePipelineTimeframeStatusDto"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResearchEvidencePipelineTimeframeStatusDto": {
+        "required": [
+          "manifestSha256",
+          "timeframe"
+        ],
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "cutoffMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "manifestSha256": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "stored": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "eligible": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "excluded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "realizedAtMaxHorizon": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "definitionsSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "semanticVerification": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -7955,6 +9698,699 @@
         },
         "additionalProperties": false
       },
+      "TechnicalEventEvidenceDto": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "nullable": true
+          },
+          "eventType": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "originTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "referenceTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "format": "double"
+          },
+          "highPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lowPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "calculationVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "stateAtAsOf": {
+            "type": "string",
+            "nullable": true
+          },
+          "mitigatedAtMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "invalidatedAtMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "mitigationRule": {
+            "type": "string",
+            "nullable": true
+          },
+          "invalidationRule": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceCandles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicalSourceCandleDto"
+            },
+            "nullable": true
+          },
+          "detectionConditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalEvidenceCoverageResponse": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "moduleContractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "moduleContractSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastProcessedCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "coverageStartCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "historicalBackfill": {
+            "type": "boolean"
+          },
+          "checkpointStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "sparseRecordCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recordsByLayer": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "nullable": true
+          },
+          "storagePolicy": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalEvidenceRebuildRequest": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "maxCandles": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalEvidenceRebuildResult": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "moduleContractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "moduleContractSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "previousCheckpointCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "coverageStartCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "batchStartCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "historicalBackfill": {
+            "type": "boolean"
+          },
+          "lastProcessedCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "candidateCandles": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimatedSparseRecords": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimatedEnvelopeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "insertedRecords": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "existingRecords": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalIndicatorEventDto": {
+        "type": "object",
+        "properties": {
+          "eventType": {
+            "type": "string",
+            "nullable": true
+          },
+          "direction": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalIndicatorReplayDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rsi14": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ema12": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ema26": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sma50": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicalIndicatorEventDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalIndicatorReplayDtoTechnicalLayerEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/TechnicalLayerLineageDto"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "payload": {
+            "$ref": "#/components/schemas/TechnicalIndicatorReplayDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalLayerCoverageDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiredWarmupBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "latestAvailableTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "hasGapBoundary": {
+            "type": "boolean"
+          },
+          "checkpointStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "storageStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "isEventEnvelopeMaterializedAtAsOf": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalLayerLineageDto": {
+        "type": "object",
+        "properties": {
+          "moduleContractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "moduleContractSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "producer": {
+            "type": "string",
+            "nullable": true
+          },
+          "calculationVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluationMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedAsOfTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "effectiveAsOfTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "sourceStartTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "sourceEndTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "sourceCandleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiredWarmupBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isCausal": {
+            "type": "boolean"
+          },
+          "isPersisted": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalReplayAdministrationDto": {
+        "type": "object",
+        "properties": {
+          "hasGapBoundary": {
+            "type": "boolean"
+          },
+          "contextLimitBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "legacySmartMoneyStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "rebuildRequired": {
+            "type": "boolean"
+          },
+          "rebuildReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalReplayCandleDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closeTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "open": {
+            "type": "number",
+            "format": "double"
+          },
+          "high": {
+            "type": "number",
+            "format": "double"
+          },
+          "low": {
+            "type": "number",
+            "format": "double"
+          },
+          "close": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalReplayLayersDto": {
+        "type": "object",
+        "properties": {
+          "indicators": {
+            "$ref": "#/components/schemas/TechnicalIndicatorReplayDtoTechnicalLayerEnvelopeDto"
+          },
+          "candlePatterns": {
+            "$ref": "#/components/schemas/CandlePatternReplayDtoTechnicalLayerEnvelopeDto"
+          },
+          "volumeAnomaly": {
+            "$ref": "#/components/schemas/VolumeAnomalyReplayDtoTechnicalLayerEnvelopeDto"
+          },
+          "marketRegime": {
+            "$ref": "#/components/schemas/MarketRegimeReplayDtoTechnicalLayerEnvelopeDto"
+          },
+          "fibonacci": {
+            "$ref": "#/components/schemas/FibonacciReplayDtoTechnicalLayerEnvelopeDto"
+          },
+          "volumeProfile": {
+            "$ref": "#/components/schemas/VolumeProfileReplayDtoTechnicalLayerEnvelopeDto"
+          },
+          "confluence": {
+            "$ref": "#/components/schemas/ConfluenceReplayDtoTechnicalLayerEnvelopeDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalReplayProvenanceDto": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluationMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "availabilityRule": {
+            "type": "string",
+            "nullable": true
+          },
+          "contextRule": {
+            "type": "string",
+            "nullable": true
+          },
+          "persistedByReplay": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalReplayResponse": {
+        "type": "object",
+        "properties": {
+          "moduleContractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "moduleContractSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedAsOfTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "effectiveAsOfTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "lastFinalizedCandleCloseTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "requestedLookbackBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replayWindowStartTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "contiguousSegmentStartTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "sourceCandleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "analysisCandleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "calculationVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/TechnicalReplayProvenanceDto"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "candles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicalReplayCandleDto"
+            },
+            "nullable": true
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicalEventEvidenceDto"
+            },
+            "nullable": true
+          },
+          "layers": {
+            "$ref": "#/components/schemas/TechnicalReplayLayersDto"
+          },
+          "coverage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicalLayerCoverageDto"
+            },
+            "nullable": true
+          },
+          "administration": {
+            "$ref": "#/components/schemas/TechnicalReplayAdministrationDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicalSourceCandleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "nullable": true
+          },
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closeTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "open": {
+            "type": "number",
+            "format": "double"
+          },
+          "high": {
+            "type": "number",
+            "format": "double"
+          },
+          "low": {
+            "type": "number",
+            "format": "double"
+          },
+          "close": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "TimeframeAudit": {
         "type": "object",
         "properties": {
@@ -8194,6 +10630,193 @@
           "cooldownMinutes": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VolumeAnomalyReplayDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          },
+          "volumeSma20": {
+            "type": "number",
+            "format": "double"
+          },
+          "volumeAnomalyRatio": {
+            "type": "number",
+            "format": "double"
+          },
+          "volumeVsPrevious": {
+            "type": "number",
+            "format": "double"
+          },
+          "volumeVsMax10": {
+            "type": "number",
+            "format": "double"
+          },
+          "volumeTrend": {
+            "type": "string",
+            "nullable": true
+          },
+          "triggeredEvents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "VolumeAnomalyReplayDtoTechnicalLayerEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/TechnicalLayerLineageDto"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "payload": {
+            "$ref": "#/components/schemas/VolumeAnomalyReplayDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VolumeProfileBinDto": {
+        "type": "object",
+        "properties": {
+          "priceLevel": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          },
+          "volumePct": {
+            "type": "number",
+            "format": "double"
+          },
+          "isPoc": {
+            "type": "boolean"
+          },
+          "isValueArea": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VolumeProfileReplayDto": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "nullable": true
+          },
+          "binCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "valueAreaFraction": {
+            "type": "number",
+            "format": "double"
+          },
+          "windowStartMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "windowEndMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "inputVolume": {
+            "type": "number",
+            "format": "double"
+          },
+          "pocPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "vahPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "valPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "bins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeProfileBinDto"
+            },
+            "nullable": true
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "VolumeProfileReplayDtoTechnicalLayerEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "layerKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/TechnicalLayerLineageDto"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "payload": {
+            "$ref": "#/components/schemas/VolumeProfileReplayDto"
           }
         },
         "additionalProperties": false

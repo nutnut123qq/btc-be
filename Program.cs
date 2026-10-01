@@ -85,10 +85,12 @@ builder.Services.Configure<RssOptions>(builder.Configuration.GetSection(RssOptio
 builder.Services.Configure<AlertOptions>(builder.Configuration.GetSection(AlertOptions.SectionName));
 builder.Services.Configure<KlinesIngestionOptions>(builder.Configuration.GetSection(KlinesIngestionOptions.SectionName));
 builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
+builder.Services.Configure<CausalSmartMoneyRebuildOptions>(builder.Configuration.GetSection(CausalSmartMoneyRebuildOptions.SectionName));
 builder.Services.Configure<ProductionTimeframeOptions>(builder.Configuration.GetSection(ProductionTimeframeOptions.SectionName));
 builder.Services.AddSingleton<ProductionTimeframePolicy>();
 builder.Services.AddSingleton<ProductionSymbolPolicy>();
 builder.Services.AddSingleton<ProductionSymbolScopeFilter>();
+builder.Services.AddSingleton<ITechnicalModuleContractProvider, TechnicalModuleContractProvider>();
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 builder.Services.Configure<BinanceTestnetOptions>(builder.Configuration.GetSection(BinanceTestnetOptions.SectionName));
 
@@ -129,6 +131,7 @@ builder.Services.AddScoped<INewsRagService, NewsRagService>();
 builder.Services.AddScoped<NewsRagService>();
 builder.Services.AddScoped<IRagService, NewsRagService>();
 builder.Services.AddScoped<IBinanceKlinesService, BinanceKlinesService>();
+builder.Services.AddScoped<IKlineDataQualityService, KlineDataQualityService>();
 builder.Services.AddScoped<KlinesBackfillService>();
 builder.Services.AddScoped<IPatternSearchService, PatternSearchService>();
 builder.Services.AddScoped<IHistoricalAnalogService, HistoricalAnalogService>();
@@ -149,6 +152,9 @@ builder.Services.AddScoped<IConfluenceService, ConfluenceService>();
 builder.Services.AddScoped<ITelegramNotificationService, TelegramNotificationService>();
 builder.Services.AddScoped<IVolumeProfileService, VolumeProfileService>();
 builder.Services.AddScoped<ISmartMoneyService, SmartMoneyService>();
+builder.Services.AddScoped<ITechnicalReplayLayerService, TechnicalReplayLayerService>();
+builder.Services.AddScoped<ITechnicalEvidenceRebuildService, TechnicalEvidenceRebuildService>();
+builder.Services.AddScoped<ICausalSmartMoneyRebuildService, CausalSmartMoneyRebuildService>();
 builder.Services.AddScoped<ISentimentService, SentimentService>();
 builder.Services.AddScoped<IEnsembleService, EnsembleService>();
 builder.Services.AddScoped<IEnsembleBacktestService, EnsembleBacktestService>();
@@ -187,6 +193,7 @@ if (builder.Configuration.GetValue("BackgroundWorkers:Enabled", true))
     builder.Services.AddHostedService(sp => sp.GetRequiredService<BinanceUserDataStreamService>());
     builder.Services.AddHostedService<KlinesIngestionWorker>();
     builder.Services.AddHostedService<IndexingBackgroundWorker>();
+    builder.Services.AddHostedService<CausalSmartMoneyRebuildWorker>();
     builder.Services.AddHostedService<RssIngestionService>();
     builder.Services.AddHostedService<PriceAlertWorker>();
     builder.Services.AddHostedService<EmbeddingBackfillWorker>();
@@ -222,6 +229,14 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Fail startup before serving any replay if the canonical artifact, golden fixture,
+// or backend calculation-version mapping has drifted.
+using (var technicalContractScope = app.Services.CreateScope())
+{
+    _ = technicalContractScope.ServiceProvider.GetRequiredService<ITechnicalModuleContractProvider>();
+    _ = technicalContractScope.ServiceProvider.GetRequiredService<ITechnicalReplayLayerService>();
+}
 
 app.UseResponseCompression();
 app.UseRateLimiter();

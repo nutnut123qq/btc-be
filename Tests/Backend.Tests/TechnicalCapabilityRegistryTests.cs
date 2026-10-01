@@ -39,6 +39,12 @@ public sealed class TechnicalCapabilityRegistryTests
         Assert.Contains(snapshot.Items, x => x.Id == "forward-paper" && x.EvidenceTarget == "prospective-observation");
         Assert.Contains(snapshot.Items, x => x.Id == "historical-analog" && x.EvidenceStage == "experimental");
         Assert.Contains(snapshot.Items, x => x.Id == "markov-transitions" && x.OperationalStatus == "unavailable");
+        Assert.Contains(snapshot.Items, x => x.Id == "smart-money"
+            && x.Endpoint == "/api/smart-money/replay"
+            && x.Version == "smc-causal-v2"
+            && x.IntendedUse.Contains("version-keyed storage identity", StringComparison.OrdinalIgnoreCase)
+            && x.Limitation.Contains("isolated legacy", StringComparison.OrdinalIgnoreCase)
+            && x.Limitation.Contains("never canonical replay evidence", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(snapshot.Items, x => x.Id == "forward-paper"
             && x.OperationalStatus == "operational"
             && x.EvidenceStage == "experimental"
@@ -71,6 +77,22 @@ public sealed class TechnicalCapabilityRegistryTests
             .ToArray();
 
         Assert.Contains(endpoint, routes, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void SmartMoneyCapability_UsesCanonicalCausalReplayRoute_NotLegacyStructures()
+    {
+        var endpoint = new TechnicalCapabilityRegistry(new FixedTimeProvider(FixedNow))
+            .GetSnapshot().Items.Single(x => x.Id == "smart-money").Endpoint;
+        var controllerRoute = Assert.Single(typeof(SmartMoneyController)
+            .GetCustomAttributes(typeof(RouteAttribute), inherit: true)
+            .Cast<RouteAttribute>()).Template;
+        var replayRoute = Assert.Single(typeof(SmartMoneyController).GetMethod(nameof(SmartMoneyController.Replay))!
+            .GetCustomAttributes(typeof(HttpGetAttribute), inherit: true)
+            .Cast<HttpGetAttribute>()).Template;
+
+        Assert.Equal($"/{controllerRoute}/{replayRoute}", endpoint);
+        Assert.NotEqual("/api/smart-money/structures", endpoint);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

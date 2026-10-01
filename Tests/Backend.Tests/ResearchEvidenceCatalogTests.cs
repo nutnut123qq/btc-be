@@ -150,6 +150,114 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
     }
 
+    [Fact]
+    public void Catalog_PublishesVerifiedTechnicalDescriptiveBundle_WithoutPredictiveClaim()
+    {
+        var ids = WriteAtomicTechnicalRun();
+        var item = Assert.Single(CreateService().GetCatalog().Items.Where(x => x.Timeframe == "4h"));
+        var id = ids[1];
+        var detail = Assert.IsType<ResearchEvidenceDetailDto>(CreateService().GetDetail(id));
+
+        Assert.Equal("event", item.Kind);
+        Assert.Equal("descriptive", item.EvidenceTier);
+        Assert.Equal("inconclusive", item.Status);
+        Assert.Equal("4h", item.Timeframe);
+        Assert.True(item.Integrity.Verified);
+        Assert.False(item.Integrity.ReportHashEmbedded);
+        Assert.True(item.Integrity.ReportHashVerified);
+        Assert.Equal("content-addressed-manifest-all-artifacts-and-ledger-count", item.Integrity.VerificationMode);
+        Assert.Equal(100, detail.Dataset.RowCount);
+        Assert.Equal(2, detail.Artifacts.Single(x => x.Role == "ledger").RowCount);
+        Assert.Contains(detail.Metrics, x => x.Name == "events.eligible" && x.Value == 1);
+        Assert.Contains(detail.Findings, x => x.Id == "BOS_BULL:1:forwardReturn:event"
+            && x.Status == "descriptive" && x.Value == 0.01 && x.Lower == 0.005 && x.Upper == 0.015);
+        Assert.Contains(detail.Findings, x => x.Id == "BOS_BULL:1:forwardReturn:matchedControlDifference"
+            && x.Status == "descriptive-comparison");
+        Assert.True(detail.EvidenceProfiles.HasValue);
+        var profiles = detail.EvidenceProfiles.Value;
+        Assert.Equal("all-eligible-events", profiles.GetProperty("unconditional").GetProperty("population").GetString());
+        Assert.Equal(7L, profiles.GetProperty("regimeConditioned").GetProperty("sampleSize").GetInt64());
+        Assert.True(detail.StatisticalEvidence.HasValue);
+        var statistical = detail.StatisticalEvidence.Value;
+        Assert.Equal("moving-block-bootstrap", statistical.GetProperty("method").GetString());
+        Assert.Equal(0.0125, statistical.GetProperty("familywise").GetProperty("adjustedPValue").GetDouble());
+        Assert.Equal(new[] { "BOS_BULL", "FVG_BEAR" },
+            statistical.GetProperty("eventOrder").EnumerateArray().Select(x => x.GetString()));
+        Assert.Contains("no predictive probability", detail.Conclusion, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("positive_predictive", JsonSerializer.Serialize(detail), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Catalog_FailsClosed_WhenTechnicalDescriptiveLedgerIsTampered()
+    {
+        WriteAtomicTechnicalRun(tamper4hLedger: true);
+        var catalog = CreateService().GetCatalog();
+
+        Assert.Empty(catalog.Items);
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+    }
+
+    [Fact]
+    public void Catalog_FailsClosed_WhenTechnicalDescriptiveBundleClaimsPrediction()
+    {
+        WriteAtomicTechnicalRun(predictive4h: true);
+        var catalog = CreateService().GetCatalog();
+
+        Assert.Empty(catalog.Items);
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+    }
+
+    [Fact]
+    public void Catalog_IgnoresOrphanTechnicalManifestOutsideAtomicPointer()
+    {
+        var orphan = WriteTechnicalDescriptiveBundle(timeframe: "4h", predictiveEvidence: true);
+        var referenced = WriteAtomicTechnicalRun();
+
+        var catalog = CreateService().GetCatalog();
+
+        Assert.Equal(3, catalog.Items.Count);
+        Assert.DoesNotContain(catalog.Items, x => x.Id == orphan);
+        Assert.Equal(referenced.Order(), catalog.Items.Select(x => x.Id).Order());
+    }
+
+    [Fact]
+    public void Catalog_FailsClosedForWholeRun_WhenAtomicManifestIsMissing()
+    {
+        var ids = WriteAtomicTechnicalRun();
+        File.Delete(Path.Combine(_root, "technical-descriptive", $"{ids[1]}.manifest.json"));
+
+        var catalog = CreateService().GetCatalog();
+
+        Assert.Empty(catalog.Items);
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+    }
+
+    [Fact]
+    public void Catalog_ExposesIntegrityVerifiedTechnicalPipelineStatus()
+    {
+        var ids = WriteAtomicTechnicalRun();
+        WritePipelineStatus(ids, tamperAfterHash: false, stale: false);
+
+        var pipeline = Assert.IsType<ResearchEvidencePipelineStatusDto>(CreateService().GetCatalog().Pipeline);
+        Assert.Equal("succeeded", pipeline.State);
+        Assert.True(pipeline.IntegrityVerified);
+        Assert.False(pipeline.Running);
+        Assert.Equal(3, pipeline.Timeframes.Count);
+        Assert.All(pipeline.Timeframes, value => Assert.True(value.SemanticVerification));
+    }
+
+    [Fact]
+    public void Catalog_FailsClosed_WhenTechnicalPipelineStatusIsTampered()
+    {
+        var ids = WriteAtomicTechnicalRun();
+        WritePipelineStatus(ids, tamperAfterHash: true, stale: false);
+
+        var pipeline = Assert.IsType<ResearchEvidencePipelineStatusDto>(CreateService().GetCatalog().Pipeline);
+        Assert.Equal("unavailable", pipeline.State);
+        Assert.False(pipeline.IntegrityVerified);
+        Assert.Empty(pipeline.Timeframes);
+    }
+
     [Theory]
     [InlineData("../outside.predictions.jsonl")]
     [InlineData("not-content-addressed.predictions.jsonl")]
@@ -521,6 +629,311 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             ["meanLift"] = lift,
             ["robustAcrossBlockSizes"] = true
         };
+    }
+
+    private string? _latestRunIndexHash;
+    private string? _latestRunIndexFile;
+
+    private string[] WriteAtomicTechnicalRun(bool tamper4hLedger = false, bool predictive4h = false)
+    {
+        var ids = new[]
+        {
+            WriteTechnicalDescriptiveBundle(timeframe: "1h"),
+            WriteTechnicalDescriptiveBundle(timeframe: "4h", predictiveEvidence: predictive4h),
+            WriteTechnicalDescriptiveBundle(timeframe: "1d")
+        };
+        if (tamper4hLedger)
+        {
+            var ledgerPath = Directory.EnumerateFiles(Path.Combine(_root, "technical-descriptive"), "*.ledger.jsonl").Single();
+            File.AppendAllText(ledgerPath, "{\"tampered\":true}\n", new UTF8Encoding(false));
+        }
+        var timeframes = new[] { "1h", "4h", "1d" };
+        var bundles = ids.Select((id, index) => new SortedDictionary<string, object?>
+        {
+            ["cutoffMs"] = 1_789_948_799_999L,
+            ["eligible"] = 1L,
+            ["excluded"] = 1L,
+            ["manifestFileName"] = $"{id}.manifest.json",
+            ["manifestSha256"] = id,
+            ["realizedAtMaxHorizon"] = 1L,
+            ["semanticVerification"] = true,
+            ["stored"] = 2L,
+            ["timeframe"] = timeframes[index]
+        }).ToArray();
+        var indexValue = new SortedDictionary<string, object?>
+        {
+            ["bundles"] = bundles,
+            ["claimType"] = "descriptive_technical_event_history",
+            ["completedAtUtc"] = "2026-09-21T13:05:00Z",
+            ["contractDefinitionsSha256"] = new string('a', 64),
+            ["schema"] = "btc-technical-evidence-run-index/v1",
+            ["status"] = "succeeded",
+            ["symbol"] = "BTCUSDT"
+        };
+        var indexBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(indexValue) + "\n");
+        _latestRunIndexHash = HashBytes(indexBytes);
+        _latestRunIndexFile = $"{_latestRunIndexHash}.run-index.json";
+        var target = Path.Combine(_root, "technical-descriptive");
+        File.WriteAllBytes(Path.Combine(target, _latestRunIndexFile), indexBytes);
+        var pointer = new SortedDictionary<string, object?>
+        {
+            ["runIndexFileName"] = _latestRunIndexFile,
+            ["runIndexSha256"] = _latestRunIndexHash,
+            ["schema"] = "btc-technical-evidence-run-pointer/v1",
+            ["updatedAtUtc"] = "2026-09-21T13:05:01Z"
+        };
+        pointer["pointerSha256"] = HashCanonical(pointer);
+        File.WriteAllText(Path.Combine(target, "latest-success.json"), JsonSerializer.Serialize(pointer), new UTF8Encoding(false));
+        return ids;
+    }
+
+    private string WriteTechnicalDescriptiveBundle(
+        string timeframe = "4h",
+        bool tamperLedger = false,
+        bool predictiveEvidence = false)
+    {
+        var target = Path.Combine(_root, "technical-descriptive");
+        Directory.CreateDirectory(target);
+        var snapshotBytes = Encoding.UTF8.GetBytes("{\"schema\":\"btc-technical-event-descriptive-evidence/v1\"}\n");
+        var ledgerBytes = Encoding.UTF8.GetBytes("{\"eventId\":\"one\"}\n{\"eventId\":\"two\"}\n");
+        var summary = new SortedDictionary<string, object?>
+        {
+            ["count"] = 1L,
+            ["mean"] = 0.01,
+            ["median"] = 0.01,
+            ["q25"] = 0.01,
+            ["q75"] = 0.01,
+            ["meanBlockBootstrapInterval"] = new SortedDictionary<string, object?>
+            {
+                ["lower"] = 0.005,
+                ["upper"] = 0.015
+            }
+        };
+        var comparison = new SortedDictionary<string, object?>
+        {
+            ["count"] = 1L,
+            ["mean"] = 0.002,
+            ["median"] = 0.002,
+            ["q25"] = 0.002,
+            ["q75"] = 0.002,
+            ["meanBlockBootstrapInterval"] = new SortedDictionary<string, object?>
+            {
+                ["lower"] = -0.001,
+                ["upper"] = 0.004
+            }
+        };
+        var report = new SortedDictionary<string, object?>
+        {
+            ["claimType"] = "descriptive_technical_event_history",
+            ["counts"] = new SortedDictionary<string, object?>
+            {
+                ["eligible"] = 1L,
+                ["excluded"] = 1L,
+                ["exclusionReasons"] = new SortedDictionary<string, object?> { ["unknown_availability"] = 1L },
+                ["realizedAtMaxHorizon"] = 1L,
+                ["stored"] = 2L
+            },
+            ["declaredFamily"] = new SortedDictionary<string, object?>
+            {
+                ["contextKeys"] = new[] { "trend", "volatility" },
+                ["eventTypes"] = new[] { "BOS_BULL" },
+                ["horizonsBars"] = new[] { 1, 3, 6 },
+                ["metrics"] = new[] { "forwardReturn", "mfe", "mae" },
+                ["selection"] = "all eligible rows"
+            },
+            ["dependence"] = new SortedDictionary<string, object?>
+            {
+                ["dedupBars"] = 6L,
+                ["independenceClaimed"] = false,
+                ["intervalMethod"] = "moving block bootstrap over chronological event rows",
+                ["overlapCandidatesExcluded"] = 0L,
+                ["remainingOutcomeWindowsMayOverlap"] = true
+            },
+            ["economicClaim"] = false,
+            ["evidenceProfiles"] = new SortedDictionary<string, object?>
+            {
+                ["regimeConditioned"] = new SortedDictionary<string, object?>
+                {
+                    ["filters"] = new[] { "trend=up", "volatility=normal" },
+                    ["sampleSize"] = 7L
+                },
+                ["unconditional"] = new SortedDictionary<string, object?>
+                {
+                    ["population"] = "all-eligible-events",
+                    ["sampleSize"] = 11L
+                }
+            },
+            ["statisticalEvidence"] = new SortedDictionary<string, object?>
+            {
+                ["eventOrder"] = new[] { "BOS_BULL", "FVG_BEAR" },
+                ["familywise"] = new SortedDictionary<string, object?>
+                {
+                    ["adjustedPValue"] = 0.0125,
+                    ["hypotheses"] = 42L
+                },
+                ["method"] = "moving-block-bootstrap"
+            },
+            ["eventTypes"] = new SortedDictionary<string, object?>
+            {
+                ["BOS_BULL"] = new SortedDictionary<string, object?>
+                {
+                    ["eligible"] = 1L,
+                    ["horizons"] = new SortedDictionary<string, object?>
+                    {
+                        ["1"] = new SortedDictionary<string, object?>
+                        {
+                            ["elapsedTimeMs"] = 14_400_000L,
+                            ["eligible"] = 1L,
+                            ["matchedControls"] = 1L,
+                            ["metrics"] = new SortedDictionary<string, object?>
+                            {
+                                ["forwardReturn"] = new SortedDictionary<string, object?>
+                                {
+                                    ["event"] = summary,
+                                    ["matchedControlDifference"] = comparison
+                                }
+                            },
+                            ["realized"] = 1L
+                        }
+                    },
+                    ["lifecycleCoverage"] = new SortedDictionary<string, object?> { ["supported"] = 0L, ["unavailable"] = 1L },
+                    ["stored"] = 1L,
+                    ["timeToFirstTouchBars"] = null,
+                    ["timeToInvalidationBars"] = null,
+                    ["timeToMitigationBars"] = null
+                }
+            },
+            ["limitations"] = new[] { "Historical descriptions are not probabilities." },
+            ["modules"] = new SortedDictionary<string, object?>
+            {
+                ["causalSmc"] = new SortedDictionary<string, object?>
+                {
+                    ["causalRows"] = 1L,
+                    ["excludedLegacyOrUnknownAvailabilityRows"] = 1L,
+                    ["reason"] = null,
+                    ["status"] = "partial"
+                },
+                ["finalizedCandles"] = new SortedDictionary<string, object?>
+                {
+                    ["excludedInvalidDurationRows"] = 2L,
+                    ["includedRows"] = 100L,
+                    ["status"] = "evaluable"
+                }
+            },
+            ["predictiveEvidence"] = predictiveEvidence,
+            ["probabilityClaim"] = false,
+            ["promotionAllowed"] = false,
+            ["schema"] = "btc-technical-event-descriptive-evidence/v1",
+            ["scope"] = new SortedDictionary<string, object?>
+            {
+                ["cutoffMs"] = 1_789_948_799_999L,
+                ["symbol"] = "BTCUSDT",
+                ["timeframe"] = timeframe
+            }
+        };
+        var reportBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report) + "\n");
+        var snapshotHash = HashBytes(snapshotBytes);
+        var ledgerHash = HashBytes(ledgerBytes);
+        var reportHash = HashBytes(reportBytes);
+        File.WriteAllBytes(Path.Combine(target, $"{snapshotHash}.snapshot.json"), snapshotBytes);
+        File.WriteAllBytes(Path.Combine(target, $"{ledgerHash}.ledger.jsonl"), ledgerBytes);
+        File.WriteAllBytes(Path.Combine(target, $"{reportHash}.report.json"), reportBytes);
+        var manifest = new SortedDictionary<string, object?>
+        {
+            ["artifacts"] = new SortedDictionary<string, object?>
+            {
+                ["ledger"] = DescriptiveArtifact($"{ledgerHash}.ledger.jsonl", ledgerHash, ledgerBytes.Length),
+                ["report"] = DescriptiveArtifact($"{reportHash}.report.json", reportHash, reportBytes.Length),
+                ["snapshot"] = DescriptiveArtifact($"{snapshotHash}.snapshot.json", snapshotHash, snapshotBytes.Length)
+            },
+            ["claimType"] = "descriptive_technical_event_history",
+            ["code"] = new SortedDictionary<string, object?>
+            {
+                ["fileName"] = "technical_event_descriptive_evidence.py",
+                ["git"] = new SortedDictionary<string, object?> { ["commit"] = "deadbeef", ["dirty"] = true },
+                ["sha256"] = new string('d', 64)
+            },
+            ["configuration"] = new SortedDictionary<string, object?>
+            {
+                ["alpha"] = 0.05,
+                ["blockSizeEvents"] = 8L,
+                ["bootstrapSamples"] = 2000L,
+                ["contextKeys"] = new[] { "trend", "volatility" },
+                ["dedupBars"] = 6L,
+                ["horizonsBars"] = new[] { 1, 3, 6 },
+                ["randomSeed"] = 42L
+            },
+            ["createdFromCutoffMs"] = 1_789_948_799_999L,
+            ["immutability"] = "content-addressed",
+            ["schema"] = "btc-technical-event-descriptive-evidence/v1",
+            ["scope"] = new SortedDictionary<string, object?>
+            {
+                ["cutoffMs"] = 1_789_948_799_999L,
+                ["symbol"] = "BTCUSDT",
+                ["timeframe"] = timeframe
+            },
+            ["sourceLineage"] = new SortedDictionary<string, object?>
+            {
+                ["contentSha256"] = new string('c', 64),
+                ["source"] = "postgresql:Klines+SmartMoneyStructures",
+                ["sourceVersion"] = new string('b', 64)
+            }
+        };
+        var manifestBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest) + "\n");
+        var id = HashBytes(manifestBytes);
+        File.WriteAllBytes(Path.Combine(target, $"{id}.manifest.json"), manifestBytes);
+        if (tamperLedger)
+            File.AppendAllText(Path.Combine(target, $"{ledgerHash}.ledger.jsonl"), "{\"tampered\":true}\n", new UTF8Encoding(false));
+        return id;
+
+        static SortedDictionary<string, object?> DescriptiveArtifact(string fileName, string sha256, int sizeBytes) => new()
+        {
+            ["fileName"] = fileName,
+            ["sha256"] = sha256,
+            ["sizeBytes"] = sizeBytes
+        };
+    }
+
+    private void WritePipelineStatus(IReadOnlyList<string> ids, bool tamperAfterHash, bool stale)
+    {
+        var target = Path.Combine(_root, "technical-descriptive");
+        Directory.CreateDirectory(target);
+        var timeframes = new[] { "1h", "4h", "1d" };
+        var rows = new List<SortedDictionary<string, object?>>();
+        for (var index = 0; index < timeframes.Length; index++)
+        {
+            rows.Add(new SortedDictionary<string, object?>
+            {
+                ["cutoffMs"] = 1_789_948_799_999L,
+                ["definitionsSha256"] = new string('a', 64),
+                ["eligible"] = 1L,
+                ["excluded"] = 1L,
+                ["manifestSha256"] = ids[index],
+                ["realizedAtMaxHorizon"] = 1L,
+                ["semanticVerification"] = true,
+                ["stored"] = 2L,
+                ["timeframe"] = timeframes[index]
+            });
+        }
+        var status = new SortedDictionary<string, object?>
+        {
+            ["lastError"] = null,
+            ["lastFailedAtUtc"] = null,
+            ["lastStartedAtUtc"] = "2026-09-21T13:00:00Z",
+            ["lastSucceededAtUtc"] = "2026-09-21T13:05:00Z",
+            ["locked"] = false,
+            ["running"] = false,
+            ["runIndexFileName"] = _latestRunIndexFile,
+            ["runIndexSha256"] = _latestRunIndexHash,
+            ["schema"] = "btc-technical-evidence-pipeline-status/v1",
+            ["staleAfterUtc"] = stale ? "2026-09-21T13:30:00Z" : "2026-09-22T13:05:00Z",
+            ["timeframes"] = rows,
+            ["updatedAtUtc"] = "2026-09-21T13:05:00Z"
+        };
+        status["statusSha256"] = HashCanonical(status);
+        if (tamperAfterHash)
+            status["running"] = true;
+        File.WriteAllText(Path.Combine(target, "pipeline-status.json"), JsonSerializer.Serialize(status), new UTF8Encoding(false));
     }
 
     private static string HashCanonical(object value)

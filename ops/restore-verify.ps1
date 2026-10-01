@@ -18,14 +18,14 @@ if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Backup manifest not fo
 $manifestChecksumPath = "$manifestPath.sha256"
 if (-not (Test-Path -LiteralPath $manifestChecksumPath)) { throw "Backup manifest checksum not found: $manifestChecksumPath" }
 $expectedManifestHash = ((Get-Content -LiteralPath $manifestChecksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-if ((Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedManifestHash) {
+if ((Get-Sha256Hex -LiteralPath $manifestPath) -ne $expectedManifestHash) {
     throw "Backup manifest checksum mismatch."
 }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $dumpChecksumPath = "$dumpPath.sha256"
 if (-not (Test-Path -LiteralPath $dumpChecksumPath)) { throw "Database dump checksum file not found: $dumpChecksumPath" }
 $checksumFileHash = ((Get-Content -LiteralPath $dumpChecksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-$actualHash = (Get-FileHash -LiteralPath $dumpPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$actualHash = Get-Sha256Hex -LiteralPath $dumpPath
 if ($actualHash -ne $manifest.dump.sha256 -or $actualHash -ne $checksumFileHash) { throw "Database dump checksum mismatch." }
 
 $pgRestore = Resolve-PgTool "pg_restore"
@@ -35,7 +35,7 @@ if ($listResult.ExitCode -ne 0) { throw "pg_restore could not list the backup. $
 if ($manifest.models.archive) {
     $archive = Join-Path (Split-Path $dumpPath -Parent) $manifest.models.archive
     if (-not (Test-Path -LiteralPath $archive)) { throw "Model archive missing: $archive" }
-    if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.models.sha256) {
+    if ((Get-Sha256Hex -LiteralPath $archive) -ne $manifest.models.sha256) {
         throw "Model archive checksum mismatch."
     }
     Add-Type -AssemblyName System.IO.Compression

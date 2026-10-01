@@ -12,12 +12,14 @@ param(
 $output = Assert-SafeDataDirectory $OutputDirectory
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $guardScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "guarded-backup.ps1"))
+$wrapperScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "run-guarded-backup.ps1"))
 if (-not (Test-Path -LiteralPath $guardScript)) { throw "Guarded backup script not found: $guardScript" }
+if (-not (Test-Path -LiteralPath $wrapperScript)) { throw "Backup scheduler wrapper not found: $wrapperScript" }
 
 & $guardScript -OutputDirectory $output -RetentionCount $RetentionCount -MinimumFreeGiB $MinimumFreeGiB -PreflightOnly
 
 $powerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-$arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$guardScript`" -OutputDirectory `"$output`" -RetentionCount $RetentionCount -MinimumFreeGiB $MinimumFreeGiB"
+$arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$wrapperScript`" -OutputDirectory `"$output`" -RetentionCount $RetentionCount -MinimumFreeGiB $MinimumFreeGiB"
 $action = New-ScheduledTaskAction -Execute $powerShell -Argument $arguments -WorkingDirectory $script:BackendDir
 $trigger = New-ScheduledTaskTrigger -Daily -At $DailyAt
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 4) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries

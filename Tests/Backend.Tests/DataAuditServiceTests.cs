@@ -16,9 +16,9 @@ public class DataAuditServiceTests
         return new AppDbContext(options);
     }
 
-    private static DataAuditService CreateService(AppDbContext db)
+    private static DataAuditService CreateService(AppDbContext db, TimeProvider? timeProvider = null)
     {
-        return new DataAuditService(db, NullLogger<DataAuditService>.Instance);
+        return new DataAuditService(db, NullLogger<DataAuditService>.Instance, timeProvider: timeProvider);
     }
 
     [Fact]
@@ -147,6 +147,7 @@ public class DataAuditServiceTests
         var finalized = CreateKline("1h", 0);
         var invalid = CreateKline("1h", 3_600_000);
         invalid.High = invalid.Low - 1;
+        invalid.CloseTimeMs += 1;
         var forming = CreateKline("1h", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         forming.CloseTimeMs = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
         db.Klines.AddRange(finalized, invalid, forming);
@@ -172,6 +173,7 @@ public class DataAuditServiceTests
         Assert.Equal(2, oneHour.Quality!.FinalizedRows);
         Assert.Equal(1, oneHour.Quality.FormingRows);
         Assert.Equal(1, oneHour.Quality.InvalidOhlcvRows);
+        Assert.Equal(1, oneHour.Quality.InvalidDurationRows);
         Assert.Equal(0, oneHour.Quality.DuplicateOpenTimeRows);
         Assert.Contains(oneHour.DerivedTables!, x =>
             x.Table == "TechnicalIndicators" && x.Rows == 1 && x.MissingRows == 1);
@@ -274,6 +276,72 @@ public class DataAuditServiceTests
         Assert.True(extension.Value.StartOpenTimeMs > 100);
     }
 
+    [Theory]
+    [InlineData(14_400_000L, 10_800_000L)] // exact 4h boundary: 03:00 candle is finalized
+    [InlineData(16_200_000L, 10_800_000L)] // mid 04:00 candle: still audit through 03:00
+    public void CalculateAuditEnd_UsesLastFinalizedOpen(long nowMs, long expectedOpenMs)
+    {
+        Assert.Equal(expectedOpenMs, DataAuditService.CalculateAuditEndOpenTimeMs(nowMs, 3_600_000));
+    }
+
+    [Theory]
+    [InlineData(14_400_000L)]
+    [InlineData(16_200_000L)]
+    public async Task Audit_does_not_count_current_forming_interval_as_trailing_gap(long nowMs)
+    {
+        await using var db = CreateInMemoryDb(Guid.NewGuid().ToString());
+        db.Klines.AddRange(Enumerable.Range(0, 4).Select(i => CreateKline("1h", i * 3_600_000L)));
+        db.KlineGapStates.Add(new KlineGapState
+        {
+            Symbol = "BTCUSDT",
+            Timeframe = "1h",
+            StartOpenTimeMs = 14_400_000,
+            EndOpenTimeMs = 14_400_000,
+            MissingBars = 1,
+            Status = KlineGapStatuses.Pending,
+            Reason = "BOOTSTRAP_DISCOVERY"
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db, new FixedTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(nowMs)))
+            .AuditAsync("BTCUSDT");
+        var hourly = result.Timeframes.Single(x => x.Timeframe == "1h");
+
+        Assert.Equal(4, hourly.TotalKlines);
+        Assert.Equal(4, hourly.ExpectedBars);
+        Assert.Equal(0, hourly.MissingBars);
+        Assert.Equal(0, hourly.GapRangeCount);
+        Assert.Equal(0, hourly.PendingGapCount);
+        Assert.Empty(hourly.TopGaps);
+    }
+
+    [Fact]
+    public void ClipGapStates_drops_forming_tail_and_clips_crossing_range()
+    {
+        var states = new[]
+        {
+            new KlineGapState
+            {
+                Id = 1, Symbol = "BTCUSDT", Timeframe = "1h",
+                StartOpenTimeMs = 7_200_000, EndOpenTimeMs = 14_400_000,
+                MissingBars = 3, Status = KlineGapStatuses.Pending
+            },
+            new KlineGapState
+            {
+                Id = 2, Symbol = "BTCUSDT", Timeframe = "1h",
+                StartOpenTimeMs = 14_400_000, EndOpenTimeMs = 14_400_000,
+                MissingBars = 1, Status = KlineGapStatuses.Pending
+            }
+        };
+
+        var clipped = DataAuditService.ClipGapStates(states, 10_800_000, 3_600_000);
+
+        var retained = Assert.Single(clipped);
+        Assert.Equal(1, retained.Id);
+        Assert.Equal(10_800_000, retained.EndOpenTimeMs);
+        Assert.Equal(2, retained.MissingBars);
+    }
+
     private static Kline CreateKline(string timeframe, long openTimeMs) => new()
     {
         Symbol = "BTCUSDT",
@@ -290,4 +358,9 @@ public class DataAuditServiceTests
         TakerBuyVolume = 0.5m,
         TakerBuyQuoteVolume = 0.5m
     };
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 }

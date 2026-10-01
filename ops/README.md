@@ -65,6 +65,11 @@ pwsh ./ops/install-backup-task.ps1 -RetentionCount 2 -MinimumFreeGiB 15 -DailyAt
 
 The installer updates the existing `Bitcoin Analyst DB Backup` task, preserves its
 principal, and leaves it disabled unless `-Enable` is explicit.
+Its Scheduled Task action invokes the absolute Windows PowerShell inbox executable
+and `run-guarded-backup.ps1`, which bounds runtime, writes a machine-readable atomic
+status file at `.ops/status/backup-scheduler-status.json`, and rotates only the exact
+`backup-scheduler.log` file. Run `ops/backup-wrapper-self-test.ps1` without touching
+the real Scheduled Task or database.
 
 Every backup has SHA-256 checksums for the dump and manifest, exact public-table row counts, source server/database identity, retention metadata, and—when present—a separately checksummed archive whose model artifacts are individually checked against their JSON manifests. `migrate.ps1` refuses to run while managed services are active or until the supplied backup and validated PG/EF migration target identities match.
 

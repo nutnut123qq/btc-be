@@ -23,6 +23,7 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger,
     [
         (nameof(Services.KlinesIngestionWorker), TimeSpan.FromMinutes(40)),
         (nameof(Services.IndexingBackgroundWorker), TimeSpan.FromMinutes(70)),
+        (nameof(Services.CausalSmartMoneyRebuildWorker), TimeSpan.FromMinutes(70)),
         (nameof(Services.RssIngestionService), TimeSpan.FromMinutes(40)),
         (nameof(Services.EmbeddingBackfillWorker), TimeSpan.FromMinutes(130))
     ];

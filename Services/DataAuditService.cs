@@ -19,6 +19,7 @@ public class DataAuditService : IDataAuditService
     private readonly long? _backfillStartMs;
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly TimeProvider _timeProvider;
 
     private static readonly string[] DefaultTimeframes =
     {
@@ -31,7 +32,8 @@ public class DataAuditService : IDataAuditService
         DataAuditCache? cache = null,
         IOptions<KlinesIngestionOptions>? options = null,
         IServiceScopeFactory? scopeFactory = null,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _logger = logger;
@@ -39,6 +41,7 @@ public class DataAuditService : IDataAuditService
             new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
         _scopeFactory = scopeFactory;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _timeProvider = timeProvider ?? TimeProvider.System;
         if (options is not null)
         {
             var start = options.Value.BackfillStartDate;
@@ -79,7 +82,7 @@ public class DataAuditService : IDataAuditService
 
         var response = new DataAuditResponse(
             symbol,
-            DateTime.UtcNow,
+            _timeProvider.GetUtcNow().UtcDateTime,
             timeframeAudits,
             news,
             rulesAlerts,
@@ -93,7 +96,7 @@ public class DataAuditService : IDataAuditService
         bool includeInventory,
         CancellationToken cancellationToken)
     {
-        var nowUtc = DateTimeOffset.UtcNow;
+        var nowUtc = _timeProvider.GetUtcNow();
         var nowMs = nowUtc.ToUnixTimeMilliseconds();
         var startMs = _backfillStartMs ?? new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
@@ -124,7 +127,7 @@ public class DataAuditService : IDataAuditService
         {
             klinesByTimeframe.TryGetValue(timeframe, out var row);
             var intervalMs = Timeframes.IntervalToMs(timeframe);
-            return new PostgresTimeframeSnapshot(timeframe, nowMs - nowMs % intervalMs,
+            return new PostgresTimeframeSnapshot(timeframe, CalculateAuditEndOpenTimeMs(nowMs, intervalMs),
                 0, row?.MinOpenTimeMs, row?.MaxOpenTimeMs);
         }).ToDictionary(x => x.Timeframe);
         var gapStates = auxiliary.GapStates.ToList();
@@ -135,7 +138,10 @@ public class DataAuditService : IDataAuditService
             var stats = snapshots[timeframe];
             var intervalMs = Timeframes.IntervalToMs(timeframe);
             var expectedBars = CalculateExpectedRange(0, startMs, stats.AuditEndOpenTimeMs, intervalMs).ExpectedBars;
-            var timeframeStates = gapStates.Where(x => x.Timeframe == timeframe).ToArray();
+            var timeframeStates = ClipGapStates(gapStates.Where(x => x.Timeframe == timeframe),
+                stats.AuditEndOpenTimeMs, intervalMs).ToArray();
+            gapStates.RemoveAll(x => x.Timeframe == timeframe);
+            gapStates.AddRange(timeframeStates);
             var overlapsLatest = stats.MaxOpenTimeMs.HasValue && timeframeStates.Any(x =>
                 x.StartOpenTimeMs <= stats.MaxOpenTimeMs.Value && x.EndOpenTimeMs >= stats.MaxOpenTimeMs.Value);
             ExtendTrailingGapInMemory(symbol, timeframe, stats, intervalMs, timeframeStates, gapStates);
@@ -176,7 +182,7 @@ public class DataAuditService : IDataAuditService
                 .ToArray();
             var coverage = expectedBars > 0 ? Math.Min(100, (double)stats.TotalKlines / expectedBars.Value * 100) : 0;
             var latestAge = stats.MaxOpenTimeMs.HasValue
-                ? Math.Max(0, (long)(DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(stats.MaxOpenTimeMs.Value)).TotalSeconds)
+                ? Math.Max(0, (long)(_timeProvider.GetUtcNow() - DateTimeOffset.FromUnixTimeMilliseconds(stats.MaxOpenTimeMs.Value)).TotalSeconds)
                 : (long?)null;
 
             qualities.TryGetValue(timeframe, out var qualityRow);
@@ -200,7 +206,7 @@ public class DataAuditService : IDataAuditService
                 _timeframePolicy.IsActive(timeframe), quality, derived);
         }).ToArray();
 
-        return new DataAuditResponse(symbol, DateTime.UtcNow, timeframeAudits, auxiliary.News, auxiliary.Rules,
+        return new DataAuditResponse(symbol, _timeProvider.GetUtcNow().UtcDateTime, timeframeAudits, auxiliary.News, auxiliary.Rules,
             qualityBundle.Derivatives);
     }
 
@@ -270,6 +276,45 @@ public class DataAuditService : IDataAuditService
             return (0, 0);
         var expectedBars = ((endMs - startMs) / intervalMs) + 1;
         return (expectedBars, Math.Max(0, expectedBars - totalKlines));
+    }
+
+    internal static long CalculateAuditEndOpenTimeMs(long nowMs, long intervalMs)
+    {
+        if (intervalMs <= 0) return nowMs;
+        var currentOpen = nowMs - nowMs % intervalMs;
+        return currentOpen >= intervalMs ? currentOpen - intervalMs : -1;
+    }
+
+    internal static IReadOnlyList<KlineGapState> ClipGapStates(
+        IEnumerable<KlineGapState> states,
+        long auditEndOpenTimeMs,
+        long intervalMs)
+    {
+        if (intervalMs <= 0 || auditEndOpenTimeMs < 0) return [];
+        return states
+            .Where(x => x.StartOpenTimeMs <= auditEndOpenTimeMs)
+            .Select(x =>
+            {
+                var end = Math.Min(x.EndOpenTimeMs, auditEndOpenTimeMs);
+                return new KlineGapState
+                {
+                    Id = x.Id,
+                    Symbol = x.Symbol,
+                    Timeframe = x.Timeframe,
+                    StartOpenTimeMs = x.StartOpenTimeMs,
+                    EndOpenTimeMs = end,
+                    MissingBars = Math.Max(0, (end - x.StartOpenTimeMs) / intervalMs + 1),
+                    AttemptCount = x.AttemptCount,
+                    LastAttemptAtUtc = x.LastAttemptAtUtc,
+                    NextRetryAtUtc = x.NextRetryAtUtc,
+                    Status = x.Status,
+                    Reason = x.Reason,
+                    FirstDetectedAtUtc = x.FirstDetectedAtUtc,
+                    UpdatedAtUtc = x.UpdatedAtUtc
+                };
+            })
+            .Where(x => x.MissingBars > 0)
+            .ToArray();
     }
 
     internal static bool ShouldUseLiveFallback(
@@ -423,8 +468,9 @@ public class DataAuditService : IDataAuditService
                 FinalizedRows = reader.GetInt64(1),
                 FormingRows = reader.GetInt64(2),
                 InvalidRows = reader.GetInt64(3),
-                DuplicateRows = reader.GetInt64(4),
-                LatestFinalizedCloseTimeMs = reader.IsDBNull(5) ? null : reader.GetInt64(5)
+                InvalidDurationRows = reader.GetInt64(4),
+                DuplicateRows = reader.GetInt64(5),
+                LatestFinalizedCloseTimeMs = reader.IsDBNull(6) ? null : reader.GetInt64(6)
             });
         }
         return rows;
@@ -439,6 +485,7 @@ public class DataAuditService : IDataAuditService
             row?.FinalizedRows ?? 0,
             row?.FormingRows ?? 0,
             row?.InvalidRows ?? 0,
+            row?.InvalidDurationRows ?? 0,
             row?.DuplicateRows ?? 0,
             row?.LatestFinalizedCloseTimeMs,
             latestAge,
@@ -609,6 +656,7 @@ public class DataAuditService : IDataAuditService
         public long FinalizedRows { get; set; }
         public long FormingRows { get; set; }
         public long InvalidRows { get; set; }
+        public long InvalidDurationRows { get; set; }
         public long DuplicateRows { get; set; }
         public long? LatestFinalizedCloseTimeMs { get; set; }
     }
@@ -626,9 +674,10 @@ public class DataAuditService : IDataAuditService
                     THEN 1::bigint ELSE 0::bigint END) AS "Count",
                (SELECT k."OpenTimeMs" FROM "Klines" k
                 WHERE k."Symbol"=@symbol AND k."Timeframe"=c."Timeframe" AND k."OpenTimeMs">=@startMs
+                  AND k."CloseTimeMs"<=@nowMs
                 ORDER BY k."OpenTimeMs" LIMIT 1) AS "MinOpenTimeMs",
                (SELECT k."OpenTimeMs" FROM "Klines" k
-                WHERE k."Symbol"=@symbol AND k."Timeframe"=c."Timeframe" AND k."OpenTimeMs"<=@nowMs
+                WHERE k."Symbol"=@symbol AND k."Timeframe"=c."Timeframe" AND k."CloseTimeMs"<=@nowMs
                 ORDER BY k."OpenTimeMs" DESC LIMIT 1) AS "MaxOpenTimeMs"
         FROM config c
         """;
@@ -645,6 +694,8 @@ public class DataAuditService : IDataAuditService
         FROM "PriceTargets" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
         UNION ALL SELECT 'WindowClassificationDatasets', "Timeframe", count(*)::bigint, min("WindowEndMs")::bigint, max("WindowEndMs")::bigint
         FROM "WindowClassificationDatasets" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
+        UNION ALL SELECT 'CausalSmartMoneyEvents', "Timeframe", count(*)::bigint, min("AvailableTimeMs")::bigint, max("AvailableTimeMs")::bigint
+        FROM "CausalSmartMoneyEvents" WHERE "Symbol" = @symbol GROUP BY "Timeframe"
         """;
     private const string PostgresKlineQualitySql = """
         SELECT "Timeframe",
@@ -654,6 +705,9 @@ public class DataAuditService : IDataAuditService
                     OR "Low" <= 0 OR "Close" <= 0 OR "High" < "Low"
                     OR "High" < GREATEST("Open", "Close") OR "Low" > LEAST("Open", "Close")
                     OR "Volume" < 0 OR "QuoteVolume" < 0 OR "TradeCount" < 0)::bigint AS invalid_rows,
+               count(*) FILTER (WHERE "CloseTimeMs" <= @nowMs AND "CloseTimeMs" - "OpenTimeMs" + 1 <>
+                    CASE "Timeframe" WHEN '1h' THEN 3600000 WHEN '4h' THEN 14400000
+                         WHEN '1d' THEN 86400000 ELSE "CloseTimeMs" - "OpenTimeMs" + 1 END)::bigint AS invalid_duration_rows,
                (count(*) - count(DISTINCT "OpenTimeMs"))::bigint AS duplicate_rows,
                max("CloseTimeMs") FILTER (WHERE "CloseTimeMs" <= @nowMs)::bigint AS latest_finalized_close
         FROM "Klines"
@@ -685,11 +739,12 @@ public class DataAuditService : IDataAuditService
     {
         var intervalMs = Timeframes.IntervalToMs(timeframe);
 
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var auditEndMs = intervalMs > 0 ? nowMs - nowMs % intervalMs : nowMs;
-        var klineQuery = db.Klines.Where(k => k.Symbol == symbol && k.Timeframe == timeframe);
+        var nowMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var auditEndMs = CalculateAuditEndOpenTimeMs(nowMs, intervalMs);
+        var klineQuery = db.Klines.Where(k => k.Symbol == symbol && k.Timeframe == timeframe
+            && k.CloseTimeMs <= nowMs && k.OpenTimeMs <= auditEndMs);
         if (_backfillStartMs.HasValue)
-            klineQuery = klineQuery.Where(k => k.OpenTimeMs >= _backfillStartMs.Value && k.OpenTimeMs <= auditEndMs);
+            klineQuery = klineQuery.Where(k => k.OpenTimeMs >= _backfillStartMs.Value);
         var klineStats = await klineQuery
             .GroupBy(k => 1)
             .Select(g => new
@@ -725,6 +780,7 @@ public class DataAuditService : IDataAuditService
 
         var gapCounts = await db.KlineGapStates.AsNoTracking()
             .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
+                && x.StartOpenTimeMs <= auditEndMs
                 && (x.Status == KlineGapStatuses.Pending || x.Status == KlineGapStatuses.Unavailable))
             .GroupBy(x => x.Status)
             .Select(g => new { Status = g.Key, Count = g.LongCount() })
@@ -789,10 +845,13 @@ public class DataAuditService : IDataAuditService
 
         long largestGapMs = gaps.Length > 0 ? gaps.Max(g => g.EndOpenTimeMs - g.StartOpenTimeMs + intervalMs) : 0;
         long? latestCandleAgeSeconds = maxOpenTime.HasValue
-            ? Math.Max(0, (long)(DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(maxOpenTime.Value)).TotalSeconds)
+            ? Math.Max(0, (long)(_timeProvider.GetUtcNow() - DateTimeOffset.FromUnixTimeMilliseconds(maxOpenTime.Value)).TotalSeconds)
             : null;
 
-        var qualityRows = await klineQuery.AsNoTracking()
+        var qualityQuery = db.Klines.Where(k => k.Symbol == symbol && k.Timeframe == timeframe);
+        if (_backfillStartMs.HasValue)
+            qualityQuery = qualityQuery.Where(k => k.OpenTimeMs >= _backfillStartMs.Value);
+        var qualityRows = await qualityQuery.AsNoTracking()
             .Select(k => new { k.OpenTimeMs, k.CloseTimeMs, k.Open, k.High, k.Low, k.Close, k.Volume, k.QuoteVolume, k.TradeCount })
             .ToListAsync(cancellationToken);
         var finalized = qualityRows.Where(x => x.CloseTimeMs <= nowMs).ToArray();
@@ -801,10 +860,13 @@ public class DataAuditService : IDataAuditService
             x.Low <= 0 || x.Close <= 0 || x.High < x.Low || x.High < Math.Max(x.Open, x.Close) ||
             x.Low > Math.Min(x.Open, x.Close) || x.Volume < 0 || x.QuoteVolume < 0 || x.TradeCount < 0);
         var duplicateRows = qualityRows.LongCount() - qualityRows.Select(x => x.OpenTimeMs).Distinct().LongCount();
+        var invalidDurationRows = finalized.LongCount(x => x.OpenTimeMs > long.MaxValue - (intervalMs - 1)
+            || x.CloseTimeMs != x.OpenTimeMs + intervalMs - 1);
         var quality = new KlineQualityAudit(
             finalized.LongLength,
             qualityRows.LongCount(x => x.CloseTimeMs > nowMs),
             invalidRows,
+            invalidDurationRows,
             duplicateRows,
             latestFinalizedClose,
             latestFinalizedClose.HasValue ? Math.Max(0, (nowMs - latestFinalizedClose.Value) / 1000) : null,
@@ -826,7 +888,10 @@ public class DataAuditService : IDataAuditService
                 new() { Metric = "PriceTargets", Timeframe = timeframe, Count = priceTargetsCount ?? 0,
                     MaxOpenTimeMs = await db.PriceTargets.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.OpenTimeMs, cancellationToken) },
                 new() { Metric = "WindowClassificationDatasets", Timeframe = timeframe, Count = windowClassificationDatasetsCount ?? 0,
-                    MaxOpenTimeMs = await db.WindowClassificationDatasets.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.WindowEndMs, cancellationToken) }
+                    MaxOpenTimeMs = await db.WindowClassificationDatasets.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.WindowEndMs, cancellationToken) },
+                new() { Metric = "CausalSmartMoneyEvents", Timeframe = timeframe,
+                    Count = await db.CausalSmartMoneyEvents.LongCountAsync(x => x.Symbol == symbol && x.Timeframe == timeframe, cancellationToken),
+                    MaxOpenTimeMs = await db.CausalSmartMoneyEvents.Where(x => x.Symbol == symbol && x.Timeframe == timeframe).MaxAsync(x => (long?)x.AvailableTimeMs, cancellationToken) }
             };
             derived = BuildDerivedAudits(timeframe, quality.FinalizedRows, derivedRows, nowMs);
         }
