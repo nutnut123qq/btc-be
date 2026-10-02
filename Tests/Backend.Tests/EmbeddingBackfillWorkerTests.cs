@@ -111,15 +111,17 @@ public class EmbeddingBackfillWorkerTests
             NullLogger<EmbeddingBackfillWorker>.Instance);
 
         // Even after the poison cap's worth of failed cycles the chunk stays retriable.
+        // All-transient cycles report Partial (not Failed) — covered by the
+        // dedicated transient-outcome test below.
         for (var i = 0; i < EmbeddingBackfillWorker.MaxConsecutiveChunkFailures; i++)
         {
             var r = await worker.RunCycleAsync(default);
-            Assert.Equal(WorkerCycleOutcome.Failed, r.Outcome);
+            Assert.Equal(WorkerCycleOutcome.Partial, r.Outcome);
         }
         var report = await worker.RunCycleAsync(default);
 
         Assert.Equal(4, embedder.CallCount);
-        Assert.Equal(WorkerCycleOutcome.Failed, report.Outcome);
+        Assert.Equal(WorkerCycleOutcome.Partial, report.Outcome);
         await using var scope = services.CreateAsyncScope();
         var chunk = await scope.ServiceProvider.GetRequiredService<AppDbContext>().NewsChunks.SingleAsync();
         Assert.Equal(0, chunk.EmbeddingFailureCount);
@@ -172,8 +174,38 @@ public class EmbeddingBackfillWorkerTests
 
         var report = await worker.RunCycleAsync(default);
 
-        Assert.Equal(WorkerCycleOutcome.Failed, report.Outcome);
+        // All-transient cycle => Partial; the detail still exposes the kind breakdown.
+        Assert.Equal(WorkerCycleOutcome.Partial, report.Outcome);
         Assert.Contains("timeout_or_network=1", report.Detail);
+    }
+
+    [Fact]
+    public async Task RunCycleAsync_AllTransientFailures_ReportsPartialNotFailed()
+    {
+        var embedder = new StubEmbeddingClient
+        {
+            Default = EmbeddingResult.Fail(EmbeddingErrorKind.RateLimited, "HTTP 429: quota exhausted")
+        };
+        var services = BuildServices(embedder, out _);
+        await SeedChunkAsync(services, "a1", DateTimeOffset.UtcNow);
+        var worker = new EmbeddingBackfillWorker(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<EmbeddingBackfillWorker>.Instance);
+
+        var report = await worker.RunCycleAsync(default);
+
+        // Quota/network outage is transient: Partial keeps the watchdog
+        // allow-list green — Failed would flap the whole stack.
+        Assert.Equal(WorkerCycleOutcome.Partial, report.Outcome);
+        Assert.Equal(1, report.Attempted);
+        Assert.Equal(0, report.Succeeded);
+        Assert.Equal(1, report.Failed);
+        Assert.Contains("rate_limit=1", report.Detail);
+        await using var scope = services.CreateAsyncScope();
+        var heartbeat = await scope.ServiceProvider.GetRequiredService<AppDbContext>().WorkerHeartbeats.SingleAsync();
+        Assert.Equal("Partial", heartbeat.Status);
+        Assert.Null(heartbeat.LastFailedAtUtc);
+        Assert.NotNull(heartbeat.LastSucceededAtUtc);
     }
 
     [Fact]

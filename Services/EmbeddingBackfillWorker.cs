@@ -196,9 +196,15 @@ public class EmbeddingBackfillWorker : BackgroundService
             (c.Embedding == null || c.Embedding.Length == 0 || c.EmbeddingModel != embedder.ModelId)
             && c.EmbeddingFailureCount < MaxConsecutiveChunkFailures, cancellationToken);
 
+        // A cycle where every failure is transient (rate limit / network outage)
+        // recovers on its own — report Partial so the watchdog allow-list stays
+        // green. Auth/InvalidResponse/ProviderError still report Failed: those
+        // need a human, restart does not fix them.
+        var transientOnly = failureBreakdown.Count > 0 && failureBreakdown.Keys
+            .All(k => k is EmbeddingErrorKind.RateLimited or EmbeddingErrorKind.TimeoutOrNetwork);
         var outcome = failed == 0
             ? WorkerCycleOutcome.Succeeded
-            : succeeded > 0
+            : succeeded > 0 || transientOnly
                 ? WorkerCycleOutcome.Partial
                 : WorkerCycleOutcome.Failed;
 
