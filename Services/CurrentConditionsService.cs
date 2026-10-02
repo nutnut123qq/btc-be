@@ -294,7 +294,11 @@ public sealed class CurrentConditionsService
 
         var passesDeclaredFdr = hypothesis.TryGetProperty("passesDeclaredFdr", out var fdr)
             && fdr.ValueKind == JsonValueKind.True;
-        if (passesDeclaredFdr
+        var sufficientSample = hypothesis.TryGetProperty("sufficientSample", out var sample)
+            && sample.ValueKind == JsonValueKind.True;
+        // A conflict passer must clear both declared gates — FDR alone is not
+        // enough when the non-overlapping sample is below the declared minimum.
+        if (passesDeclaredFdr && sufficientSample
             && string.Equals(metric, "forwardReturn", StringComparison.Ordinal)
             && direction is "bullish" or "bearish")
         {

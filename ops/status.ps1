@@ -32,21 +32,23 @@ catch { $pg.detail = $_.Exception.Message }
 # stall (the previous silent-stale incident). freshness.status is "healthy" only
 # when every active timeframe is fresh; workers are healthy unless stale/failed.
 # A worker reporting "disabled" (e.g. embedding backfill without an API key) is
-# a configured-off state, not a failure: it stays visible in detail but does not
-# fail the gate.
+# a configured-off state, not a failure; "idle" means the last cycle found no
+# pending work and "partial" self-heals on the next cycle. None of these fail
+# the gate, but non-healthy states stay visible in detail.
 $dataHealth = [pscustomobject]@{ component = "backend-data"; process = $null; ready = $false; detail = "not checked" }
 $backendCheck = @($checks | Where-Object { $_.component -eq "backend" }) | Select-Object -First 1
 if ($backendCheck -and $backendCheck.ready) {
     try {
         $freshness = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/health/freshness" -TimeoutSec 10
         $workers = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/health/workers" -TimeoutSec 10
-        $unhealthyWorkers = @($workers.workers | Where-Object { $_.status -ne "healthy" -and $_.status -ne "disabled" })
-        $disabledWorkers = @($workers.workers | Where-Object { $_.status -eq "disabled" })
+        $passing = @("healthy", "idle", "disabled", "partial")
+        $unhealthyWorkers = @($workers.workers | Where-Object { $passing -notcontains $_.status })
+        $attentionWorkers = @($workers.workers | Where-Object { $_.status -ne "healthy" -and $passing -contains $_.status })
         $dataHealth.ready = ($freshness.status -eq "healthy") -and $unhealthyWorkers.Count -eq 0
         $dataHealth.detail = "freshness=$($freshness.status)" + $(if ($unhealthyWorkers.Count -gt 0) {
             "; workers not healthy: $($unhealthyWorkers.name -join ', ')"
-        } else { "; workers ok" }) + $(if ($disabledWorkers.Count -gt 0) {
-            "; disabled: $($disabledWorkers.name -join ', ')"
+        } else { "; workers ok" }) + $(if ($attentionWorkers.Count -gt 0) {
+            "; note: $((@($attentionWorkers) | ForEach-Object { "$($_.name)=$($_.status)" }) -join ', ')"
         } else { "" })
     }
     catch { $dataHealth.detail = $_.Exception.Message }

@@ -177,6 +177,18 @@ public sealed class CurrentConditionsTests
     }
 
     [Fact]
+    public async Task GetCurrentConditions_NoConflict_WhenPasserLacksSufficientSample()
+    {
+        // passesDeclaredFdr=true but sufficientSample=false must not count as a
+        // conflict passer — the declared sample gate applies alongside FDR.
+        var (_, body, _) = await Invoke(
+            AiPayload("1h", DefaultConditions),
+            FullCatalog("1h", StatisticalEvidenceJson("1h", oversoldSufficient: false)));
+
+        Assert.Empty(body!.RootElement.GetProperty("conflicts").EnumerateArray());
+    }
+
+    [Fact]
     public async Task GetCurrentConditions_EvidenceAgeBars_FloorsBarDelta()
     {
         var (_, body, _) = await Invoke(AiPayload("1h", DefaultConditions), FullCatalog("1h"));
@@ -446,12 +458,12 @@ public sealed class CurrentConditionsTests
         }
         """;
 
-    private static string StatisticalEvidenceJson(string timeframe, string definitionsSha = ContractSha)
+    private static string StatisticalEvidenceJson(string timeframe, string definitionsSha = ContractSha, bool oversoldSufficient = true)
     {
         var hypotheses = string.Join(",", new[]
         {
             HypothesisJson("technicalIndicators", "RSI_ENTER_OVERSOLD", 1, "forwardReturn", "tested",
-                rawP: 0.01, adjustedQ: 0.02, passes: true, sufficient: true, nonOverlap: 30,
+                rawP: 0.01, adjustedQ: 0.02, passes: true, sufficient: oversoldSufficient, nonOverlap: 30,
                 effect: 0.35, ciLower: 0.002, ciUpper: 0.02, meanPaired: 0.012),
             HypothesisJson("technicalIndicators", "RSI_ENTER_OVERSOLD", 1, "mfe", "tested",
                 rawP: 0.35, adjustedQ: 0.4, passes: false, sufficient: true, nonOverlap: 30,
