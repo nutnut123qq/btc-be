@@ -9,14 +9,15 @@ namespace Backend.Services;
 
 /// <summary>
 /// OpenRouter embeddings API (OpenAI-compatible <c>POST /api/v1/embeddings</c>).
-/// Default model <c>openai/text-embedding-3-small</c> is asked for 768 dimensions so
-/// stored vectors keep satisfying the vector(768) column and its out-of-band trigger.
+/// Default model <c>nvidia/llama-nemotron-embed-vl-1b-v2:free</c> is a free-tier model
+/// verified to honor <c>dimensions=768</c>, so stored vectors keep satisfying the
+/// vector(768) column and its out-of-band trigger.
 /// Model id comes from <c>OpenRouter:EmbeddingModel</c> and is written to
 /// NewsChunks.EmbeddingModel for provenance; different-model vectors are never mixed.
 /// </summary>
 public class OpenRouterEmbeddingClient : IEmbeddingClient
 {
-    internal const string DefaultModelId = "openai/text-embedding-3-small";
+    internal const string DefaultModelId = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
     internal const int DefaultDimensions = 768;
 
     private readonly IHttpClientFactory _httpClientFactory;

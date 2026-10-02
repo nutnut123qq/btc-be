@@ -24,16 +24,16 @@ public class OpenRouterEmbeddingClientTests
         Assert.Equal(EmbeddingErrorKind.None, result.Error);
         Assert.Equal(768, result.Vector?.Length);
         Assert.Equal("test-key", handler.BearerToken);
-        Assert.Equal("openai/text-embedding-3-small", handler.Model);
+        Assert.Equal("nvidia/llama-nemotron-embed-vl-1b-v2:free", handler.Model);
         Assert.Equal(768, handler.Dimensions);
         Assert.Equal(new[] { "bitcoin" }, handler.Input);
     }
 
     [Fact]
-    public void ModelIdDefaultsToTextEmbedding3Small()
+    public void ModelIdDefaultsToFreeNemotronEmbed()
     {
         var client = CreateClient(new JsonHandler(new HttpResponseMessage(HttpStatusCode.OK)));
-        Assert.Equal("openai/text-embedding-3-small", client.ModelId);
+        Assert.Equal("nvidia/llama-nemotron-embed-vl-1b-v2:free", client.ModelId);
         Assert.Equal(768, client.EmbeddingDimensions);
     }
 
