@@ -46,9 +46,18 @@ public class OpenRouterEmbeddingClient : IEmbeddingClient
     }
 
     public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
+        => (await EmbedBatchAsync(new[] { text }, cancellationToken))[0];
+
+    /// <summary>
+    /// Sends the whole batch as one <c>input</c> array — OpenRouter free-tier quotas count
+    /// requests, so batching multiplies daily throughput by the batch size.
+    /// Elements are mapped back to inputs positionally when the response length matches the
+    /// input length, otherwise via each element's <c>index</c> field (OpenAI-compatible shape).
+    /// </summary>
+    public async Task<EmbeddingResult[]> EmbedBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)
-            return EmbeddingResult.Fail(EmbeddingErrorKind.NotConfigured, "No OpenRouter API key is configured.");
+            return FailAll(EmbeddingErrorKind.NotConfigured, "No OpenRouter API key is configured.", texts.Count);
 
         var client = _httpClientFactory.CreateClient("OpenRouterEmbedding");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
@@ -56,7 +65,7 @@ public class OpenRouterEmbeddingClient : IEmbeddingClient
         var body = new EmbedRequest
         {
             Model = ModelId,
-            Input = new[] { text },
+            Input = texts.ToArray(),
             Dimensions = EmbeddingDimensions
         };
 
@@ -70,15 +79,15 @@ public class OpenRouterEmbeddingClient : IEmbeddingClient
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (OperationCanceledException ex)
         {
-            return EmbeddingResult.Fail(EmbeddingErrorKind.TimeoutOrNetwork, $"Request timed out: {ex.Message}");
+            return FailAll(EmbeddingErrorKind.TimeoutOrNetwork, $"Request timed out: {ex.Message}", texts.Count);
         }
         catch (HttpRequestException ex)
         {
-            return EmbeddingResult.Fail(EmbeddingErrorKind.TimeoutOrNetwork, $"Network error: {ex.Message}");
+            return FailAll(EmbeddingErrorKind.TimeoutOrNetwork, $"Network error: {ex.Message}", texts.Count);
         }
         catch (Exception ex)
         {
-            return EmbeddingResult.Fail(EmbeddingErrorKind.ProviderError, $"{ex.GetType().Name}: {ex.Message}");
+            return FailAll(EmbeddingErrorKind.ProviderError, $"{ex.GetType().Name}: {ex.Message}", texts.Count);
         }
 
         using (response)
@@ -94,35 +103,52 @@ public class OpenRouterEmbeddingClient : IEmbeddingClient
                     HttpStatusCode.TooManyRequests => EmbeddingErrorKind.RateLimited,
                     _ => EmbeddingErrorKind.ProviderError
                 };
-                return EmbeddingResult.Fail(kind, detail);
+                return FailAll(kind, detail, texts.Count);
             }
 
-            float[]? values;
+            EmbedData[]? items;
             try
             {
                 var json = await response.Content.ReadFromJsonAsync<EmbedResponse>(
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
                     cancellationToken);
-                values = json?.Data is { Length: > 0 } data ? data[0].Embedding : null;
+                items = json?.Data;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "OpenRouter embed returned an unreadable payload");
-                return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, $"Unparseable response: {ex.Message}");
+                return FailAll(EmbeddingErrorKind.InvalidResponse, $"Unparseable response: {ex.Message}", texts.Count);
             }
 
-            if (values == null)
-                return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "Response had no data[0].embedding array.");
-            if (values.Length != EmbeddingDimensions)
-                return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse,
-                    $"Unexpected embedding size {values.Length}; expected {EmbeddingDimensions}.");
-            if (!EmbeddingResult.IsUsableVector(values, EmbeddingDimensions))
-                return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "Embedding contains NaN or infinite values.");
+            if (items is not { Length: > 0 })
+                return FailAll(EmbeddingErrorKind.InvalidResponse, "Response had no data array.", texts.Count);
 
-            return EmbeddingResult.Ok(values);
+            var positional = items.Length == texts.Count;
+            var results = new EmbeddingResult[texts.Count];
+            for (var i = 0; i < texts.Count; i++)
+            {
+                var item = positional ? items[i] : items.FirstOrDefault(d => d.Index == i);
+                results[i] = item == null
+                    ? EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "Response had no data element for this input.")
+                    : Validate(item.Embedding);
+            }
+            return results;
         }
     }
+
+    private EmbeddingResult Validate(float[] values)
+    {
+        if (values.Length != EmbeddingDimensions)
+            return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse,
+                $"Unexpected embedding size {values.Length}; expected {EmbeddingDimensions}.");
+        if (!EmbeddingResult.IsUsableVector(values, EmbeddingDimensions))
+            return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "Embedding contains NaN or infinite values.");
+        return EmbeddingResult.Ok(values);
+    }
+
+    private static EmbeddingResult[] FailAll(EmbeddingErrorKind kind, string detail, int count)
+        => Enumerable.Repeat(EmbeddingResult.Fail(kind, detail), count).ToArray();
 
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max];
@@ -147,6 +173,9 @@ public class OpenRouterEmbeddingClient : IEmbeddingClient
 
     private sealed class EmbedData
     {
+        [JsonPropertyName("index")]
+        public int Index { get; set; }
+
         [JsonPropertyName("embedding")]
         public float[] Embedding { get; set; } = Array.Empty<float>();
     }

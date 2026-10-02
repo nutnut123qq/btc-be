@@ -93,7 +93,36 @@ public class EmbeddingBackfillWorkerTests
         Assert.Null(chunk.Embedding);
         Assert.Null(chunk.EmbeddedAt);
         Assert.Null(chunk.EmbeddingModel);
-        Assert.Equal(1, chunk.EmbeddingFailureCount);
+        // Auth is a request-level failure — it must not burn the chunk's retry budget.
+        Assert.Equal(0, chunk.EmbeddingFailureCount);
+    }
+
+    [Fact]
+    public async Task RunCycleAsync_RateLimitFailures_DoNotPoisonChunks()
+    {
+        var embedder = new StubEmbeddingClient
+        {
+            Default = EmbeddingResult.Fail(EmbeddingErrorKind.RateLimited, "HTTP 429: quota exhausted")
+        };
+        var services = BuildServices(embedder, out _);
+        await SeedChunkAsync(services, "a1", DateTimeOffset.UtcNow);
+        var worker = new EmbeddingBackfillWorker(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<EmbeddingBackfillWorker>.Instance);
+
+        // Even after the poison cap's worth of failed cycles the chunk stays retriable.
+        for (var i = 0; i < EmbeddingBackfillWorker.MaxConsecutiveChunkFailures; i++)
+        {
+            var r = await worker.RunCycleAsync(default);
+            Assert.Equal(WorkerCycleOutcome.Failed, r.Outcome);
+        }
+        var report = await worker.RunCycleAsync(default);
+
+        Assert.Equal(4, embedder.CallCount);
+        Assert.Equal(WorkerCycleOutcome.Failed, report.Outcome);
+        await using var scope = services.CreateAsyncScope();
+        var chunk = await scope.ServiceProvider.GetRequiredService<AppDbContext>().NewsChunks.SingleAsync();
+        Assert.Equal(0, chunk.EmbeddingFailureCount);
     }
 
     [Fact]
@@ -250,7 +279,7 @@ public class EmbeddingBackfillWorkerTests
     {
         var embedder = new StubEmbeddingClient
         {
-            Default = EmbeddingResult.Fail(EmbeddingErrorKind.ProviderError, "HTTP 500")
+            Default = EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "bad vector payload")
         };
         var services = BuildServices(embedder, out _);
         await SeedChunkAsync(services, "a1", DateTimeOffset.UtcNow);
@@ -258,7 +287,7 @@ public class EmbeddingBackfillWorkerTests
             services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<EmbeddingBackfillWorker>.Instance);
 
-        // Three consecutive failing cycles hit the cap (same convention as KlineGapState AttemptCount>=3).
+        // Three consecutive content-fault cycles hit the cap (same convention as KlineGapState AttemptCount>=3).
         for (var i = 0; i < EmbeddingBackfillWorker.MaxConsecutiveChunkFailures; i++)
         {
             var r = await worker.RunCycleAsync(default);

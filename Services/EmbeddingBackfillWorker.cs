@@ -139,18 +139,30 @@ public class EmbeddingBackfillWorker : BackgroundService
         int succeeded = 0;
         int failed = 0;
         var failureBreakdown = new Dictionary<EmbeddingErrorKind, int>();
-        foreach (var chunk in chunks)
+        EmbeddingResult[] results;
+        try
         {
-            EmbeddingResult result;
-            try
-            {
-                result = await embedder.EmbedAsync(chunk.Text, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                result = EmbeddingResult.Fail(EmbeddingErrorKind.ProviderError, $"{ex.GetType().Name}: {ex.Message}");
-            }
+            results = await embedder.EmbedBatchAsync(chunks.Select(c => c.Text).ToArray(), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            results = Enumerable.Repeat(
+                EmbeddingResult.Fail(EmbeddingErrorKind.ProviderError, $"{ex.GetType().Name}: {ex.Message}"),
+                chunks.Count).ToArray();
+        }
+        if (results.Length != chunks.Count)
+        {
+            results = Enumerable.Repeat(
+                EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse,
+                    $"Batch returned {results.Length} results for {chunks.Count} inputs."),
+                chunks.Count).ToArray();
+        }
+
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            var chunk = chunks[i];
+            var result = results[i];
 
             if (result.IsSuccess && EmbeddingResult.IsUsableVector(result.Vector, embedder.EmbeddingDimensions))
             {
@@ -164,7 +176,10 @@ public class EmbeddingBackfillWorker : BackgroundService
             {
                 var kind = result.Error == EmbeddingErrorKind.None ? EmbeddingErrorKind.InvalidResponse : result.Error;
                 failureBreakdown[kind] = failureBreakdown.GetValueOrDefault(kind) + 1;
-                chunk.EmbeddingFailureCount++;
+                // Only per-chunk content faults poison a chunk; request-level failures
+                // (quota/auth/network/provider outage) must not burn the retry budget.
+                if (kind == EmbeddingErrorKind.InvalidResponse)
+                    chunk.EmbeddingFailureCount++;
                 failed++;
                 _logger.LogWarning(
                     "Failed to embed chunk {ChunkId}: kind={Kind} detail={Detail} consecutiveFailures={ConsecutiveFailures}",

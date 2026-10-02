@@ -27,6 +27,55 @@ public class OpenRouterEmbeddingClientTests
         Assert.Equal("nvidia/llama-nemotron-embed-vl-1b-v2:free", handler.Model);
         Assert.Equal(768, handler.Dimensions);
         Assert.Equal(new[] { "bitcoin" }, handler.Input);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsyncSendsAllInputsInOneRequest()
+    {
+        var handler = new CapturingHandler();
+        var client = CreateClient(handler);
+
+        var results = await client.EmbedBatchAsync(new[] { "a", "b", "c" });
+
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal(new[] { "a", "b", "c" }, handler.Input);
+        Assert.Equal(3, results.Length);
+        Assert.All(results, r => Assert.Equal(EmbeddingErrorKind.None, r.Error));
+        Assert.All(results, r => Assert.Equal(768, r.Vector?.Length));
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsyncHttp429FailsEveryElementWithoutThrowing()
+    {
+        var client = CreateClient(new JsonHandler(new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("{\"error\":{\"message\":\"quota\"}}", Encoding.UTF8, "application/json")
+        }));
+
+        var results = await client.EmbedBatchAsync(new[] { "a", "b" });
+
+        Assert.Equal(2, results.Length);
+        Assert.All(results, r => Assert.Equal(EmbeddingErrorKind.RateLimited, r.Error));
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsyncMissingElementIsInvalidResponseForThatInputOnly()
+    {
+        var values = string.Join(',', Enumerable.Repeat("0", 768));
+        // 3 inputs but only 2 data elements, addressed by index.
+        var client = CreateClient(new JsonHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"{{\"data\":[{{\"index\":0,\"embedding\":[{values}]}},{{\"index\":2,\"embedding\":[{values}]}}]}}",
+                Encoding.UTF8, "application/json")
+        }));
+
+        var results = await client.EmbedBatchAsync(new[] { "a", "b", "c" });
+
+        Assert.Equal(EmbeddingErrorKind.None, results[0].Error);
+        Assert.Equal(EmbeddingErrorKind.InvalidResponse, results[1].Error);
+        Assert.Equal(EmbeddingErrorKind.None, results[2].Error);
     }
 
     [Fact]
@@ -164,9 +213,11 @@ public class OpenRouterEmbeddingClientTests
         public string? Model { get; private set; }
         public int? Dimensions { get; private set; }
         public string[]? Input { get; private set; }
+        public int RequestCount { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestCount++;
             BearerToken = request.Headers.Authorization?.Parameter;
             var body = await request.Content!.ReadAsStringAsync(cancellationToken);
             using var doc = System.Text.Json.JsonDocument.Parse(body);
@@ -174,9 +225,10 @@ public class OpenRouterEmbeddingClientTests
             Dimensions = doc.RootElement.GetProperty("dimensions").GetInt32();
             Input = doc.RootElement.GetProperty("input").EnumerateArray().Select(x => x.GetString()!).ToArray();
             var values = string.Join(',', Enumerable.Repeat("0", 768));
+            var data = string.Join(',', Input.Select((_, i) => $"{{\"index\":{i},\"embedding\":[{values}]}}"));
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent($"{{\"data\":[{{\"embedding\":[{values}]}}]}}", Encoding.UTF8, "application/json")
+                Content = new StringContent($"{{\"data\":[{data}]}}", Encoding.UTF8, "application/json")
             };
         }
     }
