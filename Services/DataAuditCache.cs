@@ -9,6 +9,8 @@ public sealed class DataAuditCache(IMemoryCache cache)
         $"data-audit:{symbol.Trim().ToUpperInvariant()}:{includeInventory}";
     public bool TryGet(string symbol, bool includeInventory, out DataAuditResponse? value) =>
         cache.TryGetValue(Key(symbol, includeInventory), out value);
+    // Staleness: 5min TTL plus invalidate-on-write — ingestion/backfill/
+    // reindex write paths call Invalidate() via this singleton.
     public void Set(string symbol, bool includeInventory, DataAuditResponse value) =>
         cache.Set(Key(symbol, includeInventory), value, TimeSpan.FromMinutes(5));
     public void Invalidate(string symbol)

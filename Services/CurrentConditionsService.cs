@@ -1,4 +1,6 @@
 using Backend.Services.Models;
+using Microsoft.Extensions.Caching.Memory;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -38,18 +40,63 @@ public sealed class CurrentConditionsService
     private readonly HttpClient _aiClient;
     private readonly IResearchEvidenceCatalog _catalog;
     private readonly ILogger<CurrentConditionsService> _logger;
+    private readonly IMemoryCache? _cache;
+    private readonly TimeSpan _cacheTtl;
+
+    // Upstream fetch takes ~10s cold, so concurrent misses are deduped with a
+    // per-key gate (repo pattern: TechnicalEvidenceRebuildService.ApplyGates).
+    // Static because this service is typically constructed per-request while the
+    // IMemoryCache is a singleton — the gate must outlive each instance.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FetchGates = new(StringComparer.Ordinal);
 
     public CurrentConditionsService(
         IHttpClientFactory httpClientFactory,
         IResearchEvidenceCatalog catalog,
-        ILogger<CurrentConditionsService> logger)
+        ILogger<CurrentConditionsService> logger,
+        IMemoryCache? cache = null,
+        TimeSpan? cacheTtl = null)
     {
         _aiClient = httpClientFactory.CreateClient("AIService");
         _catalog = catalog;
         _logger = logger;
+        _cache = cache;
+        _cacheTtl = cacheTtl ?? TimeSpan.FromSeconds(30);
     }
 
-    public async Task<CurrentConditionsResult> GetAsync(string timeframe, CancellationToken cancellationToken)
+    public Task<CurrentConditionsResult> GetAsync(string timeframe, CancellationToken cancellationToken) =>
+        _cache is null
+            ? FetchAndBuildAsync(timeframe, cancellationToken)
+            : GetCachedAsync(timeframe, cancellationToken);
+
+    private async Task<CurrentConditionsResult> GetCachedAsync(string timeframe, CancellationToken cancellationToken)
+    {
+        var cache = _cache!; // GetAsync only routes here when a cache was injected.
+        var key = $"current-conditions:{timeframe}";
+        if (cache.TryGetValue(key, out CurrentConditionsResult? cached) && cached is not null)
+            return cached;
+
+        var gate = FetchGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            // Re-check inside the gate: a concurrent miss may have filled it.
+            if (cache.TryGetValue(key, out cached) && cached is not null)
+                return cached;
+            var result = await FetchAndBuildAsync(timeframe, cancellationToken);
+            // Staleness: TTL-only (30s default), no write-path invalidation —
+            // upstream conditions only change when the AI service recomputes.
+            // Only successful payloads are cached; transient 502s are not pinned.
+            if (result.Outcome == CurrentConditionsOutcome.Ok)
+                cache.Set(key, result, _cacheTtl);
+            return result;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<CurrentConditionsResult> FetchAndBuildAsync(string timeframe, CancellationToken cancellationToken)
     {
         JsonDocument document;
         try

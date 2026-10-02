@@ -3,6 +3,7 @@ using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Globalization;
 using System.Net;
@@ -305,6 +306,141 @@ public sealed class CurrentConditionsTests
         Assert.Equal("/api/current-conditions?timeframe=4h", handler.LastRequest);
     }
 
+    // ------------------------------------------------------------- caching
+
+    [Fact]
+    public async Task GetAsync_CacheHit_DoesNotCallUpstreamAgain()
+    {
+        var handler = new RecordingHandler { ResponseBody = AiPayload("1h", DefaultConditions) };
+        var service = CreateCachedService(handler);
+
+        var first = await service.GetAsync("1h", CancellationToken.None);
+        var second = await service.GetAsync("1h", CancellationToken.None);
+
+        Assert.Equal(CurrentConditionsOutcome.Ok, first.Outcome);
+        Assert.Equal(CurrentConditionsOutcome.Ok, second.Outcome);
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Same(first.Payload, second.Payload);
+    }
+
+    [Fact]
+    public async Task GetAsync_CacheKeySeparatesByTimeframe()
+    {
+        var handler = new RecordingHandler
+        {
+            Responder = req => Task.FromResult(Json200(
+                AiPayload(req.RequestUri!.Query.Contains("4h") ? "4h" : "1h", DefaultConditions)))
+        };
+        var service = CreateCachedService(handler);
+
+        await service.GetAsync("1h", CancellationToken.None);
+        await service.GetAsync("4h", CancellationToken.None);
+        await service.GetAsync("1h", CancellationToken.None); // served from cache
+
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task GetAsync_ConcurrentMiss_ComputesOnce()
+    {
+        var calls = 0;
+        var handler = new RecordingHandler
+        {
+            Responder = async _ =>
+            {
+                Interlocked.Increment(ref calls);
+                await Task.Delay(75); // hold the fetch so the misses overlap
+                return Json200(AiPayload("1h", DefaultConditions));
+            }
+        };
+        var service = CreateCachedService(handler);
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => service.GetAsync("1h", CancellationToken.None)));
+
+        Assert.Equal(1, calls);
+        Assert.All(results, r => Assert.Equal(CurrentConditionsOutcome.Ok, r.Outcome));
+        Assert.All(results.Skip(1), r => Assert.Same(results[0].Payload, r.Payload));
+    }
+
+    [Fact]
+    public async Task GetAsync_ErrorOutcome_IsNotCached()
+    {
+        var calls = 0;
+        var handler = new RecordingHandler
+        {
+            Responder = _ => Task.FromResult(Interlocked.Increment(ref calls) == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                    { Content = new StringContent("{}") }
+                : Json200(AiPayload("1h", DefaultConditions)))
+        };
+        var service = CreateCachedService(handler);
+
+        var first = await service.GetAsync("1h", CancellationToken.None);
+        var second = await service.GetAsync("1h", CancellationToken.None);
+
+        Assert.Equal(CurrentConditionsOutcome.SourceUnavailable, first.Outcome);
+        Assert.Equal(CurrentConditionsOutcome.Ok, second.Outcome);
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task GetAsync_ExpiredEntry_Refetches()
+    {
+        var handler = new RecordingHandler { ResponseBody = AiPayload("1h", DefaultConditions) };
+        var service = CreateCachedService(handler, TimeSpan.FromMilliseconds(1));
+
+        await service.GetAsync("1h", CancellationToken.None);
+        await Task.Delay(50);
+        await service.GetAsync("1h", CancellationToken.None);
+
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task GetCurrentConditions_CrossControllerRequests_ShareInjectedCache()
+    {
+        // Prod topology: one controller/service per request, one singleton
+        // IMemoryCache — the second request must hit the shared cache.
+        var handler = new RecordingHandler { ResponseBody = AiPayload("1h", DefaultConditions) };
+        var client = new HttpClient(handler) { BaseAddress = new Uri("http://ai.test") };
+        var factory = new StubHttpClientFactory(client);
+        var catalog = FullCatalog("1h");
+        var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var first = new ResearchCurrentConditionsController(
+            factory, catalog,
+            NullLogger<CurrentConditionsService>.Instance,
+            NullLogger<ResearchCurrentConditionsController>.Instance,
+            cache: cache);
+        var second = new ResearchCurrentConditionsController(
+            factory, catalog,
+            NullLogger<CurrentConditionsService>.Instance,
+            NullLogger<ResearchCurrentConditionsController>.Instance,
+            cache: cache);
+
+        Assert.IsType<OkObjectResult>(await first.GetCurrentConditions("1h"));
+        Assert.IsType<OkObjectResult>(await second.GetCurrentConditions("1h"));
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    private static CurrentConditionsService CreateCachedService(
+        RecordingHandler handler, TimeSpan? cacheTtl = null)
+    {
+        var client = new HttpClient(handler) { BaseAddress = new Uri("http://ai.test") };
+        return new CurrentConditionsService(
+            new StubHttpClientFactory(client),
+            FullCatalog("1h"),
+            NullLogger<CurrentConditionsService>.Instance,
+            new MemoryCache(new MemoryCacheOptions()),
+            cacheTtl);
+    }
+
+    private static HttpResponseMessage Json200(string body) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(body, Encoding.UTF8, "application/json")
+    };
+
     // ---------------------------------------------------------------- fixtures
 
     private static async Task<(int Status, JsonDocument? Body, ApiErrorEnvelope? Error)> Invoke(
@@ -344,11 +480,14 @@ public sealed class CurrentConditionsTests
 
     private sealed class RecordingHandler : HttpMessageHandler
     {
+        private int _requestCount;
         public string? LastRequest { get; private set; }
+        public int RequestCount => _requestCount;
         public Func<HttpRequestMessage, Task<HttpResponseMessage>>? Responder { get; init; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref _requestCount);
             LastRequest = request.RequestUri is { } uri ? uri.PathAndQuery : null;
             if (Responder is { } responder)
                 return responder(request);

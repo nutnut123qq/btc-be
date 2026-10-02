@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using System.IO.Compression;
+using System.Net;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,7 +60,7 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
-        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        var clientIp = Program.ResolveClientPartition(httpContext);
         return RateLimitPartition.GetSlidingWindowLimiter(clientIp, _ => new SlidingWindowRateLimiterOptions
         {
             PermitLimit = 300,
@@ -71,7 +72,7 @@ builder.Services.AddRateLimiter(options =>
     });
     options.AddPolicy("expensive", httpContext =>
     {
-        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        var clientIp = Program.ResolveClientPartition(httpContext);
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -307,4 +308,29 @@ app.MapHub<TradeNotificationHub>(TradeNotificationHub.HubUrl);
 
 app.Run();
 
-public partial class Program { }
+public partial class Program
+{
+    // Rate-limit partition key: prefer the real client IP carried in the first
+    // X-Forwarded-For hop (set by the Vercel proxy), else the direct connection
+    // IP (Tailscale Funnel ingress), else "anonymous".
+    //
+    // XFF is spoofable by a caller hitting Funnel directly — accepted because
+    // this is quota protection, not an auth boundary; v1 has no shared-secret
+    // between proxy and backend to authenticate the header.
+    public static string ResolveClientPartition(HttpContext httpContext)
+    {
+        var forwardedFor = httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(forwardedFor))
+        {
+            var firstHop = forwardedFor.Split(',')[0].Trim();
+            if (IPAddress.TryParse(firstHop, out var parsedIp))
+            {
+                // Normalize so IPv4-mapped/compressed/cased forms share one partition.
+                var normalized = parsedIp.IsIPv4MappedToIPv6 ? parsedIp.MapToIPv4() : parsedIp;
+                return normalized.ToString();
+            }
+        }
+
+        return httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+    }
+}

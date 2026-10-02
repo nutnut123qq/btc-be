@@ -1,5 +1,6 @@
 using Backend.Data;
 using Backend.Services;
+using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Memory;
@@ -340,6 +341,66 @@ public class DataAuditServiceTests
         Assert.Equal(1, retained.Id);
         Assert.Equal(10_800_000, retained.EndOpenTimeMs);
         Assert.Equal(2, retained.MissingBars);
+    }
+
+    // ------------------------------------------------------- miss dedup
+
+    [Fact]
+    public async Task AuditAsync_ConcurrentMiss_ComputesOnce()
+    {
+        await using var db = CreateInMemoryDb(Guid.NewGuid().ToString());
+        var service = new CountingAuditService(db);
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => service.AuditAsync("BTCUSDT")));
+
+        Assert.Equal(1, service.ComputeCount);
+        Assert.All(results.Skip(1), r => Assert.Same(results[0], r));
+    }
+
+    [Fact]
+    public async Task AuditAsync_SecondCallServesFromCache_WithoutRecompute()
+    {
+        await using var db = CreateInMemoryDb(Guid.NewGuid().ToString());
+        var service = new CountingAuditService(db);
+
+        var first = await service.AuditAsync("BTCUSDT");
+        var second = await service.AuditAsync("BTCUSDT");
+
+        Assert.Equal(1, service.ComputeCount);
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task AuditAsync_CacheKeySeparatesSymbolAndInventoryFlag()
+    {
+        await using var db = CreateInMemoryDb(Guid.NewGuid().ToString());
+        var service = new CountingAuditService(db);
+
+        await service.AuditAsync("BTCUSDT");
+        await service.AuditAsync("BTCUSDT", includeInventory: true);
+        await service.AuditAsync("ETHUSDT");
+        await service.AuditAsync(" btcusdt "); // normalizes to the first key
+
+        Assert.Equal(3, service.ComputeCount);
+    }
+
+    // Counts computes via the internal seam; never touches the DbContext, so
+    // concurrent audits stay off the non-thread-safe context entirely.
+    private sealed class CountingAuditService(AppDbContext db)
+        : DataAuditService(db, NullLogger<DataAuditService>.Instance,
+            new DataAuditCache(new MemoryCache(new MemoryCacheOptions())))
+    {
+        public int ComputeCount;
+
+        internal override async Task<DataAuditResponse> AuditUncachedAsync(
+            string symbol, bool includeInventory, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref ComputeCount);
+            await Task.Delay(50, cancellationToken); // hold the gate so misses overlap
+            return new DataAuditResponse(symbol, DateTime.UtcNow, [],
+                new NewsAudit(0, 0, null, null), new RulesAlertsAudit(0, 0, 0));
+        }
     }
 
     private static Kline CreateKline(string timeframe, long openTimeMs) => new()

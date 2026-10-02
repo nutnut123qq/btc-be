@@ -1,6 +1,7 @@
 using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Backend.Controllers;
 
@@ -24,10 +25,11 @@ public sealed class ResearchCurrentConditionsController : ControllerBase
         IResearchEvidenceCatalog catalog,
         ILogger<CurrentConditionsService> serviceLogger,
         ILogger<ResearchCurrentConditionsController> logger,
-        CurrentConditionsService? service = null)
+        CurrentConditionsService? service = null,
+        IMemoryCache? cache = null)
     {
         _ = logger;
-        _conditions = service ?? new CurrentConditionsService(httpClientFactory, catalog, serviceLogger);
+        _conditions = service ?? new CurrentConditionsService(httpClientFactory, catalog, serviceLogger, cache);
     }
 
     [HttpGet]

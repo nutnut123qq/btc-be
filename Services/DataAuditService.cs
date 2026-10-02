@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Backend.Options;
+using System.Collections.Concurrent;
 using System.Data.Common;
 
 namespace Backend.Services;
@@ -25,6 +26,12 @@ public class DataAuditService : IDataAuditService
     {
         "1m", "5m", "15m", "30m", "1h", "4h", "1d"
     };
+
+    // Per-key miss gates dedup concurrent cold audits (repo pattern:
+    // TechnicalEvidenceRebuildService.ApplyGates). Static because the service is
+    // scoped while DataAuditCache is a singleton — the gate must outlive each
+    // scope to actually dedup concurrent misses.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> AuditGates = new(StringComparer.Ordinal);
 
     public DataAuditService(
         AppDbContext db,
@@ -62,12 +69,38 @@ public class DataAuditService : IDataAuditService
         if (_cache.TryGet(symbol, includeInventory, out var cached) && cached is not null)
             return cached;
 
-        if (_scopeFactory is not null && _db.Database.IsNpgsql())
+        // Bound the gate map: cache entries expire but gates don't, and symbol is
+        // user-controlled — an unbounded dictionary is a slow leak. Clearing is
+        // safe: in-flight holders keep their own SemaphoreSlim; a post-clear miss
+        // just loses dedup for one cycle (dedup is best-effort, not correctness).
+        if (AuditGates.Count > 256)
+            AuditGates.Clear();
+        var gate = AuditGates.GetOrAdd($"{symbol}:{includeInventory}", _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
         {
-            var postgresResponse = await AuditPostgresAsync(symbol, includeInventory, cancellationToken);
-            _cache.Set(symbol, includeInventory, postgresResponse);
-            return postgresResponse;
+            // Re-check inside the gate: a concurrent miss may have filled it.
+            if (_cache.TryGet(symbol, includeInventory, out cached) && cached is not null)
+                return cached;
+            var response = await AuditUncachedAsync(symbol, includeInventory, cancellationToken);
+            // Staleness: 5min TTL + invalidate-on-write (see DataAuditCache).
+            _cache.Set(symbol, includeInventory, response);
+            return response;
         }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    // internal virtual so tests can count computes without hitting the DB.
+    internal virtual async Task<DataAuditResponse> AuditUncachedAsync(
+        string symbol,
+        bool includeInventory,
+        CancellationToken cancellationToken)
+    {
+        if (_scopeFactory is not null && _db.Database.IsNpgsql())
+            return await AuditPostgresAsync(symbol, includeInventory, cancellationToken);
 
         var audits = new List<TimeframeAudit>();
         foreach (var tf in DefaultTimeframes)
@@ -80,15 +113,13 @@ public class DataAuditService : IDataAuditService
         var rulesAlerts = await AuditRulesAlertsAsync(_db, symbol, cancellationToken);
         var derivatives = await AuditDerivativesAsync(_db, symbol, cancellationToken);
 
-        var response = new DataAuditResponse(
+        return new DataAuditResponse(
             symbol,
             _timeProvider.GetUtcNow().UtcDateTime,
             timeframeAudits,
             news,
             rulesAlerts,
             derivatives);
-        _cache.Set(symbol, includeInventory, response);
-        return response;
     }
 
     private async Task<DataAuditResponse> AuditPostgresAsync(
