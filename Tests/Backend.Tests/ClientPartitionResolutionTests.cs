@@ -69,13 +69,38 @@ public class ClientPartitionResolutionTests
         Assert.Equal("anonymous", Program.ResolveClientPartition(context));
     }
 
-    private static DefaultHttpContext CreateContext(string remoteIp, string? forwardedFor = null)
+    [Fact]
+    public void ConfiguredSecretRequiresIngressProofToTrustForwardedFor()
+    {
+        var proven = CreateContext("100.64.0.1", "203.0.113.10", ingressProof: "s3cret");
+        Assert.Equal("203.0.113.10", Program.ResolveClientPartition(proven, "s3cret"));
+
+        var missingProof = CreateContext("100.64.0.1", "203.0.113.10");
+        Assert.Equal("100.64.0.1", Program.ResolveClientPartition(missingProof, "s3cret"));
+
+        var wrongProof = CreateContext("100.64.0.1", "203.0.113.10", ingressProof: "wrong-secret");
+        Assert.Equal("100.64.0.1", Program.ResolveClientPartition(wrongProof, "s3cret"));
+    }
+
+    [Fact]
+    public void ConfiguredSecretDoesNotBlockRequestsWithoutForwardedFor()
+    {
+        var context = CreateContext("100.64.0.7");
+
+        Assert.Equal("100.64.0.7", Program.ResolveClientPartition(context, "s3cret"));
+    }
+
+    private static DefaultHttpContext CreateContext(string remoteIp, string? forwardedFor = null, string? ingressProof = null)
     {
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
         if (forwardedFor is not null)
         {
             context.Request.Headers["X-Forwarded-For"] = forwardedFor;
+        }
+        if (ingressProof is not null)
+        {
+            context.Request.Headers[Program.IngressProofHeader] = ingressProof;
         }
         return context;
     }

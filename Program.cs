@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using System.IO.Compression;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -54,13 +56,18 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
     options.Level = CompressionLevel.Fastest;
 });
 
+// Shared proof between the public edge proxy and this backend: only requests
+// presenting it get their X-Forwarded-For trusted. Empty = local dev, XFF
+// trusted unconditionally (accepted quota-only risk).
+var ingressSharedSecret = builder.Configuration["Ingress:SharedSecret"];
+
 // High-Concurrency Rate Limiter (.NET 8 built-in)
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
-        var clientIp = Program.ResolveClientPartition(httpContext);
+        var clientIp = Program.ResolveClientPartition(httpContext, ingressSharedSecret);
         return RateLimitPartition.GetSlidingWindowLimiter(clientIp, _ => new SlidingWindowRateLimiterOptions
         {
             PermitLimit = 300,
@@ -72,7 +79,7 @@ builder.Services.AddRateLimiter(options =>
     });
     options.AddPolicy("expensive", httpContext =>
     {
-        var clientIp = Program.ResolveClientPartition(httpContext);
+        var clientIp = Program.ResolveClientPartition(httpContext, ingressSharedSecret);
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -245,6 +252,11 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+if (string.IsNullOrEmpty(ingressSharedSecret))
+{
+    app.Logger.LogWarning("Ingress:SharedSecret is not configured; X-Forwarded-For is trusted unconditionally (accepted quota-only risk).");
+}
+
 // Fail startup before serving any replay if the canonical artifact, golden fixture,
 // or backend calculation-version mapping has drifted.
 using (var technicalContractScope = app.Services.CreateScope())
@@ -310,17 +322,22 @@ app.Run();
 
 public partial class Program
 {
+    // Header the trusted edge proxy sets to prove a request came through it.
+    public const string IngressProofHeader = "X-Btc-Ingress";
+
     // Rate-limit partition key: prefer the real client IP carried in the first
     // X-Forwarded-For hop (set by the Vercel proxy), else the direct connection
     // IP (Tailscale Funnel ingress), else "anonymous".
     //
-    // XFF is spoofable by a caller hitting Funnel directly — accepted because
-    // this is quota protection, not an auth boundary; v1 has no shared-secret
-    // between proxy and backend to authenticate the header.
-    public static string ResolveClientPartition(HttpContext httpContext)
+    // XFF is spoofable by a caller hitting Funnel directly, so once
+    // Ingress:SharedSecret is configured the header is only trusted when the
+    // request also carries the matching X-Btc-Ingress proof. Without a
+    // configured secret the legacy unconditional trust remains — accepted
+    // because this is quota protection, not an auth boundary.
+    public static string ResolveClientPartition(HttpContext httpContext, string? sharedSecret = null)
     {
         var forwardedFor = httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(forwardedFor))
+        if (!string.IsNullOrWhiteSpace(forwardedFor) && HasValidIngressProof(httpContext, sharedSecret))
         {
             var firstHop = forwardedFor.Split(',')[0].Trim();
             if (IPAddress.TryParse(firstHop, out var parsedIp))
@@ -332,5 +349,21 @@ public partial class Program
         }
 
         return httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+    }
+
+    private static bool HasValidIngressProof(HttpContext httpContext, string? sharedSecret)
+    {
+        if (string.IsNullOrEmpty(sharedSecret))
+        {
+            return true;
+        }
+        var proof = httpContext.Request.Headers[IngressProofHeader].FirstOrDefault();
+        if (string.IsNullOrEmpty(proof))
+        {
+            return false;
+        }
+        var expected = Encoding.UTF8.GetBytes(sharedSecret);
+        var actual = Encoding.UTF8.GetBytes(proof);
+        return actual.Length == expected.Length && CryptographicOperations.FixedTimeEquals(actual, expected);
     }
 }
