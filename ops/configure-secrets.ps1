@@ -32,6 +32,7 @@ if ([string]::IsNullOrWhiteSpace($AdminKey)) {
 
 $existingGeminiApiKey = $null
 $existingOpenRouterApiKey = $null
+$existingIngressSecret = $null
 if (Test-Path -LiteralPath $script:SecretsPath) {
     $existingSecrets = Import-Clixml -LiteralPath $script:SecretsPath
     $existingProperty = $existingSecrets.PSObject.Properties["GEMINI_API_KEY"]
@@ -41,6 +42,10 @@ if (Test-Path -LiteralPath $script:SecretsPath) {
     $existingOpenRouterProperty = $existingSecrets.PSObject.Properties["OPENROUTER_API_KEY"]
     if ($existingOpenRouterProperty -and $existingOpenRouterProperty.Value -is [Security.SecureString]) {
         $existingOpenRouterApiKey = $existingOpenRouterProperty.Value
+    }
+    $existingIngressProperty = $existingSecrets.PSObject.Properties["Ingress__SharedSecret"]
+    if ($existingIngressProperty -and $existingIngressProperty.Value -is [Security.SecureString]) {
+        $existingIngressSecret = $existingIngressProperty.Value
     }
     if (-not $env:OPENROUTER_MODEL) {
         $p = $existingSecrets.PSObject.Properties["OPENROUTER_MODEL"]
@@ -85,6 +90,7 @@ $protectedSecrets = [ordered]@{
 }
 if ($geminiApiKey) { $protectedSecrets.GEMINI_API_KEY = $geminiApiKey }
 if ($openRouterApiKey) { $protectedSecrets.OPENROUTER_API_KEY = $openRouterApiKey }
+if ($existingIngressSecret) { $protectedSecrets.Ingress__SharedSecret = $existingIngressSecret }
 [pscustomobject]$protectedSecrets | Export-Clixml -LiteralPath $script:SecretsPath -Force
 Set-OpsSecretsFileAcl $script:SecretsPath
 Write-Host "Protected local runtime secrets configured at $script:SecretsPath"
