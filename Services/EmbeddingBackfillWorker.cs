@@ -1,13 +1,20 @@
 using Backend.Data;
+using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Services;
 
 /// <summary>
-/// Backfill embedding cho NewsChunks chưa có embedding.
+/// Backfill embedding cho NewsChunks chưa có embedding (hoặc embed bằng model khác).
+/// Reports a WorkerCycleReport per cycle so /api/health/workers distinguishes
+/// disabled / idle / succeeded / partial / failed instead of silently succeeding.
 /// </summary>
 public class EmbeddingBackfillWorker : BackgroundService
 {
+    /// <summary>Same cap convention as KlineGapState: 3 consecutive failures -> stop retrying.</summary>
+    internal const int MaxConsecutiveChunkFailures = 3;
+    internal const int BatchSize = 50;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EmbeddingBackfillWorker> _logger;
     private bool _reportedDisabled;
@@ -29,11 +36,7 @@ public class EmbeddingBackfillWorker : BackgroundService
             var startedAtUtc = DateTime.UtcNow;
             try
             {
-                using (var scope = _scopeFactory.CreateScope())
-                    await WorkerHeartbeatStore.MarkStartedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(EmbeddingBackfillWorker), startedAtUtc, stoppingToken);
                 await RunCycleAsync(stoppingToken);
-                using (var scope = _scopeFactory.CreateScope())
-                    await WorkerHeartbeatStore.MarkSucceededAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(EmbeddingBackfillWorker), startedAtUtc, DateTime.UtcNow, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -58,10 +61,13 @@ public class EmbeddingBackfillWorker : BackgroundService
         }
     }
 
-    internal async Task RunCycleAsync(CancellationToken cancellationToken)
+    internal async Task<WorkerCycleReport> RunCycleAsync(CancellationToken cancellationToken)
     {
+        var startedAtUtc = DateTime.UtcNow;
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await WorkerHeartbeatStore.MarkStartedAsync(db, nameof(EmbeddingBackfillWorker), startedAtUtc, cancellationToken);
+
         var articlesWithoutChunks = await db.NewsArticles
             .Where(article => !article.Chunks.Any())
             .OrderByDescending(article => article.PublishedAt ?? article.FetchedAt)
@@ -88,48 +94,118 @@ public class EmbeddingBackfillWorker : BackgroundService
         }
 
         var embedder = scope.ServiceProvider.GetRequiredService<IGeminiEmbeddingClient>();
+
+        // Chunks needing (re-)embedding: no vector yet, or a vector from a different/unknown model.
         if (!embedder.IsConfigured)
         {
+            var remaining = await db.NewsChunks.CountAsync(c => c.Embedding == null || c.Embedding.Length == 0, cancellationToken);
             if (!_reportedDisabled)
             {
                 _logger.LogInformation("Embedding backfill disabled because no Gemini API key is configured.");
                 _reportedDisabled = true;
             }
-            return;
+            var disabledReport = WorkerCycleReport.Disabled(
+                "Gemini API key not configured (Gemini:ApiKey, GEMINI_API_KEY, or GOOGLE_API_KEY); embedding backfill is disabled.", remaining);
+            await WorkerHeartbeatStore.MarkCompletedAsync(db, nameof(EmbeddingBackfillWorker), startedAtUtc, DateTime.UtcNow, disabledReport, cancellationToken);
+            _logger.LogInformation("Embedding backfill cycle: status={Status} attempted={Attempted} succeeded={Succeeded} failed={Failed} skipped={Skipped} remaining={Remaining}",
+                disabledReport.Outcome, disabledReport.Attempted, disabledReport.Succeeded, disabledReport.Failed, disabledReport.Skipped, disabledReport.Remaining);
+            return disabledReport;
         }
 
+        var poisoned = await db.NewsChunks.CountAsync(c =>
+            (c.Embedding == null || c.Embedding.Length == 0 || c.EmbeddingModel != embedder.ModelId)
+            && c.EmbeddingFailureCount >= MaxConsecutiveChunkFailures, cancellationToken);
+
         var chunks = await db.NewsChunks
-            .Where(c => c.Embedding == null || c.Embedding.Length == 0)
+            .Where(c => (c.Embedding == null || c.Embedding.Length == 0 || c.EmbeddingModel != embedder.ModelId)
+                        && c.EmbeddingFailureCount < MaxConsecutiveChunkFailures)
             .OrderByDescending(c => c.Article.PublishedAt)
-            .Take(50)
+            .Take(BatchSize)
             .ToListAsync(cancellationToken);
 
         if (chunks.Count == 0)
         {
-            _logger.LogInformation("No news chunks need embedding backfill.");
-            return;
+            var idleReport = WorkerCycleReport.Idle(
+                skipped: poisoned, remaining: 0,
+                detail: poisoned > 0
+                    ? $"Nothing retriable left; skipped_poisoned={poisoned} (>= {MaxConsecutiveChunkFailures} consecutive failures)."
+                    : "No news chunks need embedding backfill.");
+            await WorkerHeartbeatStore.MarkCompletedAsync(db, nameof(EmbeddingBackfillWorker), startedAtUtc, DateTime.UtcNow, idleReport, cancellationToken);
+            _logger.LogInformation("Embedding backfill cycle: status={Status} attempted={Attempted} succeeded={Succeeded} failed={Failed} skipped={Skipped} remaining={Remaining} detail={Detail}",
+                idleReport.Outcome, idleReport.Attempted, idleReport.Succeeded, idleReport.Failed, idleReport.Skipped, idleReport.Remaining, idleReport.Detail);
+            return idleReport;
         }
 
-        int success = 0;
+        int succeeded = 0;
+        int failed = 0;
+        var failureBreakdown = new Dictionary<EmbeddingErrorKind, int>();
         foreach (var chunk in chunks)
         {
+            EmbeddingResult result;
             try
             {
-                var vec = await embedder.EmbedAsync(chunk.Text, cancellationToken);
-                if (vec != null)
-                {
-                    chunk.Embedding = vec;
-                    chunk.EmbeddedAt = DateTimeOffset.UtcNow;
-                    success++;
-                }
+                result = await embedder.EmbedAsync(chunk.Text, cancellationToken);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to embed chunk {ChunkId}", chunk.Id);
+                result = EmbeddingResult.Fail(EmbeddingErrorKind.ProviderError, $"{ex.GetType().Name}: {ex.Message}");
+            }
+
+            if (result.IsSuccess && EmbeddingResult.IsUsableVector(result.Vector, embedder.EmbeddingDimensions))
+            {
+                chunk.Embedding = result.Vector;
+                chunk.EmbeddedAt = DateTimeOffset.UtcNow;
+                chunk.EmbeddingModel = embedder.ModelId;
+                chunk.EmbeddingFailureCount = 0;
+                succeeded++;
+            }
+            else
+            {
+                var kind = result.Error == EmbeddingErrorKind.None ? EmbeddingErrorKind.InvalidResponse : result.Error;
+                failureBreakdown[kind] = failureBreakdown.GetValueOrDefault(kind) + 1;
+                chunk.EmbeddingFailureCount++;
+                failed++;
+                _logger.LogWarning(
+                    "Failed to embed chunk {ChunkId}: kind={Kind} detail={Detail} consecutiveFailures={ConsecutiveFailures}",
+                    chunk.Id, EmbeddingResult.KindToken(kind), result.Detail, chunk.EmbeddingFailureCount);
             }
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        _logger.LogInformation("Backfilled {Success}/{Total} news chunk embeddings", success, chunks.Count);
+
+        var skipped = await db.NewsChunks.CountAsync(c =>
+            (c.Embedding == null || c.Embedding.Length == 0 || c.EmbeddingModel != embedder.ModelId)
+            && c.EmbeddingFailureCount >= MaxConsecutiveChunkFailures, cancellationToken);
+        var remainingAfter = await db.NewsChunks.CountAsync(c =>
+            (c.Embedding == null || c.Embedding.Length == 0 || c.EmbeddingModel != embedder.ModelId)
+            && c.EmbeddingFailureCount < MaxConsecutiveChunkFailures, cancellationToken);
+
+        var outcome = failed == 0
+            ? WorkerCycleOutcome.Succeeded
+            : succeeded > 0
+                ? WorkerCycleOutcome.Partial
+                : WorkerCycleOutcome.Failed;
+
+        var detailParts = new List<string>();
+        if (failureBreakdown.Count > 0)
+            detailParts.Add("failures: " + string.Join(", ", failureBreakdown.Select(kv => $"{EmbeddingResult.KindToken(kv.Key)}={kv.Value}")));
+        if (skipped > 0)
+            detailParts.Add($"skipped_poisoned={skipped}");
+
+        var report = new WorkerCycleReport(
+            outcome,
+            Attempted: chunks.Count,
+            Succeeded: succeeded,
+            Failed: failed,
+            Skipped: skipped,
+            Remaining: remainingAfter,
+            Detail: detailParts.Count > 0 ? string.Join("; ", detailParts) : null);
+
+        await WorkerHeartbeatStore.MarkCompletedAsync(db, nameof(EmbeddingBackfillWorker), startedAtUtc, DateTime.UtcNow, report, cancellationToken);
+        _logger.LogInformation(
+            "Embedding backfill cycle: status={Status} attempted={Attempted} succeeded={Succeeded} failed={Failed} skipped={Skipped} remaining={Remaining} detail={Detail}",
+            report.Outcome, report.Attempted, report.Succeeded, report.Failed, report.Skipped, report.Remaining, report.Detail ?? "-");
+        return report;
     }
 }

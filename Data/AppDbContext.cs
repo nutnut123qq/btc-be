@@ -228,6 +228,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.WorkerName).HasMaxLength(128);
             e.Property(x => x.Status).HasMaxLength(16);
             e.Property(x => x.LastError).HasMaxLength(1000);
+            e.Property(x => x.LastCycleDetail).HasMaxLength(1000);
         });
 
         modelBuilder.Entity<TechnicalIndicator>(e =>

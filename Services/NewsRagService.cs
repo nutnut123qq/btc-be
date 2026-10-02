@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text;
 using Backend.Data;
+using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Services;
@@ -29,17 +30,23 @@ public class NewsRagService : INewsRagService, IRagService
         if (!_embedder.IsConfigured)
             return new List<NewsChunkSearchResult>();
 
-        var qvec = await _embedder.EmbedAsync(query, cancellationToken);
+        var qres = await _embedder.EmbedAsync(query, cancellationToken);
+        var qvec = qres.Vector;
         if (qvec == null || qvec.Length == 0)
         {
-            _logger.LogWarning("Query embedding failed; unable to perform vector search.");
+            _logger.LogWarning("Query embedding failed (kind={Kind} detail={Detail}); unable to perform vector search.",
+                EmbeddingResult.KindToken(qres.Error), qres.Detail);
             return new List<NewsChunkSearchResult>();
         }
 
+        // Only rank chunks embedded by the currently configured model — vectors from
+        // different models are not comparable in the same space and must not be mixed.
+        var modelId = _embedder.ModelId;
         var cutoffDate = DateTimeOffset.UtcNow.AddDays(-30);
         var chunks = await _db.NewsChunks
             .AsNoTracking()
             .Where(c => c.Embedding != null && c.Embedding.Length == qvec.Length &&
+                        c.EmbeddingModel == modelId &&
                         (c.Article.PublishedAt >= cutoffDate || c.Article.FetchedAt >= cutoffDate))
             .OrderByDescending(c => c.Article.PublishedAt ?? c.Article.FetchedAt)
             .Take(500)
@@ -58,7 +65,8 @@ public class NewsRagService : INewsRagService, IRagService
         {
             chunks = await _db.NewsChunks
                 .AsNoTracking()
-                .Where(c => c.Embedding != null && c.Embedding.Length == qvec.Length)
+                .Where(c => c.Embedding != null && c.Embedding.Length == qvec.Length &&
+                            c.EmbeddingModel == modelId)
                 .OrderByDescending(c => c.Article.PublishedAt ?? c.Article.FetchedAt)
                 .Take(500)
                 .Select(c => new
@@ -93,19 +101,36 @@ public class NewsRagService : INewsRagService, IRagService
         int topK = 8,
         CancellationToken cancellationToken = default)
     {
-        var hasEmbeddings = await _db.NewsChunks.AnyAsync(
-            c => (c.Embedding != null && c.Embedding.Length > 0),
+        if (!_embedder.IsConfigured)
+        {
+            return await BuildFallbackLatestAsync(topK,
+                "embedding provider is not configured (no Gemini API key)", cancellationToken);
+        }
+
+        var embeddedTotal = await _db.NewsChunks.CountAsync(
+            c => c.Embedding != null && c.Embedding.Length > 0,
+            cancellationToken);
+        var usableForModel = await _db.NewsChunks.CountAsync(
+            c => c.Embedding != null && c.Embedding.Length > 0 && c.EmbeddingModel == _embedder.ModelId,
             cancellationToken);
 
-        if (!hasEmbeddings)
+        if (usableForModel == 0)
         {
-            return await BuildFallbackLatestAsync(topK, cancellationToken);
+            var reason = embeddedTotal == 0
+                ? "no embedded news chunks are stored yet"
+                : $"all {embeddedTotal} stored embeddings were produced by a different or unknown model (expected '{_embedder.ModelId}'); they are excluded from semantic search";
+            return await BuildFallbackLatestAsync(topK, reason, cancellationToken);
         }
 
         var results = await SearchSimilarChunksAsync(query, topK, cancellationToken);
         if (results.Count == 0)
         {
-            return await BuildFallbackLatestAsync(topK, cancellationToken);
+            var excluded = embeddedTotal - usableForModel;
+            var reason = "query embedding failed or no matching chunks scored" +
+                (excluded > 0
+                    ? $"; {excluded} embedded chunks were excluded because their model differs from '{_embedder.ModelId}'"
+                    : "");
+            return await BuildFallbackLatestAsync(topK, reason, cancellationToken);
         }
 
         var sb = new StringBuilder();
@@ -163,7 +188,7 @@ public class NewsRagService : INewsRagService, IRagService
         return denom == 0 ? 0 : dot / denom;
     }
 
-    private async Task<string> BuildFallbackLatestAsync(int topK, CancellationToken cancellationToken)
+    private async Task<string> BuildFallbackLatestAsync(int topK, string degradeReason, CancellationToken cancellationToken)
     {
         var articles = await _db.NewsArticles
             .AsNoTracking()
@@ -174,11 +199,11 @@ public class NewsRagService : INewsRagService, IRagService
 
         if (articles.Count == 0)
         {
-            return "No news articles are stored in the database yet. The RSS ingestion worker may still be running or feeds may be unavailable.";
+            return $"No news articles are stored in the database yet. The RSS ingestion worker may still be running or feeds may be unavailable. (Semantic search degraded: {degradeReason}.)";
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("(Retrieved by recency; embedding similarity unavailable.)");
+        sb.AppendLine($"(Retrieved by recency; embedding similarity unavailable — {degradeReason}.)");
         var newest = articles.Max(a => a.Date);
         if (newest < DateTimeOffset.UtcNow.AddHours(-6))
             sb.AppendLine($"WARNING: stored news is stale; newest article is from {newest:O}.");

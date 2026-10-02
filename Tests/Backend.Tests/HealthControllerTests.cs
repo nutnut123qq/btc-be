@@ -81,4 +81,94 @@ public class HealthControllerTests
         Assert.Equal("degraded", activeMissingBody.Status);
         Assert.Equal("missing", activeMissingBody.Klines.Single(x => x.Timeframe == "4h").Status);
     }
+
+    [Fact]
+    public async Task Workers_MapsCycleOutcomesAndCounters()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+        var now = DateTime.UtcNow;
+        db.WorkerHeartbeats.AddRange(
+            new WorkerHeartbeat
+            {
+                WorkerName = "EmbeddingBackfillWorker", Status = "Disabled",
+                LastStartedAtUtc = now, LastSucceededAtUtc = now, UpdatedAtUtc = now,
+                LastCycleAttempted = 0, LastCycleSucceeded = 0, LastCycleFailed = 0,
+                LastCycleSkipped = 16440, LastCycleRemaining = 16440,
+                LastCycleDetail = "Gemini API key not configured."
+            },
+            new WorkerHeartbeat
+            {
+                WorkerName = "KlinesIngestionWorker", Status = "Partial",
+                LastStartedAtUtc = now, LastSucceededAtUtc = now, UpdatedAtUtc = now,
+                LastCycleAttempted = 50, LastCycleSucceeded = 48, LastCycleFailed = 2,
+                LastCycleSkipped = 0, LastCycleRemaining = 3,
+                LastCycleDetail = "failures: rate_limit=2"
+            },
+            new WorkerHeartbeat
+            {
+                WorkerName = "IndexingBackgroundWorker", Status = "Idle",
+                LastStartedAtUtc = now, LastSucceededAtUtc = now, UpdatedAtUtc = now
+            },
+            new WorkerHeartbeat
+            {
+                WorkerName = "RssIngestionService", Status = "Succeeded",
+                LastStartedAtUtc = now, LastSucceededAtUtc = now, UpdatedAtUtc = now
+            },
+            new WorkerHeartbeat
+            {
+                WorkerName = "CausalSmartMoneyRebuildWorker", Status = "Failed",
+                LastStartedAtUtc = now, LastFailedAtUtc = now, UpdatedAtUtc = now,
+                LastError = "DbUpdateException: boom"
+            });
+        await db.SaveChangesAsync();
+        var controller = new HealthController(db, NullLogger<HealthController>.Instance);
+
+        var ok = Assert.IsType<OkObjectResult>((await controller.Workers(default)).Result);
+        var body = Assert.IsType<WorkerHealthResponse>(ok.Value);
+
+        var disabled = body.Workers.Single(w => w.Name == "EmbeddingBackfillWorker");
+        Assert.Equal("disabled", disabled.Status);
+        Assert.Equal("Gemini API key not configured.", disabled.Message);
+        Assert.Equal(16440, disabled.Remaining);
+
+        var partial = body.Workers.Single(w => w.Name == "KlinesIngestionWorker");
+        Assert.Equal("partial", partial.Status);
+        Assert.Equal(50, partial.Attempted);
+        Assert.Equal(48, partial.Succeeded);
+        Assert.Equal(2, partial.Failed);
+        Assert.Equal(3, partial.Remaining);
+        Assert.Equal("failures: rate_limit=2", partial.Message);
+
+        Assert.Equal("idle", body.Workers.Single(w => w.Name == "IndexingBackgroundWorker").Status);
+        Assert.Equal("healthy", body.Workers.Single(w => w.Name == "RssIngestionService").Status);
+
+        var failedWorker = body.Workers.Single(w => w.Name == "CausalSmartMoneyRebuildWorker");
+        Assert.Equal("failed", failedWorker.Status);
+        Assert.Contains("boom", failedWorker.Message);
+    }
+
+    [Fact]
+    public async Task Workers_StaleWhenLastCycleTooOld()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+        var old = DateTime.UtcNow.AddHours(-10);
+        db.WorkerHeartbeats.Add(new WorkerHeartbeat
+        {
+            WorkerName = "EmbeddingBackfillWorker", Status = "Disabled",
+            LastStartedAtUtc = old, LastSucceededAtUtc = old, UpdatedAtUtc = old
+        });
+        await db.SaveChangesAsync();
+        var controller = new HealthController(db, NullLogger<HealthController>.Instance);
+
+        var ok = Assert.IsType<OkObjectResult>((await controller.Workers(default)).Result);
+        var body = Assert.IsType<WorkerHealthResponse>(ok.Value);
+
+        Assert.Equal("stale", body.Workers.Single(w => w.Name == "EmbeddingBackfillWorker").Status);
+    }
 }

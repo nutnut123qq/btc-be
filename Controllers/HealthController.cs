@@ -82,10 +82,23 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger,
                 var ageSeconds = lastSuccess.HasValue ? Math.Max(0, (long)(checkedAtUtc - lastSuccess.Value).TotalSeconds) : (long?)null;
                 var failed = string.Equals(row.Status, "Failed", StringComparison.OrdinalIgnoreCase)
                     || row.LastFailedAtUtc.HasValue && (!row.LastSucceededAtUtc.HasValue || row.LastFailedAtUtc > row.LastSucceededAtUtc);
-                var status = failed ? "failed" : ageSeconds.HasValue && ageSeconds <= expected.MaxAge.TotalSeconds ? "healthy" : "stale";
+                var fresh = ageSeconds.HasValue && ageSeconds <= expected.MaxAge.TotalSeconds;
+                // Cycle-level outcomes recorded by the worker (WorkerCycleOutcome) override the
+                // generic freshness guess so disabled/idle/partial are distinguishable.
+                var status = failed ? "failed"
+                    : !fresh ? "stale"
+                    : row.Status switch
+                    {
+                        "Disabled" => "disabled",
+                        "Idle" => "idle",
+                        "Partial" => "partial",
+                        _ => "healthy"
+                    };
+                var message = row.LastCycleDetail ?? (failed ? row.LastError : null);
                 return new WorkerHealth(row.WorkerName, status, row.LastStartedAtUtc, row.LastSucceededAtUtc,
                     row.LastFailedAtUtc, ageSeconds, (long)expected.MaxAge.TotalSeconds, row.LastDurationMs,
-                    failed ? row.LastError : null);
+                    message, row.LastCycleAttempted, row.LastCycleSucceeded, row.LastCycleFailed,
+                    row.LastCycleSkipped, row.LastCycleRemaining);
             }).ToArray();
             return Ok(new WorkerHealthResponse(checkedAtUtc, workers));
         }
@@ -148,4 +161,5 @@ public sealed record HealthResponse(string Status, bool DatabaseReachable, DateT
 public sealed record KlineFreshness(string Timeframe, string Status, DateTimeOffset? LatestOpenTimeUtc, long? AgeSeconds, long MaxAgeSeconds, bool Active = true);
 public sealed record WorkerHealthResponse(DateTimeOffset CheckedAtUtc, IReadOnlyList<WorkerHealth> Workers);
 public sealed record WorkerHealth(string Name, string Status, DateTime? LastStartedAtUtc, DateTime? LastSucceededAtUtc,
-    DateTime? LastFailedAtUtc, long? AgeSeconds, long MaxAgeSeconds, long? LastDurationMs, string? Message);
+    DateTime? LastFailedAtUtc, long? AgeSeconds, long MaxAgeSeconds, long? LastDurationMs, string? Message,
+    int? Attempted = null, int? Succeeded = null, int? Failed = null, int? Skipped = null, int? Remaining = null);

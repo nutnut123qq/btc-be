@@ -2,6 +2,7 @@ using System.ServiceModel.Syndication;
 using System.Xml;
 using Backend.Data;
 using Backend.Options;
+using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -178,11 +179,19 @@ public class RssIngestionService : BackgroundService
 
                 if (embedder.IsConfigured)
                 {
-                    var vec = await embedder.EmbedAsync(chunk.Text, cancellationToken);
-                    if (vec != null)
+                    var result = await embedder.EmbedAsync(chunk.Text, cancellationToken);
+                    if (result.IsSuccess && EmbeddingResult.IsUsableVector(result.Vector, embedder.EmbeddingDimensions))
                     {
-                        chunk.Embedding = vec;
+                        chunk.Embedding = result.Vector;
                         chunk.EmbeddedAt = DateTimeOffset.UtcNow;
+                        chunk.EmbeddingModel = embedder.ModelId;
+                        chunk.EmbeddingFailureCount = 0;
+                    }
+                    else
+                    {
+                        logger.LogWarning(
+                            "RSS embed failed for new chunk of {Link}: kind={Kind} detail={Detail}",
+                            link, EmbeddingResult.KindToken(result.Error), result.Detail);
                     }
                 }
 
