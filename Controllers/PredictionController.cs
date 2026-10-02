@@ -101,7 +101,8 @@ public class PredictionController : ControllerBase
             {
                 var error = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogWarning("AI predict failed: {Status} {Error}", response.StatusCode, error);
-                return StatusCode((int)response.StatusCode, new ApiErrorEnvelope { Code = "AI_PREDICT_ERROR", Message = error, Retryable = true, RequestId = HttpContext.TraceIdentifier });
+                var upstreamError = TryParsePredictError(error);
+                return StatusCode((int)response.StatusCode, new ApiErrorEnvelope { Code = upstreamError.Code, Message = upstreamError.Message, Retryable = upstreamError.Retryable, RequestId = HttpContext.TraceIdentifier });
             }
 
             var resultJson = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -376,5 +377,32 @@ public class PredictionController : ControllerBase
             _logger.LogError(ex, "Failed to fetch models from AI service");
             return StatusCode(502, new ApiErrorEnvelope { Code = "AI_SERVICE_UNAVAILABLE", Message = "Failed to reach AI service.", Retryable = true, RequestId = HttpContext.TraceIdentifier });
         }
+    }
+
+    internal static (string Code, string Message, bool Retryable) TryParsePredictError(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.TryGetProperty("code", out var codeProp) && codeProp.GetString() == "MODEL_ARTIFACT_INCOMPATIBLE")
+            {
+                var message = root.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.String
+                    ? messageProp.GetString() ?? "Model artifact không tương thích với dự đoán hiện tại."
+                    : "Model artifact không tương thích với dự đoán hiện tại.";
+                return ("MODEL_ARTIFACT_INCOMPATIBLE", message, false);
+            }
+            if (root.TryGetProperty("retryable", out var retryableProp)
+                && (retryableProp.ValueKind == JsonValueKind.True || retryableProp.ValueKind == JsonValueKind.False))
+            {
+                return ("AI_PREDICT_ERROR", "AI prediction failed.", retryableProp.GetBoolean());
+            }
+        }
+        catch (JsonException)
+        {
+            // Upstream body is intentionally not exposed to the browser.
+        }
+
+        return ("AI_PREDICT_ERROR", "AI prediction failed.", true);
     }
 }
