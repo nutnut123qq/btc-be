@@ -93,7 +93,7 @@ public class EmbeddingBackfillWorker : BackgroundService
             _logger.LogInformation("Created missing chunks for {Count} restored news articles", articlesWithoutChunks.Count);
         }
 
-        var embedder = scope.ServiceProvider.GetRequiredService<IGeminiEmbeddingClient>();
+        var embedder = scope.ServiceProvider.GetRequiredService<IEmbeddingClient>();
 
         // Chunks needing (re-)embedding: no vector yet, or a vector from a different/unknown model.
         if (!embedder.IsConfigured)
@@ -101,11 +101,11 @@ public class EmbeddingBackfillWorker : BackgroundService
             var remaining = await db.NewsChunks.CountAsync(c => c.Embedding == null || c.Embedding.Length == 0, cancellationToken);
             if (!_reportedDisabled)
             {
-                _logger.LogInformation("Embedding backfill disabled because no Gemini API key is configured.");
+                _logger.LogInformation("Embedding backfill disabled because no embedding provider API key is configured.");
                 _reportedDisabled = true;
             }
             var disabledReport = WorkerCycleReport.Disabled(
-                "Gemini API key not configured (Gemini:ApiKey, GEMINI_API_KEY, or GOOGLE_API_KEY); embedding backfill is disabled.", remaining);
+                "Embedding provider API key not configured (OPENROUTER_API_KEY / OpenRouter:ApiKey, or Gemini:ApiKey / GEMINI_API_KEY / GOOGLE_API_KEY); embedding backfill is disabled.", remaining);
             await WorkerHeartbeatStore.MarkCompletedAsync(db, nameof(EmbeddingBackfillWorker), startedAtUtc, DateTime.UtcNow, disabledReport, cancellationToken);
             _logger.LogInformation("Embedding backfill cycle: status={Status} attempted={Attempted} succeeded={Succeeded} failed={Failed} skipped={Skipped} remaining={Remaining}",
                 disabledReport.Outcome, disabledReport.Attempted, disabledReport.Succeeded, disabledReport.Failed, disabledReport.Skipped, disabledReport.Remaining);

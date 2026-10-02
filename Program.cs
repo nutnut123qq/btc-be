@@ -124,9 +124,22 @@ builder.Services.AddHttpClient("GeminiEmbedding", client =>
     client.Timeout = TimeSpan.FromSeconds(60);
 });
 
+builder.Services.AddHttpClient("OpenRouterEmbedding", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+
 builder.Services.AddHttpClient("Telegram", client => { client.Timeout = TimeSpan.FromSeconds(30); });
 
-builder.Services.AddScoped<IGeminiEmbeddingClient, GeminiEmbeddingClient>();
+// Embedding provider precedence: OpenRouter when its key is configured, else
+// Gemini, else an unconfigured OpenRouter client so workers report disabled.
+builder.Services.AddScoped<OpenRouterEmbeddingClient>();
+builder.Services.AddScoped<GeminiEmbeddingClient>();
+builder.Services.AddScoped<IEmbeddingClient>(sp =>
+{
+    var openRouter = sp.GetRequiredService<OpenRouterEmbeddingClient>();
+    return openRouter.IsConfigured ? openRouter : (IEmbeddingClient)sp.GetRequiredService<GeminiEmbeddingClient>();
+});
 builder.Services.AddScoped<INewsRagService, NewsRagService>();
 builder.Services.AddScoped<NewsRagService>();
 builder.Services.AddScoped<IRagService, NewsRagService>();
@@ -271,15 +284,15 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("ContractGe
 }
 else
 {
-    app.UseExceptionHandler(errorApp => 
+    app.UseExceptionHandler(errorApp =>
     {
         errorApp.Run(async context =>
         {
             context.Response.StatusCode = 500;
             context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new { 
-                Code = "INTERNAL_SERVER_ERROR", 
-                Message = "An unexpected error occurred. Please try again later." 
+            await context.Response.WriteAsJsonAsync(new {
+                Code = "INTERNAL_SERVER_ERROR",
+                Message = "An unexpected error occurred. Please try again later."
             });
         });
     });

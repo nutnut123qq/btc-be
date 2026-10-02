@@ -170,7 +170,7 @@ public class NewsRagServiceTests
         Assert.Equal("Current model content", results[0].Content);
     }
 
-    private sealed class DisabledEmbedder : IGeminiEmbeddingClient
+    private sealed class DisabledEmbedder : IEmbeddingClient
     {
         public bool IsConfigured => false;
         public string ModelId => GeminiEmbeddingClient.DefaultModelId;
@@ -179,7 +179,7 @@ public class NewsRagServiceTests
             => Task.FromResult(EmbeddingResult.Fail(EmbeddingErrorKind.NotConfigured));
     }
 
-    private sealed class FixedEmbedder(float[] embedding) : IGeminiEmbeddingClient
+    private sealed class FixedEmbedder(float[] embedding) : IEmbeddingClient
     {
         public bool IsConfigured => true;
         public string ModelId => NewsRagServiceTests.ModelId;

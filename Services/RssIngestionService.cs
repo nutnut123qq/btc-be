@@ -79,7 +79,7 @@ public class RssIngestionService : BackgroundService
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var embedder = scope.ServiceProvider.GetRequiredService<IGeminiEmbeddingClient>();
+        var embedder = scope.ServiceProvider.GetRequiredService<IEmbeddingClient>();
 
         var http = _httpClientFactory.CreateClient("RssFetcher");
         http.DefaultRequestHeaders.UserAgent.ParseAdd("BitcoinAnalyst/1.0 (Capstone; +https://localhost)");
@@ -106,7 +106,7 @@ public class RssIngestionService : BackgroundService
 
     private static async Task IngestFeedAsync(
         AppDbContext db,
-        IGeminiEmbeddingClient embedder,
+        IEmbeddingClient embedder,
         HttpClient http,
         string source,
         string feedUrl,

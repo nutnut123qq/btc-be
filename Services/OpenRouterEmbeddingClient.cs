@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -7,67 +8,61 @@ using Backend.Services.Models;
 namespace Backend.Services;
 
 /// <summary>
-/// Gemini embedding API (768-dim); stored as PostgreSQL real[] on the backend.
-/// Model id comes from <c>Gemini:EmbeddingModel</c> (default "gemini-embedding-001") so the
-/// same value drives the request URL and the provenance written to NewsChunks.EmbeddingModel.
+/// OpenRouter embeddings API (OpenAI-compatible <c>POST /api/v1/embeddings</c>).
+/// Default model <c>openai/text-embedding-3-small</c> is asked for 768 dimensions so
+/// stored vectors keep satisfying the vector(768) column and its out-of-band trigger.
+/// Model id comes from <c>OpenRouter:EmbeddingModel</c> and is written to
+/// NewsChunks.EmbeddingModel for provenance; different-model vectors are never mixed.
 /// </summary>
-public class GeminiEmbeddingClient : IEmbeddingClient
+public class OpenRouterEmbeddingClient : IEmbeddingClient
 {
-    internal const string DefaultModelId = "gemini-embedding-001";
-    internal const int Dimensions = 768;
+    internal const string DefaultModelId = "openai/text-embedding-3-small";
+    internal const int DefaultDimensions = 768;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string? _apiKey;
-    private readonly ILogger<GeminiEmbeddingClient> _logger;
+    private readonly ILogger<OpenRouterEmbeddingClient> _logger;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
     public string ModelId { get; }
-    public int EmbeddingDimensions => Dimensions;
+    public int EmbeddingDimensions { get; }
 
-    public GeminiEmbeddingClient(
+    public OpenRouterEmbeddingClient(
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
-        ILogger<GeminiEmbeddingClient> logger)
+        ILogger<OpenRouterEmbeddingClient> logger)
     {
         _httpClientFactory = httpClientFactory;
-        var configuredKey = configuration["Gemini:ApiKey"];
-        var geminiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+        var configuredKey = configuration["OpenRouter:ApiKey"];
         _apiKey = !string.IsNullOrWhiteSpace(configuredKey)
             ? configuredKey
-            : !string.IsNullOrWhiteSpace(geminiKey)
-                ? geminiKey
-                : Environment.GetEnvironmentVariable("GOOGLE_API_KEY");
+            : Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
 
-        var configuredModel = configuration["Gemini:EmbeddingModel"]?.Trim();
-        // Accept "models/<id>" too so the same value works in .env-style config.
-        ModelId = string.IsNullOrEmpty(configuredModel)
-            ? DefaultModelId
-            : configuredModel.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
-                ? configuredModel["models/".Length..]
-                : configuredModel;
+        var configuredModel = configuration["OpenRouter:EmbeddingModel"]?.Trim();
+        ModelId = string.IsNullOrEmpty(configuredModel) ? DefaultModelId : configuredModel;
+        EmbeddingDimensions = configuration.GetValue("OpenRouter:EmbeddingDimensions", DefaultDimensions);
         _logger = logger;
     }
 
     public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)
-            return EmbeddingResult.Fail(EmbeddingErrorKind.NotConfigured, "No Gemini API key is configured.");
+            return EmbeddingResult.Fail(EmbeddingErrorKind.NotConfigured, "No OpenRouter API key is configured.");
 
-        var client = _httpClientFactory.CreateClient("GeminiEmbedding");
-        client.DefaultRequestHeaders.Add("x-goog-api-key", _apiKey);
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{ModelId}:embedContent";
+        var client = _httpClientFactory.CreateClient("OpenRouterEmbedding");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
         var body = new EmbedRequest
         {
-            Model = $"models/{ModelId}",
-            Content = new EmbedContent { Parts = new[] { new EmbedPart { Text = text } } },
-            OutputDimensionality = Dimensions
+            Model = ModelId,
+            Input = new[] { text },
+            Dimensions = EmbeddingDimensions
         };
 
         HttpResponseMessage response;
         try
         {
-            response = await client.PostAsJsonAsync(url, body,
+            response = await client.PostAsJsonAsync("https://openrouter.ai/api/v1/embeddings", body,
                 new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
                 cancellationToken);
         }
@@ -91,7 +86,7 @@ public class GeminiEmbeddingClient : IEmbeddingClient
             {
                 var err = await response.Content.ReadAsStringAsync(cancellationToken);
                 var detail = $"HTTP {(int)response.StatusCode}: {Truncate(err, 300)}";
-                _logger.LogWarning("Gemini embed failed: {Status} {Body}", response.StatusCode, err);
+                _logger.LogWarning("OpenRouter embed failed: {Status} {Body}", response.StatusCode, err);
                 var kind = response.StatusCode switch
                 {
                     HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => EmbeddingErrorKind.Auth,
@@ -107,21 +102,21 @@ public class GeminiEmbeddingClient : IEmbeddingClient
                 var json = await response.Content.ReadFromJsonAsync<EmbedResponse>(
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
                     cancellationToken);
-                values = json?.Embedding?.Values;
+                values = json?.Data is { Length: > 0 } data ? data[0].Embedding : null;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Gemini embed returned an unreadable payload");
+                _logger.LogWarning(ex, "OpenRouter embed returned an unreadable payload");
                 return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, $"Unparseable response: {ex.Message}");
             }
 
             if (values == null)
-                return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "Response had no embedding.values array.");
-            if (values.Length != Dimensions)
+                return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "Response had no data[0].embedding array.");
+            if (values.Length != EmbeddingDimensions)
                 return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse,
-                    $"Unexpected embedding size {values.Length}; expected {Dimensions}.");
-            if (!EmbeddingResult.IsUsableVector(values, Dimensions))
+                    $"Unexpected embedding size {values.Length}; expected {EmbeddingDimensions}.");
+            if (!EmbeddingResult.IsUsableVector(values, EmbeddingDimensions))
                 return EmbeddingResult.Fail(EmbeddingErrorKind.InvalidResponse, "Embedding contains NaN or infinite values.");
 
             return EmbeddingResult.Ok(values);
@@ -136,34 +131,22 @@ public class GeminiEmbeddingClient : IEmbeddingClient
         [JsonPropertyName("model")]
         public string Model { get; set; } = "";
 
-        [JsonPropertyName("content")]
-        public EmbedContent Content { get; set; } = null!;
+        [JsonPropertyName("input")]
+        public string[] Input { get; set; } = Array.Empty<string>();
 
-        [JsonPropertyName("outputDimensionality")]
-        public int OutputDimensionality { get; set; }
-    }
-
-    private sealed class EmbedContent
-    {
-        [JsonPropertyName("parts")]
-        public EmbedPart[] Parts { get; set; } = Array.Empty<EmbedPart>();
-    }
-
-    private sealed class EmbedPart
-    {
-        [JsonPropertyName("text")]
-        public string Text { get; set; } = "";
+        [JsonPropertyName("dimensions")]
+        public int Dimensions { get; set; }
     }
 
     private sealed class EmbedResponse
     {
-        [JsonPropertyName("embedding")]
-        public EmbedValues? Embedding { get; set; }
+        [JsonPropertyName("data")]
+        public EmbedData[] Data { get; set; } = Array.Empty<EmbedData>();
     }
 
-    private sealed class EmbedValues
+    private sealed class EmbedData
     {
-        [JsonPropertyName("values")]
-        public float[] Values { get; set; } = Array.Empty<float>();
+        [JsonPropertyName("embedding")]
+        public float[] Embedding { get; set; } = Array.Empty<float>();
     }
 }

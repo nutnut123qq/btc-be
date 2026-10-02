@@ -288,7 +288,7 @@ public class EmbeddingBackfillWorkerTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         options = opts;
         return new ServiceCollection()
-            .AddSingleton<IGeminiEmbeddingClient>(embedder)
+            .AddSingleton<IEmbeddingClient>(embedder)
             .AddScoped(_ => new AppDbContext(opts))
             .BuildServiceProvider();
     }
@@ -318,7 +318,7 @@ public class EmbeddingBackfillWorkerTests
         return chunk.Id;
     }
 
-    private sealed class StubEmbeddingClient : IGeminiEmbeddingClient
+    private sealed class StubEmbeddingClient : IEmbeddingClient
     {
         public bool IsConfigured { get; set; } = true;
         public string ModelId => "test-model";

@@ -9,12 +9,12 @@ namespace Backend.Services;
 public class NewsRagService : INewsRagService, IRagService
 {
     private readonly AppDbContext _db;
-    private readonly IGeminiEmbeddingClient _embedder;
+    private readonly IEmbeddingClient _embedder;
     private readonly ILogger<NewsRagService> _logger;
 
     public NewsRagService(
         AppDbContext db,
-        IGeminiEmbeddingClient embedder,
+        IEmbeddingClient embedder,
         ILogger<NewsRagService> logger)
     {
         _db = db;
