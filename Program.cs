@@ -1,6 +1,7 @@
 using Backend.Data;
 using Backend.Filters;
 using Backend.Hubs;
+using Backend.Middleware;
 using Backend.Options;
 using Backend.Services;
 using Microsoft.AspNetCore.RateLimiting;
@@ -251,6 +252,9 @@ using (var technicalContractScope = app.Services.CreateScope())
     _ = technicalContractScope.ServiceProvider.GetRequiredService<ITechnicalReplayLayerService>();
 }
 
+// Security headers go first so they are also applied to error/404 responses
+// produced by downstream middleware (exception handler re-executes downstream of it).
+app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseResponseCompression();
 app.UseRateLimiter();
 app.UseCors("AllowNextJs");
