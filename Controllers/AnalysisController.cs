@@ -134,7 +134,9 @@ public class AnalysisController : ControllerBase
         {
             using var document = System.Text.Json.JsonDocument.Parse(body);
             var root = document.RootElement;
-            if (root.TryGetProperty("code", out var code))
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object
+                && root.TryGetProperty("code", out var code)
+                && code.ValueKind == System.Text.Json.JsonValueKind.String)
             {
                 return code.GetString() switch
                 {

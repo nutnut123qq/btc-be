@@ -47,6 +47,22 @@ public class AnalysisControllerErrorTests
         Assert.DoesNotContain("secret-value", result.Message);
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("\"x\"")]
+    [InlineData("123")]
+    [InlineData("null")]
+    [InlineData("{\"code\":123}")]
+    [InlineData("{\"code\":{}}")]
+    public void TryParseError_NonObjectOrNonStringCodeUsesSanitizedFallback(string body)
+    {
+        var result = AnalysisController.TryParseError(body);
+
+        Assert.Equal("AI_ANALYSIS_ERROR", result.Code);
+        Assert.Equal("AI analysis failed.", result.Message);
+        Assert.True(result.Retryable);
+    }
+
     [Fact]
     public async Task GetAnalysis_RejectsNonBtcBeforeCallingDependencies()
     {

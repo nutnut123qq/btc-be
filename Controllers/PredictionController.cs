@@ -385,17 +385,22 @@ public class PredictionController : ControllerBase
         {
             using var document = JsonDocument.Parse(body);
             var root = document.RootElement;
-            if (root.TryGetProperty("code", out var codeProp) && codeProp.GetString() == "MODEL_ARTIFACT_INCOMPATIBLE")
+            if (root.ValueKind == JsonValueKind.Object)
             {
-                var message = root.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.String
-                    ? messageProp.GetString() ?? "Model artifact không tương thích với dự đoán hiện tại."
-                    : "Model artifact không tương thích với dự đoán hiện tại.";
-                return ("MODEL_ARTIFACT_INCOMPATIBLE", message, false);
-            }
-            if (root.TryGetProperty("retryable", out var retryableProp)
-                && (retryableProp.ValueKind == JsonValueKind.True || retryableProp.ValueKind == JsonValueKind.False))
-            {
-                return ("AI_PREDICT_ERROR", "AI prediction failed.", retryableProp.GetBoolean());
+                if (root.TryGetProperty("code", out var codeProp)
+                    && codeProp.ValueKind == JsonValueKind.String
+                    && codeProp.GetString() == "MODEL_ARTIFACT_INCOMPATIBLE")
+                {
+                    var message = root.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.String
+                        ? messageProp.GetString() ?? "Model artifact không tương thích với dự đoán hiện tại."
+                        : "Model artifact không tương thích với dự đoán hiện tại.";
+                    return ("MODEL_ARTIFACT_INCOMPATIBLE", message, false);
+                }
+                if (root.TryGetProperty("retryable", out var retryableProp)
+                    && (retryableProp.ValueKind == JsonValueKind.True || retryableProp.ValueKind == JsonValueKind.False))
+                {
+                    return ("AI_PREDICT_ERROR", "AI prediction failed.", retryableProp.GetBoolean());
+                }
             }
         }
         catch (JsonException)

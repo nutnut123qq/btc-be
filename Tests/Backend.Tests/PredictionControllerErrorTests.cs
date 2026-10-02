@@ -51,4 +51,33 @@ public class PredictionControllerErrorTests
         Assert.True(result.Retryable);
         Assert.DoesNotContain("feature vector invalid", result.Message);
     }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("\"x\"")]
+    [InlineData("123")]
+    [InlineData("null")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("{\"code\":123}")]
+    [InlineData("{\"code\":{}}")]
+    [InlineData("{\"retryable\":\"false\"}")]
+    [InlineData("{\"code\":\"SOME\"}")]
+    public void TryParsePredictError_NonObjectOrUnexpectedShapesDefaultToRetryable(string body)
+    {
+        var result = PredictionController.TryParsePredictError(body);
+
+        Assert.Equal("AI_PREDICT_ERROR", result.Code);
+        Assert.Equal("AI prediction failed.", result.Message);
+        Assert.True(result.Retryable);
+    }
+
+    [Fact]
+    public void TryParsePredictError_ConflictingArtifactRetryableFlagStaysNonRetryable()
+    {
+        var result = PredictionController.TryParsePredictError("{\"code\":\"MODEL_ARTIFACT_INCOMPATIBLE\",\"retryable\":true}");
+
+        Assert.Equal("MODEL_ARTIFACT_INCOMPATIBLE", result.Code);
+        Assert.False(result.Retryable);
+    }
 }
