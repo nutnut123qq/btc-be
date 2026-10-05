@@ -457,6 +457,7 @@ public class DataAuditService : IDataAuditService
         await db.Database.OpenConnectionAsync(cancellationToken);
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = sql;
+        command.CommandTimeout = 180;
         AddParameter(command, "symbol", symbol);
         AddParameter(command, "startMs", startMs);
         AddParameter(command, "nowMs", nowMs);
@@ -486,6 +487,7 @@ public class DataAuditService : IDataAuditService
         await db.Database.OpenConnectionAsync(cancellationToken);
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = PostgresKlineQualitySql;
+        command.CommandTimeout = 180;
         AddParameter(command, "symbol", symbol);
         AddParameter(command, "startMs", startMs);
         AddParameter(command, "nowMs", nowMs);
