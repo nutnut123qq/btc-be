@@ -21,10 +21,12 @@ public class AlertsController : ControllerBase
         [FromQuery] string userId = "default",
         [FromQuery] bool unreadOnly = false,
         [FromQuery] int take = 50,
+        [FromQuery] int skip = 0,
         [FromQuery] bool includeArchived = false,
         CancellationToken cancellationToken = default)
     {
         if (take is < 1 or > 200) take = 50;
+        if (skip < 0) skip = 0;
 
         var q = _db.AppAlerts.AsNoTracking()
             .Where(a => a.UserId == userId);
@@ -34,8 +36,12 @@ public class AlertsController : ControllerBase
         if (unreadOnly)
             q = q.Where(a => !a.IsRead);
 
+        var total = await q.CountAsync(cancellationToken);
+
         var items = await q
             .OrderByDescending(a => a.CreatedAt)
+            .ThenByDescending(a => a.Id)
+            .Skip(skip)
             .Take(take)
             .Select(a => new
             {
@@ -62,7 +68,7 @@ public class AlertsController : ControllerBase
         var unread = await _db.AppAlerts.AsNoTracking()
             .CountAsync(a => a.UserId == userId && !a.IsRead && a.ArchivedAtUtc == null, cancellationToken);
 
-        return Ok(new { userId, unreadCount = unread, items });
+        return Ok(new { userId, unreadCount = unread, total, items });
     }
 
     [HttpGet("unread-count")]
