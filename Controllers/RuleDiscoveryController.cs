@@ -15,19 +15,22 @@ public class RuleDiscoveryController : ControllerBase
     private readonly CandleVolumeIndexer _volumeIndexer;
     private readonly ILogger<RuleDiscoveryController> _logger;
     private readonly ProductionTimeframePolicy _timeframePolicy;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     public RuleDiscoveryController(
         IBinanceKlinesService binance,
         AppDbContext db,
         CandleVolumeIndexer volumeIndexer,
         ILogger<RuleDiscoveryController> logger,
-        ProductionTimeframePolicy? timeframePolicy = null)
+        ProductionTimeframePolicy? timeframePolicy = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _binance = binance;
         _db = db;
         _volumeIndexer = volumeIndexer;
         _logger = logger;
         _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     /// <summary>
@@ -268,6 +271,42 @@ public class RuleDiscoveryController : ControllerBase
         }
 
         var items = await q.ToListAsync(cancellationToken);
+        return Ok(items);
+    }
+
+    /// <summary>
+    /// Lịch sử các lần chạy bounded discovery (metadata run, không gồm trial ledger).
+    /// Cho phép phân biệt "chưa từng chạy" với "đã chạy nhưng 0 rules qua gate".
+    /// </summary>
+    [HttpGet("runs")]
+    public async Task<ActionResult<object>> GetDiscoveryRuns(
+        [FromQuery] string symbol = "BTCUSDT",
+        [FromQuery] string? timeframe = null,
+        [FromQuery] int take = 20,
+        CancellationToken cancellationToken = default)
+    {
+        symbol = ProductionSymbolPolicy.Canonicalize(symbol);
+        if (!_symbolPolicy.IsActive(symbol))
+            return BadRequest(ProductionSymbolApiError.Create(_symbolPolicy, symbol, HttpContext.TraceIdentifier));
+
+        var q = _db.RuleDiscoveryRuns
+            .AsNoTracking()
+            .Where(r => r.Symbol == symbol);
+
+        if (!string.IsNullOrWhiteSpace(timeframe))
+        {
+            timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+            if (!_timeframePolicy.IsActive(timeframe))
+                return BadRequest(ProductionTimeframeApiError.Create(_timeframePolicy, timeframe, HttpContext.TraceIdentifier));
+            q = q.Where(r => r.Timeframe == timeframe);
+        }
+
+        take = Math.Clamp(take, 1, 200);
+        var items = await q
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .ThenByDescending(r => r.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
         return Ok(items);
     }
 
