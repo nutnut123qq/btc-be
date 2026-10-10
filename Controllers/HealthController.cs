@@ -25,7 +25,13 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger,
         (nameof(Services.IndexingBackgroundWorker), TimeSpan.FromMinutes(70)),
         (nameof(Services.CausalSmartMoneyRebuildWorker), TimeSpan.FromMinutes(70)),
         (nameof(Services.RssIngestionService), TimeSpan.FromMinutes(40)),
-        (nameof(Services.EmbeddingBackfillWorker), TimeSpan.FromMinutes(130))
+        (nameof(Services.EmbeddingBackfillWorker), TimeSpan.FromMinutes(130)),
+        // 60min cadence -> 140min (2.33x, same ratio as Indexing/CausalSmartMoney 70/30);
+        // dataset builds are heavier and more variable than the embedding batch.
+        (nameof(Services.MlDatasetBuilder), TimeSpan.FromMinutes(140)),
+        // 6h cadence -> 8h: flags one missed cycle with ~2h headroom for a slow build;
+        // the 2.2-2.7x convention (13-16h) would leave a dead worker silent too long.
+        (nameof(Services.WindowDatasetBuilder), TimeSpan.FromHours(8))
     ];
 
     [HttpGet("live")]
