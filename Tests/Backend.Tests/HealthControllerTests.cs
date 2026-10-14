@@ -83,6 +83,60 @@ public class HealthControllerTests
     }
 
     [Fact]
+    public async Task Get_ToleratesOneFullyMissedClosePerTimeframe()
+    {
+        // Threshold = 3 candle periods: right after a close, the just-closed
+        // candle being absent (normal ingest lag) leaves age in [2P, 3P) — that
+        // must stay "fresh". Under the old 2P thresholds this flipped stale at
+        // every close and drove the watchdog restart loop.
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+
+        var now = DateTimeOffset.UtcNow;
+        // Newest stored open = the close BEFORE the last one: last closed candle
+        // still in transit. age lands in [2P, 3P) regardless of boundary timing.
+        var hourOpen = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero);
+        var fourHourOpen = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.FromHours(4).Ticks, TimeSpan.Zero);
+        var dayOpen = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
+        db.Klines.AddRange(
+            new Kline { Symbol = "BTCUSDT", Timeframe = "1h", OpenTimeMs = hourOpen.AddHours(-2).ToUnixTimeMilliseconds(), CloseTimeMs = hourOpen.AddHours(-1).ToUnixTimeMilliseconds() - 1, Open = 1, High = 1, Low = 1, Close = 1 },
+            new Kline { Symbol = "BTCUSDT", Timeframe = "4h", OpenTimeMs = fourHourOpen.AddHours(-8).ToUnixTimeMilliseconds(), CloseTimeMs = fourHourOpen.AddHours(-4).ToUnixTimeMilliseconds() - 1, Open = 1, High = 1, Low = 1, Close = 1 },
+            new Kline { Symbol = "BTCUSDT", Timeframe = "1d", OpenTimeMs = dayOpen.AddDays(-2).ToUnixTimeMilliseconds(), CloseTimeMs = dayOpen.AddDays(-1).ToUnixTimeMilliseconds() - 1, Open = 1, High = 1, Low = 1, Close = 1 });
+        await db.SaveChangesAsync();
+
+        var controller = new HealthController(db, NullLogger<HealthController>.Instance);
+        var ok = Assert.IsType<OkObjectResult>((await controller.Get(default)).Result);
+        var body = Assert.IsType<HealthResponse>(ok.Value);
+
+        Assert.Equal("healthy", body.Status);
+        Assert.All(body.Klines.Where(x => x.Active), x => Assert.Equal("fresh", x.Status));
+    }
+
+    [Fact]
+    public async Task Get_FlagsStaleAfterTwoMissedCloses()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+
+        var now = DateTimeOffset.UtcNow;
+        var hourOpen = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero);
+        // Two consecutive 1h closes missed: newest stored open is 3 hours old.
+        db.Klines.Add(new Kline { Symbol = "BTCUSDT", Timeframe = "1h", OpenTimeMs = hourOpen.AddHours(-3).ToUnixTimeMilliseconds(), CloseTimeMs = hourOpen.AddHours(-2).ToUnixTimeMilliseconds() - 1, Open = 1, High = 1, Low = 1, Close = 1 });
+        await db.SaveChangesAsync();
+
+        var controller = new HealthController(db, NullLogger<HealthController>.Instance);
+        var ok = Assert.IsType<OkObjectResult>((await controller.Get(default)).Result);
+        var body = Assert.IsType<HealthResponse>(ok.Value);
+
+        Assert.Equal("degraded", body.Status);
+        Assert.Equal("stale", body.Klines.Single(x => x.Timeframe == "1h").Status);
+    }
+
+    [Fact]
     public async Task Workers_MapsCycleOutcomesAndCounters()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

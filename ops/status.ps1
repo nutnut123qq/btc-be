@@ -18,44 +18,56 @@ $checks = @(
     $entry = $state | Where-Object name -eq $_.name | Select-Object -First 1
     $processOk = $null -ne $entry -and (Test-ManagedProcess $entry)
     $http = Test-Http $_.url $_.timeout
-    [pscustomobject]@{ component = $_.name; process = $processOk; ready = $http.ok; detail = $http.detail }
+    [pscustomobject]@{ component = $_.name; process = $processOk; ready = $http.ok; restartable = $true; detail = $http.detail }
 }
 
-$pg = [pscustomobject]@{ component = "postgresql17-native"; process = $null; ready = $false; detail = "PostgreSQL status unavailable" }
+$pg = [pscustomobject]@{ component = "postgresql17-native"; process = $null; ready = $false; restartable = $true; detail = "PostgreSQL status unavailable" }
 try {
     $server = Get-NativePg17Status
     $pg.ready = $server.ready
     $pg.detail = $server.detail
 }
 catch { $pg.detail = $_.Exception.Message }
-# Data-plane health: a reachable API can still serve stale data when workers
-# stall (the previous silent-stale incident). freshness.status is "healthy" only
-# when every active timeframe is fresh; workers are healthy unless stale/failed.
-# A worker reporting "disabled" (e.g. embedding backfill without an API key) is
-# a configured-off state, not a failure; "idle" means the last cycle found no
-# pending work and "partial" self-heals on the next cycle. None of these fail
-# the gate, but non-healthy states stay visible in detail.
-$dataHealth = [pscustomobject]@{ component = "backend-data"; process = $null; ready = $false; detail = "not checked" }
+# Data-plane health is split by what a restart can actually fix. A red
+# freshness probe right after a candle close is normal ingest lag: restarting
+# the stack only delays the next ingest further (the hourly restart loop of
+# 2026-10). backend-freshness is therefore restartable=$false — visible in
+# status output, never a restart trigger on its own. backend-workers keeps
+# restartable=$true: a stale/failed heartbeat marks a wedged worker that a
+# restart can clear. A worker reporting "disabled" (e.g. embedding backfill
+# without an API key) is a configured-off state, not a failure; "idle" means
+# the last cycle found no pending work and "partial" self-heals on the next
+# cycle. None of these fail the gate, but non-healthy states stay visible.
+$freshnessHealth = [pscustomobject]@{ component = "backend-freshness"; process = $null; ready = $false; restartable = $false; detail = "not checked" }
+$workersHealth = [pscustomobject]@{ component = "backend-workers"; process = $null; ready = $false; restartable = $true; detail = "not checked" }
 $backendCheck = @($checks | Where-Object { $_.component -eq "backend" }) | Select-Object -First 1
 if ($backendCheck -and $backendCheck.ready) {
     try {
         $freshness = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/health/freshness" -TimeoutSec 10
+        $staleTfs = @($freshness.klines | Where-Object { $_.active -and $_.status -ne "fresh" })
+        $freshnessHealth.ready = ($freshness.status -eq "healthy")
+        $freshnessHealth.detail = "freshness=$($freshness.status)" + $(if ($staleTfs.Count -gt 0) {
+            "; stale: " + (($staleTfs | ForEach-Object { "$($_.timeframe) $($_.ageSeconds)s>$($_.maxAgeSeconds)s" }) -join ", ")
+        } else { "" })
+    }
+    catch { $freshnessHealth.detail = $_.Exception.Message }
+    try {
         $workers = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/health/workers" -TimeoutSec 10
         $passing = @("healthy", "idle", "disabled", "partial")
         $unhealthyWorkers = @($workers.workers | Where-Object { $passing -notcontains $_.status })
         $attentionWorkers = @($workers.workers | Where-Object { $_.status -ne "healthy" -and $passing -contains $_.status })
-        $dataHealth.ready = ($freshness.status -eq "healthy") -and $unhealthyWorkers.Count -eq 0
-        $dataHealth.detail = "freshness=$($freshness.status)" + $(if ($unhealthyWorkers.Count -gt 0) {
-            "; workers not healthy: $($unhealthyWorkers.name -join ', ')"
-        } else { "; workers ok" }) + $(if ($attentionWorkers.Count -gt 0) {
+        $workersHealth.ready = ($unhealthyWorkers.Count -eq 0)
+        $workersHealth.detail = $(if ($unhealthyWorkers.Count -gt 0) {
+            "workers not healthy: $($unhealthyWorkers.name -join ', ')"
+        } else { "workers ok" }) + $(if ($attentionWorkers.Count -gt 0) {
             "; note: $((@($attentionWorkers) | ForEach-Object { "$($_.name)=$($_.status)" }) -join ', ')"
         } else { "" })
     }
-    catch { $dataHealth.detail = $_.Exception.Message }
+    catch { $workersHealth.detail = $_.Exception.Message }
 }
-else { $dataHealth.detail = "backend not ready" }
+else { $freshnessHealth.detail = "backend not ready"; $workersHealth.detail = "backend not ready" }
 
-$all = @($pg) + @($checks) + @($dataHealth)
+$all = @($pg) + @($checks) + @($freshnessHealth) + @($workersHealth)
 
 if ($Json) { $all | ConvertTo-Json -Depth 3 }
 else { $all | Format-Table -AutoSize }

@@ -12,11 +12,18 @@ namespace Backend.Controllers;
 public class HealthController(AppDbContext db, ILogger<HealthController> logger, ProductionTimeframePolicy? timeframePolicy = null) : ControllerBase
 {
     private readonly ProductionTimeframePolicy _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
+    // MaxAge is compared against the newest candle OPEN time, which is already
+    // ~1 period old the moment a candle closes. A 2-period threshold therefore
+    // gave zero grace: at every close, freshness flipped stale until ingest
+    // landed (the hourly degraded flap behind the watchdog restart loop).
+    // 3 periods tolerates one fully-missed close; "stale" now means two
+    // consecutive closes with no ingest — a genuinely broken pipeline.
+    // 1m/5m keep a fixed 20min floor since the ingest cycle itself is 15min.
     private static readonly (string Timeframe, TimeSpan MaxAge)[] FreshnessChecks =
     [
         ("1m", TimeSpan.FromMinutes(20)), ("5m", TimeSpan.FromMinutes(20)),
-        ("15m", TimeSpan.FromMinutes(30)), ("30m", TimeSpan.FromHours(1)),
-        ("1h", TimeSpan.FromHours(2)), ("4h", TimeSpan.FromHours(8)), ("1d", TimeSpan.FromDays(2))
+        ("15m", TimeSpan.FromMinutes(45)), ("30m", TimeSpan.FromMinutes(90)),
+        ("1h", TimeSpan.FromHours(3)), ("4h", TimeSpan.FromHours(12)), ("1d", TimeSpan.FromDays(3))
     ];
 
     private static readonly (string Name, TimeSpan MaxAge)[] ExpectedWorkers =
