@@ -73,6 +73,7 @@ public class LiquidationController : ControllerBase
         CancellationToken ct = default)
     {
         symbol = NormalizeSymbol(symbol);
+        limit = Math.Clamp(limit, 1, 200);
         var cacheKey = $"liq:history:{symbol}:{timeframe}:{limit}";
         if (_cache.TryGetValue(cacheKey, out List<LiquidationSnapshot>? cached) && cached != null)
         {
