@@ -19,7 +19,17 @@ try {
         $out = & $shell -NoProfile -File "$PSScriptRoot/status.ps1" -Json 2>&1
         $jsonText = ($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | Out-String)
         $components = $null
-        try { $components = @($jsonText | ConvertFrom-Json) } catch { }
+        try {
+            # PS 5.1 emits a parsed JSON array as a single pipeline item, so
+            # @(... | ConvertFrom-Json) yields a nested array of length 1 and
+            # member access on it breaks silently. foreach unrolls on both 5.1
+            # and 7.
+            $parsed = $jsonText | ConvertFrom-Json
+            if ($null -ne $parsed) {
+                $components = @()
+                foreach ($component in $parsed) { $components += $component }
+            }
+        } catch { }
         return @{ components = $components; raw = (($out | Out-String).Trim()) }
     }
 

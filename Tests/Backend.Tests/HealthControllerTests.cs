@@ -124,8 +124,9 @@ public class HealthControllerTests
 
         var now = DateTimeOffset.UtcNow;
         var hourOpen = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero);
-        // Two consecutive 1h closes missed: newest stored open is 3 hours old.
-        db.Klines.Add(new Kline { Symbol = "BTCUSDT", Timeframe = "1h", OpenTimeMs = hourOpen.AddHours(-3).ToUnixTimeMilliseconds(), CloseTimeMs = hourOpen.AddHours(-2).ToUnixTimeMilliseconds() - 1, Open = 1, High = 1, Low = 1, Close = 1 });
+        // Two consecutive 1h closes missed: newest stored open is >3 hours old.
+        // -1s keeps the boundary-tick edge (age == exactly 3h) out of the test.
+        db.Klines.Add(new Kline { Symbol = "BTCUSDT", Timeframe = "1h", OpenTimeMs = hourOpen.AddHours(-3).AddSeconds(-1).ToUnixTimeMilliseconds(), CloseTimeMs = hourOpen.AddHours(-2).ToUnixTimeMilliseconds() - 1, Open = 1, High = 1, Low = 1, Close = 1 });
         await db.SaveChangesAsync();
 
         var controller = new HealthController(db, NullLogger<HealthController>.Instance);
