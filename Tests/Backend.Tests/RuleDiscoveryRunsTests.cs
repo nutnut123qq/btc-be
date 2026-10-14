@@ -74,6 +74,20 @@ public class RuleDiscoveryRunsTests
     }
 
     [Fact]
+    public async Task GetVolumeStats_TakeIsClamped()
+    {
+        await using var db = Db();
+        for (var i = 0; i < 205; i++)
+            db.CandleVolumeStats.Add(new CandleVolumeStats { Symbol = "BTCUSDT", Timeframe = "4h", OpenTimeMs = 1_000_000 + i });
+        await db.SaveChangesAsync();
+        var controller = Controller(db);
+
+        var payload = Payload((await controller.GetVolumeStats("BTCUSDT", "4h", take: 500)).Result);
+
+        Assert.Equal(200, payload.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
     public async Task GetDiscoveryRuns_CanonicalizesSymbolAndTimeframe()
     {
         await using var db = Db();

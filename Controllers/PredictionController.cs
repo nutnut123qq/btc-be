@@ -169,7 +169,7 @@ public class PredictionController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
-        take = Math.Clamp(take, 1, 1000);
+        take = Math.Clamp(take, 1, 200);
         var items = await _db.ModelPredictions
             .AsNoTracking()
             .Where(x => x.Symbol == symbol && x.Timeframe == timeframe
