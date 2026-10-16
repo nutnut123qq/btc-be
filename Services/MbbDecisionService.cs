@@ -324,11 +324,11 @@ public sealed class MbbDecisionService
             triggers.Add(BandCheckedTrigger("reduce-below-cost", EquityCandleTimeframes.Day,
                 reducePrice,
                 "reduce the settled portion on a 1d close at/below this level",
-                prevClose));
+                prevClose, MbbTriggerDirections.CloseBelow));
             triggers.Add(BandCheckedTrigger("stop-loss", EquityCandleTimeframes.Day,
                 stopLossPrice,
                 "exit the position on a 1d close at/below this level",
-                prevClose));
+                prevClose, MbbTriggerDirections.CloseBelow));
             if (reduceHit)
             {
                 reasons.Add("reduce-threshold-hit");
@@ -423,7 +423,8 @@ public sealed class MbbDecisionService
 
     /// <summary>Attach the price-band verdict to a trigger level; breach -> nonFillRisk.</summary>
     private MbbDecisionTrigger BandCheckedTrigger(
-        string name, string timeframe, decimal? priceLevel, string condition, decimal? prevClose)
+        string name, string timeframe, decimal? priceLevel, string condition, decimal? prevClose,
+        string? direction = null)
     {
         bool? within = null;
         string? risk = null;
@@ -442,7 +443,7 @@ public sealed class MbbDecisionService
                 risk = "non-fill risk: band-reference-missing (no previous 1d close)";
             }
         }
-        return new MbbDecisionTrigger(name, timeframe, priceLevel, condition, within, risk);
+        return new MbbDecisionTrigger(name, timeframe, priceLevel, condition, within, risk, direction);
     }
 
     private MbbDecisionDto WaitDecision(

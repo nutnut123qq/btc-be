@@ -14,9 +14,13 @@ namespace Backend.Services;
 ///    latest expected finalized open (from <see cref="VietnamMarketCalendar"/>),
 ///    and requires that bar to already be stored. Older bars can never get
 ///    rows, so past decisions cannot be retro-fabricated.
-/// 2. NO FABRICATED FILLS: fill = the NEXT stored bar's open, resolved by a
-///    later observe call once that bar actually exists. Outcome = raw
-///    close-to-fill return over that same bar. Until then both stay NULL.
+/// 2. NO FABRICATED FILLS: fill = the first stored bar opening at/after
+///    <see cref="MbbSignalObservation.AvailableTimeMs"/> (a price can only be
+///    taken once the decision itself exists — recording late moves the fill
+///    forward, it never reaches back). conditional-sell fills only after a
+///    declared close-below trigger actually fires on a finalized bar, then at
+///    the next session open. Outcome = raw close-to-fill return over the fill
+///    bar. Until the matching bar/trigger exists, fields stay NULL.
 ///
 /// Idempotent by key: DecisionId = mbb-observe/{timeframe}/{signalBarOpenTimeMs}
 /// plus a unique (Symbol, Timeframe, SignalBarOpenTimeMs) index — repeat polls
@@ -27,6 +31,7 @@ public sealed class MbbSignalObservationService
     public const string RecorderVersion = "mbb-observe-v1";
     public const string OutcomeHorizonNextBarClose = "next-bar-close";
     public const string FillSourceNextBarOpen = "next-bar-open-vci-adjusted";
+    public const string FillSourcePostTriggerNextOpen = "post-trigger-close-next-open";
 
     private static readonly HashSet<string> ActionableDecisions = new(StringComparer.Ordinal)
     {
@@ -178,12 +183,26 @@ public sealed class MbbSignalObservationService
             .OrderBy(o => o.SignalBarOpenTimeMs)
             .ToListAsync(cancellationToken);
 
+        var nowMs = nowUtc.ToUnixTimeMilliseconds();
         foreach (var obs in unfilled)
         {
+            if (obs.Decision == MbbDecisionActions.ConditionalSell)
+            {
+                if (await TryResolveConditionalSellAsync(obs, nowUtc, nowMs, cancellationToken))
+                    fills++;
+                continue;
+            }
+
+            // buy-more/reduce/sell execute at the first stored open at/after the
+            // observation moment — never at an open that already existed before
+            // the decision was recorded (late recording pushes the fill forward).
+            // The fill bar itself must be finalized (CloseTimeMs <= now) — a
+            // still-forming bar can be amended, so its open is not a real fill.
             var nextBar = await _db.InstrumentCandles.AsNoTracking()
                 .Where(c => c.Symbol == obs.Symbol
                             && c.Timeframe == obs.Timeframe
-                            && c.OpenTimeMs > obs.SignalBarOpenTimeMs)
+                            && c.OpenTimeMs >= obs.AvailableTimeMs
+                            && c.CloseTimeMs <= nowMs)
                 .OrderBy(c => c.OpenTimeMs)
                 .FirstOrDefaultAsync(cancellationToken);
             if (nextBar is null) continue; // nothing stored yet — stay unresolved, never fabricate
@@ -226,5 +245,69 @@ public sealed class MbbSignalObservationService
         if (outcomes > 0)
             await _db.SaveChangesAsync(cancellationToken);
         return (fills, outcomes);
+    }
+
+    /// <summary>
+    /// conditional-sell is NOT a next-open order: it is a conditional order that
+    /// only exists once a declared trigger fires. Semantics: evaluate the
+    /// decision's close-below triggers on their own timeframes; the first
+    /// finalized bar (closed at/after the observation moment) whose close
+    /// breaches the highest level activates the order, and execution then takes
+    /// the next stored open of the OBSERVATION timeframe at/after that trigger
+    /// close. If no trigger ever fires, the row honestly stays unfilled.
+    /// </summary>
+    private async Task<bool> TryResolveConditionalSellAsync(
+        MbbSignalObservation obs, DateTimeOffset nowUtc, long nowMs, CancellationToken cancellationToken)
+    {
+        List<MbbDecisionTrigger> triggers;
+        try
+        {
+            triggers = JsonSerializer.Deserialize<MbbDecisionDto>(obs.DecisionPayloadJson)
+                ?.Triggers.Where(t => t.Direction == MbbTriggerDirections.CloseBelow
+                                      && t.PriceLevelVnd is not null
+                                      && (t.Timeframe == EquityCandleTimeframes.Day
+                                          || t.Timeframe == EquityCandleTimeframes.Hour))
+                .ToList() ?? [];
+        }
+        catch (JsonException)
+        {
+            return false; // payload unreadable → stay unresolved, never guess
+        }
+        if (triggers.Count == 0) return false;
+
+        // Earliest breached trigger across all trigger timeframes wins. Trigger
+        // bars must be FINALIZED at/after the observation moment — a close that
+        // completed before we recorded could not have been acted on.
+        InstrumentCandle? triggerBar = null;
+        foreach (var group in triggers.GroupBy(t => t.Timeframe))
+        {
+            var level = group.Max(t => t.PriceLevelVnd!.Value);
+            var hit = await _db.InstrumentCandles.AsNoTracking()
+                .Where(c => c.Symbol == obs.Symbol
+                            && c.Timeframe == group.Key
+                            && c.CloseTimeMs >= obs.AvailableTimeMs
+                            && c.CloseTimeMs <= nowMs
+                            && c.Close <= level)
+                .OrderBy(c => c.CloseTimeMs)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (hit is not null && (triggerBar is null || hit.CloseTimeMs < triggerBar.CloseTimeMs))
+                triggerBar = hit;
+        }
+        if (triggerBar is null) return false; // condition never fired → not a fill
+
+        var fillBar = await _db.InstrumentCandles.AsNoTracking()
+            .Where(c => c.Symbol == obs.Symbol
+                        && c.Timeframe == obs.Timeframe
+                        && c.OpenTimeMs >= triggerBar.CloseTimeMs
+                        && c.CloseTimeMs <= nowMs)
+            .OrderBy(c => c.OpenTimeMs)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (fillBar is null) return false; // triggered but next open not stored yet
+
+        obs.FillPrice = fillBar.Open;
+        obs.FillBarOpenTimeMs = fillBar.OpenTimeMs;
+        obs.FillObservedAtUtc = nowUtc;
+        obs.FillSource = FillSourcePostTriggerNextOpen;
+        return true;
     }
 }

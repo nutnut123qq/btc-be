@@ -17,8 +17,10 @@ namespace Backend.Controllers;
 /// filter simply has nothing to inspect. Do not add a symbol parameter here
 /// until MBB is enabled in the production scope.
 ///
-/// Personal position data (cost basis, shares, cash) stays off public market
-/// endpoints: writes go through AdminGuard like other settings mutations.
+/// Personal position data (cost basis, shares, cash, PnL) stays off public
+/// endpoints: ALL actions are AdminGuard'd — reads included, because both the
+/// position DTO and the decision's embedded position summary expose personal
+/// holdings. Unauthenticated callers receive 401 like other admin surfaces.
 /// </summary>
 [ApiController]
 [Route("api/mbb")]
@@ -33,6 +35,7 @@ public sealed class MbbPositionController : ControllerBase
 
     /// <summary>Current MBB position: lots with derived T+2 settlement + cash.</summary>
     [HttpGet("position")]
+    [AdminGuard]
     [ProducesResponseType(typeof(MbbPositionDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MbbPositionDto>> GetPosition(CancellationToken cancellationToken)
     {
@@ -73,6 +76,7 @@ public sealed class MbbPositionController : ControllerBase
     /// insufficient input returns action "wait" with reasons.
     /// </summary>
     [HttpGet("decision")]
+    [AdminGuard]
     [ProducesResponseType(typeof(MbbDecisionDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MbbDecisionDto>> GetDecision(CancellationToken cancellationToken)
     {

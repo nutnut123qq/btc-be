@@ -168,6 +168,31 @@ public class MbbMarketDataEndpointTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task PersonalReadEndpoints_RequireAdminKey()
+    {
+        // Position (cost basis, shares) and decision (embedded position summary)
+        // expose personal holdings — reads are AdminGuard'd like the writes.
+        var client = _factory.CreateClient();
+        foreach (var url in new[] { "/api/mbb/position", "/api/mbb/decision" })
+        {
+            var unauth = await client.GetAsync(url);
+            Assert.Equal(HttpStatusCode.Unauthorized, unauth.StatusCode);
+
+            var wrong = new HttpRequestMessage(HttpMethod.Get, url);
+            wrong.Headers.Add("X-Admin-Key", "wrong-key");
+            Assert.Equal(HttpStatusCode.Unauthorized,
+                (await client.SendAsync(wrong)).StatusCode);
+        }
+
+        var authed = _factory.CreateClient();
+        authed.DefaultRequestHeaders.Add("X-Admin-Key", TestWebApplicationFactory.AdminApiKey);
+        Assert.Equal(HttpStatusCode.OK,
+            (await authed.GetAsync("/api/mbb/position")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await authed.GetAsync("/api/mbb/decision")).StatusCode);
+    }
+
+    [Fact]
     public async Task AdminSync_WithKey_ReturnsDisabledReport_WhenIngestionOff()
     {
         var client = _factory.CreateClient();

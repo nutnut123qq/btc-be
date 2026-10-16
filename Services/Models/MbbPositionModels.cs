@@ -61,6 +61,18 @@ public sealed record UpdateMbbPositionLotItem(
     [property: Required] decimal CostPerShareVnd,
     [property: Required] string AcquireDate);
 
+/// <summary>
+/// Machine-evaluable direction of a level trigger, when it has one.
+/// "close-below" fires when a finalized bar on the trigger timeframe closes
+/// at/below PriceLevelVnd; "close-above" is the mirror. Null for triggers that
+/// are execution notes rather than level conditions.
+/// </summary>
+public static class MbbTriggerDirections
+{
+    public const string CloseBelow = "close-below";
+    public const string CloseAbove = "close-above";
+}
+
 /// <summary>A declared trigger the decision is conditioned on.</summary>
 public sealed record MbbDecisionTrigger(
     [property: Required] string Name,
@@ -68,7 +80,8 @@ public sealed record MbbDecisionTrigger(
     decimal? PriceLevelVnd,
     [property: Required] string Condition,
     bool? WithinPriceBand,
-    string? NonFillRisk);
+    string? NonFillRisk,
+    string? Direction);
 
 /// <summary>Position snapshot embedded in a decision payload.</summary>
 public sealed record MbbPositionSummary(

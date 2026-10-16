@@ -9,9 +9,12 @@ namespace Backend.Data;
 ///   recorder cannot backdate decisions onto historical bars.
 /// - Decision/action fields are written once at insert; the full decision DTO
 ///   is preserved in <see cref="DecisionPayloadJson"/> for provenance.
-/// - Fill is the NEXT stored bar's open, resolved only after that bar exists
-///   and only for action-bearing decisions (buy-more/reduce/sell/conditional-
-///   sell). wait/hold never get fills — they are non-transactions.
+/// - Fill is the FIRST stored bar opening at/after the observation moment
+///   (AvailableTimeMs), resolved only after that bar exists and only for
+///   action-bearing decisions (buy-more/reduce/sell/conditional-sell).
+///   conditional-sell additionally requires a declared close-below trigger to
+///   fire on a finalized bar first; an unfired condition is not a fill.
+///   wait/hold never get fills — they are non-transactions.
 /// - Outcome is the raw instrument price return over the next bar (close-to-
 ///   fill), action-direction agnostic; interpretation happens at analysis time.
 /// - Fill/outcome are write-once and never fabricated: an unresolved field is

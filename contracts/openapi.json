@@ -9571,6 +9571,10 @@
           "nonFillRisk": {
             "type": "string",
             "nullable": true
+          },
+          "direction": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

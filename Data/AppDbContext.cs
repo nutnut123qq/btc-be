@@ -296,7 +296,7 @@ public class AppDbContext : DbContext
                     "(\"FillPrice\" IS NULL AND \"FillObservedAtUtc\" IS NULL AND \"FillSource\" IS NULL AND \"FillBarOpenTimeMs\" IS NULL) OR (" +
                     "\"Decision\" IN ('buy-more','reduce','sell','conditional-sell') AND \"FillPrice\" > 0 " +
                     "AND \"FillObservedAtUtc\" >= \"ObservedAtUtc\" AND NULLIF(BTRIM(\"FillSource\"), '') IS NOT NULL " +
-                    "AND \"FillBarOpenTimeMs\" > \"SignalBarOpenTimeMs\")");
+                    "AND \"FillBarOpenTimeMs\" >= \"AvailableTimeMs\")");
                 t.HasCheckConstraint("CK_MbbSignalObservations_OutcomeCoherence",
                     "(\"OutcomeReturn\" IS NULL AND \"OutcomeObservedAtUtc\" IS NULL AND \"OutcomeHorizon\" IS NULL) OR (" +
                     "\"FillPrice\" IS NOT NULL AND \"OutcomeReturn\" IS NOT NULL " +
