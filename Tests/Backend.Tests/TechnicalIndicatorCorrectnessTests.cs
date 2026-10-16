@@ -107,7 +107,7 @@ public class TechnicalIndicatorCorrectnessTests
 
         var expected = TechnicalIndicatorIndexer.CalculateIndicators(
             all.Select(x => new TechnicalIndicatorIndexer.Bar(x.OpenTimeMs, x.Open, x.High, x.Low, x.Close,
-                x.Volume, x.QuoteVolume, x.TakerBuyVolume, x.TakerBuyQuoteVolume, x.TradeCount)).ToArray(),
+                x.Volume)).ToArray(),
             3_600_000);
         var actual = await db.TechnicalIndicators.OrderBy(x => x.OpenTimeMs).ToArrayAsync();
         Assert.Equal(320, actual.Length);
@@ -132,8 +132,7 @@ public class TechnicalIndicatorCorrectnessTests
 
     private static TechnicalIndicatorIndexer.Bar Bar(
         int index, decimal open, decimal high, decimal low, decimal close, decimal volume = 1m) =>
-        new(index * 3_600_000L, open, high, low, close, volume, volume * close,
-            volume / 2, volume * close / 2, volume > 0 ? 1 : 0);
+        new(index * 3_600_000L, open, high, low, close, volume);
 
     private static KlineDto Dto(int index)
     {

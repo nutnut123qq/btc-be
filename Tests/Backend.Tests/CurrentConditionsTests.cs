@@ -303,7 +303,173 @@ public sealed class CurrentConditionsTests
         var handler = new RecordingHandler();
         await Invoke(AiPayload("4h", DefaultConditions), FullCatalog("4h"), "4h", handler);
 
-        Assert.Equal("/api/current-conditions?timeframe=4h", handler.LastRequest);
+        Assert.Equal("/api/current-conditions?timeframe=4h&symbol=BTCUSDT", handler.LastRequest);
+    }
+
+    // ------------------------------------------------------- symbol awareness
+
+    [Fact]
+    public async Task GetCurrentConditions_SymbolPropagatesToUpstream()
+    {
+        var handler = new RecordingHandler();
+        var (status, body, _) = await Invoke(
+            AiPayload("1d", DefaultConditions, symbol: "MBB"), FullCatalog("1d"),
+            "1d", handler, symbol: "MBB");
+
+        Assert.Equal(200, status);
+        Assert.Equal("/api/current-conditions?timeframe=1d&symbol=MBB", handler.LastRequest);
+        Assert.Equal("1d", body!.RootElement.GetProperty("timeframe").GetString());
+    }
+
+    [Fact]
+    public async Task GetCurrentConditions_MbbRejectsUndeclaredTimeframe()
+    {
+        var handler = new RecordingHandler();
+        var (status, _, error) = await Invoke(
+            AiPayload("4h", DefaultConditions), FullCatalog("4h"), "4h", handler, symbol: "MBB");
+
+        Assert.Equal(400, status);
+        Assert.Equal("INVALID_TIMEFRAME", error!.Code);
+        Assert.Null(handler.LastRequest); // upstream must not be called
+    }
+
+    [Fact]
+    public async Task GetCurrentConditions_UnknownSymbol_Returns400()
+    {
+        var handler = new RecordingHandler();
+        var (status, _, error) = await Invoke(
+            AiPayload("1h", DefaultConditions), FullCatalog("1h"), "1h", handler, symbol: "FOO");
+
+        Assert.Equal(400, status);
+        Assert.Equal("UNSUPPORTED_SYMBOL", error!.Code);
+        Assert.False(error.Retryable);
+        Assert.Null(handler.LastRequest);
+    }
+
+    [Fact]
+    public async Task GetCurrentConditions_Mbb_DoesNotInheritBtcEvidence()
+    {
+        // Catalog holds a verified BTCUSDT bundle for the same timeframe; an MBB
+        // request must report evidence-unavailable instead of borrowing it.
+        var (status, body, _) = await Invoke(
+            AiPayload("1d", DefaultConditions, symbol: "MBB"), FullCatalog("1d"),
+            "1d", symbol: "MBB");
+
+        Assert.Equal(200, status);
+        var evidence = body!.RootElement.GetProperty("evidence");
+        Assert.False(evidence.GetProperty("available").GetBoolean());
+        Assert.Equal("no-verified-evidence-bundle", evidence.GetProperty("reason").GetString());
+        foreach (var condition in body.RootElement.GetProperty("conditions").EnumerateArray())
+        {
+            var cell = condition.GetProperty("evidence").GetProperty("1").GetProperty("forwardReturn");
+            Assert.False(cell.GetProperty("tested").GetBoolean());
+            Assert.Equal("evidence-unavailable", cell.GetProperty("reason").GetString());
+        }
+        Assert.Empty(body.RootElement.GetProperty("conflicts").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task GetCurrentConditions_MbbItemWithForeignScope_IsRejected()
+    {
+        // Belt-and-suspenders: even if an MBB-scoped catalog item existed, a
+        // report whose statistical scope declares BTCUSDT must not attach.
+        var item = new ResearchEvidenceCatalogItemDto(
+            ItemId, "event", "Technical-event descriptive history", "inconclusive", "descriptive",
+            "MBB", "1d", new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc),
+            ItemId, ReportSha, "summary", [],
+            new EvidenceIntegrityDto(true, true, true, false, "test"));
+        var element = JsonDocument.Parse(StatisticalEvidenceJson("1d")).RootElement.Clone();
+        var detail = new ResearchEvidenceDetailDto(
+            ItemId, "event", "Technical-event descriptive history", "inconclusive", "descriptive",
+            "MBB", "1d", new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc),
+            ItemId, ReportSha, "summary", "hypothesis",
+            new ResearchEvidenceDatasetDto("fixture", null, null, CutoffMs, null),
+            new ResearchEvidenceProtocolDto(null, null, null, null, null),
+            [], [], [], [],
+            new ResearchEvidenceCoverageDto(null, null, null, null),
+            "conclusion", [],
+            new ResearchEvidenceProvenanceDto(null, null, null, null, null, null),
+            [],
+            new EvidenceIntegrityDto(true, true, true, false, "test"),
+            StatisticalEvidence: element);
+        var catalog = new StubCatalog([item], id => id == ItemId ? detail : null);
+
+        var (status, body, _) = await Invoke(
+            AiPayload("1d", DefaultConditions, symbol: "MBB"), catalog, "1d", symbol: "MBB");
+
+        Assert.Equal(200, status);
+        var evidence = body!.RootElement.GetProperty("evidence");
+        Assert.False(evidence.GetProperty("available").GetBoolean());
+        Assert.Equal("evidence-scope-mismatch", evidence.GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task GetCurrentConditions_MbbItemWithSymbollessScope_IsRejected()
+    {
+        var item = new ResearchEvidenceCatalogItemDto(
+            ItemId, "event", "Technical-event descriptive history", "inconclusive", "descriptive",
+            "MBB", "1d", new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc),
+            ItemId, ReportSha, "summary", [],
+            new EvidenceIntegrityDto(true, true, true, false, "test"));
+        var scopeLess = StatisticalEvidenceJson("1d")
+            .Replace("\"scope\":{\"symbol\":\"BTCUSDT\",\"timeframe\":\"1d\"}", "\"scope\":{\"timeframe\":\"1d\"}");
+        var element = JsonDocument.Parse(scopeLess).RootElement.Clone();
+        var detail = new ResearchEvidenceDetailDto(
+            ItemId, "event", "Technical-event descriptive history", "inconclusive", "descriptive",
+            "MBB", "1d", new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc),
+            ItemId, ReportSha, "summary", "hypothesis",
+            new ResearchEvidenceDatasetDto("fixture", null, null, CutoffMs, null),
+            new ResearchEvidenceProtocolDto(null, null, null, null, null),
+            [], [], [], [],
+            new ResearchEvidenceCoverageDto(null, null, null, null),
+            "conclusion", [],
+            new ResearchEvidenceProvenanceDto(null, null, null, null, null, null),
+            [],
+            new EvidenceIntegrityDto(true, true, true, false, "test"),
+            StatisticalEvidence: element);
+        var catalog = new StubCatalog([item], id => id == ItemId ? detail : null);
+
+        var (_, body, _) = await Invoke(
+            AiPayload("1d", DefaultConditions, symbol: "MBB"), catalog, "1d", symbol: "MBB");
+
+        Assert.Equal(
+            "evidence-scope-mismatch",
+            body!.RootElement.GetProperty("evidence").GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task GetCurrentConditions_AiPayloadWithWrongSymbol_Returns502PayloadInvalid()
+    {
+        var (status, _, error) = await Invoke(
+            AiPayload("1d", DefaultConditions), FullCatalog("1d"), "1d", symbol: "MBB");
+
+        Assert.Equal(502, status);
+        Assert.Equal("CONDITIONS_PAYLOAD_INVALID", error!.Code);
+    }
+
+    [Fact]
+    public async Task GetAsync_CacheKeySeparatesBySymbol()
+    {
+        var handler = new RecordingHandler
+        {
+            Responder = req => Task.FromResult(Json200(
+                req.RequestUri!.Query.Contains("MBB")
+                    ? AiPayload("1d", DefaultConditions, symbol: "MBB")
+                    : AiPayload("1h", DefaultConditions)))
+        };
+        var service = CreateCachedService(handler);
+
+        var first = await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
+        var second = await service.GetAsync("MBB", "1d", CancellationToken.None);
+        await service.GetAsync("BTCUSDT", "1h", CancellationToken.None); // cached
+        await service.GetAsync("MBB", "1d", CancellationToken.None);     // cached
+
+        Assert.Equal(2, handler.RequestCount);
+        Assert.Equal(CurrentConditionsOutcome.Ok, first.Outcome);
+        Assert.Equal(CurrentConditionsOutcome.Ok, second.Outcome);
+        // No cross-symbol contamination: each payload keeps its own timeframe.
+        Assert.Equal("1h", first.Payload!["timeframe"]!.GetValue<string>());
+        Assert.Equal("1d", second.Payload!["timeframe"]!.GetValue<string>());
     }
 
     // ------------------------------------------------------------- caching
@@ -314,8 +480,8 @@ public sealed class CurrentConditionsTests
         var handler = new RecordingHandler { ResponseBody = AiPayload("1h", DefaultConditions) };
         var service = CreateCachedService(handler);
 
-        var first = await service.GetAsync("1h", CancellationToken.None);
-        var second = await service.GetAsync("1h", CancellationToken.None);
+        var first = await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
+        var second = await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
 
         Assert.Equal(CurrentConditionsOutcome.Ok, first.Outcome);
         Assert.Equal(CurrentConditionsOutcome.Ok, second.Outcome);
@@ -333,9 +499,9 @@ public sealed class CurrentConditionsTests
         };
         var service = CreateCachedService(handler);
 
-        await service.GetAsync("1h", CancellationToken.None);
-        await service.GetAsync("4h", CancellationToken.None);
-        await service.GetAsync("1h", CancellationToken.None); // served from cache
+        await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
+        await service.GetAsync("BTCUSDT", "4h", CancellationToken.None);
+        await service.GetAsync("BTCUSDT", "1h", CancellationToken.None); // served from cache
 
         Assert.Equal(2, handler.RequestCount);
     }
@@ -356,7 +522,7 @@ public sealed class CurrentConditionsTests
         var service = CreateCachedService(handler);
 
         var results = await Task.WhenAll(
-            Enumerable.Range(0, 8).Select(_ => service.GetAsync("1h", CancellationToken.None)));
+            Enumerable.Range(0, 8).Select(_ => service.GetAsync("BTCUSDT", "1h", CancellationToken.None)));
 
         Assert.Equal(1, calls);
         Assert.All(results, r => Assert.Equal(CurrentConditionsOutcome.Ok, r.Outcome));
@@ -376,8 +542,8 @@ public sealed class CurrentConditionsTests
         };
         var service = CreateCachedService(handler);
 
-        var first = await service.GetAsync("1h", CancellationToken.None);
-        var second = await service.GetAsync("1h", CancellationToken.None);
+        var first = await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
+        var second = await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
 
         Assert.Equal(CurrentConditionsOutcome.SourceUnavailable, first.Outcome);
         Assert.Equal(CurrentConditionsOutcome.Ok, second.Outcome);
@@ -390,9 +556,9 @@ public sealed class CurrentConditionsTests
         var handler = new RecordingHandler { ResponseBody = AiPayload("1h", DefaultConditions) };
         var service = CreateCachedService(handler, TimeSpan.FromMilliseconds(1));
 
-        await service.GetAsync("1h", CancellationToken.None);
+        await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
         await Task.Delay(50);
-        await service.GetAsync("1h", CancellationToken.None);
+        await service.GetAsync("BTCUSDT", "1h", CancellationToken.None);
 
         Assert.Equal(2, handler.RequestCount);
     }
@@ -447,7 +613,8 @@ public sealed class CurrentConditionsTests
         string aiBody,
         IResearchEvidenceCatalog catalog,
         string? timeframe = "1h",
-        RecordingHandler? handler = null)
+        RecordingHandler? handler = null,
+        string? symbol = null)
     {
         handler ??= new RecordingHandler();
         handler.ResponseBody ??= aiBody;
@@ -460,7 +627,7 @@ public sealed class CurrentConditionsTests
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
 
-        var action = await controller.GetCurrentConditions(timeframe);
+        var action = await controller.GetCurrentConditions(timeframe, symbol);
         return action switch
         {
             OkObjectResult ok => (200, JsonDocument.Parse(JsonSerializer.Serialize(ok.Value)), null),
@@ -569,10 +736,10 @@ public sealed class CurrentConditionsTests
         Condition("marketRegime", "REGIME_BULL_NORMAL", "bullish")
     });
 
-    private static string AiPayload(string timeframe, string conditionsJson, string definitionsSha = ContractSha) => $$"""
+    private static string AiPayload(string timeframe, string conditionsJson, string definitionsSha = ContractSha, string symbol = "BTCUSDT") => $$"""
         {
             "schemaVersion": "current-conditions-v1",
-            "symbol": "BTCUSDT",
+            "symbol": "{{symbol}}",
             "timeframe": "{{timeframe}}",
             "asOfMs": {{AsOfMs}},
             "latestClosedBar": {

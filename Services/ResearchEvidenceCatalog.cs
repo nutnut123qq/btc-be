@@ -75,18 +75,47 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             .ThenBy(x => x.Kind, StringComparer.Ordinal)
             .Select(x => x.Item)
             .ToArray();
+        var pipelines = LoadPipelineStatuses(load.AtomicRuns);
         return ResearchEvidenceCatalogResponse.Create(
             _timeProvider.GetUtcNow().UtcDateTime,
             items,
             new EvidenceIntegritySummaryDto(load.Scanned, items.Length, load.Rejected),
-            LoadPipelineStatus(load.Artifacts.Select(x => x.Id).ToHashSet(StringComparer.Ordinal), load.AtomicRun));
+            pipelines.FirstOrDefault(x => string.Equals(x.Symbol, ProductionSymbolPolicy.Symbol, StringComparison.Ordinal)),
+            pipelines.Count > 0 ? pipelines : null);
+    }
+
+    // Per-symbol pipeline status: the top-level technical-descriptive directory is
+    // the legacy BTCUSDT scope; every other known instrument gets a subdirectory
+    // named after its canonical symbol (MBB -> technical-descriptive/MBB).
+    private List<ResearchEvidencePipelineStatusDto> LoadPipelineStatuses(
+        IReadOnlyList<AtomicTechnicalRun> atomicRuns)
+    {
+        var statuses = new List<ResearchEvidencePipelineStatusDto>();
+        var directory = Path.Combine(_rootPath, "technical-descriptive");
+        foreach (var instrument in InstrumentCatalog.Default.Instruments)
+        {
+            var symbolDirectory = string.Equals(instrument.Symbol, ProductionSymbolPolicy.Symbol, StringComparison.Ordinal)
+                ? directory
+                : Path.Combine(directory, instrument.Symbol);
+            var run = atomicRuns.FirstOrDefault(
+                x => string.Equals(x.Symbol, instrument.Symbol, StringComparison.Ordinal));
+            var manifestIds = run?.Artifacts.Select(x => x.Id).ToHashSet(StringComparer.Ordinal)
+                ?? new HashSet<string>(StringComparer.Ordinal);
+            var status = LoadPipelineStatus(
+                symbolDirectory, manifestIds, run, instrument.Symbol, instrument.ActiveTimeframes);
+            if (status is not null)
+                statuses.Add(status);
+        }
+        return statuses;
     }
 
     private ResearchEvidencePipelineStatusDto? LoadPipelineStatus(
+        string directory,
         IReadOnlySet<string> verifiedManifestIds,
-        AtomicTechnicalRun? atomicRun)
+        AtomicTechnicalRun? atomicRun,
+        string expectedSymbol,
+        IReadOnlyList<string> expectedTimeframes)
     {
-        var directory = Path.Combine(_rootPath, "technical-descriptive");
         var statusPath = Path.Combine(directory, "pipeline-status.json");
         if (!File.Exists(statusPath))
             return null;
@@ -113,7 +142,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             var actuallyLocked = File.Exists(Path.Combine(directory, ".pipeline.lock"));
             if (staleAfter < _timeProvider.GetUtcNow().UtcDateTime)
                 return new ResearchEvidencePipelineStatusDto(
-                    "stale", true, false, actuallyLocked, started, succeeded, failed,
+                    expectedSymbol, "stale", true, false, actuallyLocked, started, succeeded, failed,
                     "Pipeline status expired; inspect the scheduler and lock locally.", updated, staleAfter, []);
 
             var running = OptionalBoolean(status, "running")
@@ -133,7 +162,8 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             {
                 RequireObject(value, "pipeline timeframe");
                 var timeframe = RequiredString(value, "timeframe");
-                if (timeframe is not ("1h" or "4h" or "1d") || timeframes.Any(x => x.Timeframe == timeframe))
+                if (!expectedTimeframes.Contains(timeframe, StringComparer.Ordinal)
+                    || timeframes.Any(x => x.Timeframe == timeframe))
                     throw new InvalidDataException("Pipeline timeframe is unsupported or duplicated.");
                 var manifest = RequiredString(value, "manifestSha256");
                 var definitions = OptionalString(value, "definitionsSha256");
@@ -162,8 +192,9 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
                 : succeeded is not null ? "succeeded"
                 : "idle";
             if (state == "succeeded" && !timeframes.Select(x => x.Timeframe).ToHashSet(StringComparer.Ordinal)
-                    .SetEquals(["1h", "4h", "1d"]))
-                throw new InvalidDataException("Successful pipeline status does not cover 1h, 4h and 1d.");
+                    .SetEquals(expectedTimeframes))
+                throw new InvalidDataException(
+                    $"Successful pipeline status does not cover {string.Join(", ", expectedTimeframes)}.");
             if (state == "succeeded" && (atomicRun is null
                 || !string.Equals(statusIndexFile, atomicRun.RunIndexFileName, StringComparison.Ordinal)
                 || !string.Equals(statusIndexHash, atomicRun.RunIndexSha256, StringComparison.Ordinal)))
@@ -182,7 +213,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
                 }
             }
             return new ResearchEvidencePipelineStatusDto(
-                state, true, running, actuallyLocked, started, succeeded, failed, lastError,
+                expectedSymbol, state, true, running, actuallyLocked, started, succeeded, failed, lastError,
                 updated, staleAfter, timeframes.OrderBy(x => x.Timeframe, StringComparer.Ordinal).ToArray());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
@@ -190,7 +221,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         {
             _logger.LogWarning("Rejected technical evidence pipeline status: {Reason}", ex.Message);
             return new ResearchEvidencePipelineStatusDto(
-                "unavailable", false, false, File.Exists(Path.Combine(directory, ".pipeline.lock")),
+                expectedSymbol, "unavailable", false, false, File.Exists(Path.Combine(directory, ".pipeline.lock")),
                 null, null, null, "Pipeline status unavailable because integrity validation failed.",
                 null, null, []);
         }
@@ -248,6 +279,25 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
                 {
                     var pointerPath = Path.Combine(directory, "latest-success.json");
                     builder.Append("pointer|").Append(File.Exists(pointerPath) ? HashFile(pointerPath) : "missing").Append('\n');
+                    // Per-symbol subdirectories (MBB, …) publish their own atomic
+                    // trio; they must move the fingerprint too.
+                    foreach (var instrument in InstrumentCatalog.Default.Instruments)
+                    {
+                        if (string.Equals(instrument.Symbol, ProductionSymbolPolicy.Symbol, StringComparison.Ordinal))
+                            continue;
+                        var symbolDirectory = Path.Combine(directory, instrument.Symbol);
+                        if (!Directory.Exists(symbolDirectory))
+                            continue;
+                        builder.Append(instrument.Symbol).Append('\n');
+                        foreach (var file in Directory.EnumerateFiles(symbolDirectory, "*", SearchOption.TopDirectoryOnly).OrderBy(x => x, StringComparer.Ordinal))
+                        {
+                            var info = new FileInfo(file);
+                            builder.Append(info.Name).Append('|').Append(info.Length).Append('|')
+                                .Append(info.LastWriteTimeUtc.Ticks).Append('\n');
+                        }
+                        var symbolPointer = Path.Combine(symbolDirectory, "latest-success.json");
+                        builder.Append("pointer|").Append(File.Exists(symbolPointer) ? HashFile(symbolPointer) : "missing").Append('\n');
+                    }
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -264,13 +314,13 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
     private LoadResult LoadVerifiedArtifactsUncached()
     {
         if (!Directory.Exists(_rootPath))
-            return new LoadResult([], 0, 0, null);
+            return new LoadResult([], 0, 0, []);
 
         var artifacts = new List<LoadedArtifact>();
         var scanned = 0;
         var rejected = 0;
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        AtomicTechnicalRun? atomicRun = null;
+        var atomicRuns = new List<AtomicTechnicalRun>();
 
         foreach (var supported in SupportedKinds)
         {
@@ -280,26 +330,37 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
 
             if (supported.Key == "technical-descriptive")
             {
-                if (!File.Exists(Path.Combine(directory, "latest-success.json")))
-                    continue;
-                scanned += 5;
-                try
+                // The top-level directory is the legacy BTCUSDT scope; every other
+                // known instrument (currently MBB) publishes an identical atomic trio
+                // inside a subdirectory named after its canonical symbol.
+                foreach (var instrument in InstrumentCatalog.Default.Instruments)
                 {
-                    atomicRun = LoadAtomicTechnicalRun(directory, supported.Value);
-                    foreach (var artifact in atomicRun.Artifacts)
+                    var symbolDirectory = string.Equals(instrument.Symbol, ProductionSymbolPolicy.Symbol, StringComparison.Ordinal)
+                        ? directory
+                        : Path.Combine(directory, instrument.Symbol);
+                    if (!File.Exists(Path.Combine(symbolDirectory, "latest-success.json")))
+                        continue;
+                    scanned += 2 + instrument.ActiveTimeframes.Count;
+                    try
                     {
-                        if (!ids.Add(artifact.Id))
-                            throw new InvalidDataException("Duplicate evidence id.");
-                        artifacts.Add(artifact);
+                        var atomicRun = LoadAtomicTechnicalRun(
+                            symbolDirectory, supported.Value, instrument.Symbol, instrument.ActiveTimeframes);
+                        atomicRuns.Add(atomicRun);
+                        foreach (var artifact in atomicRun.Artifacts)
+                        {
+                            if (!ids.Add(artifact.Id))
+                                throw new InvalidDataException("Duplicate evidence id.");
+                            artifacts.Add(artifact);
+                        }
                     }
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                    or InvalidDataException or InvalidOperationException or JsonException or CryptographicException
-                    or FormatException)
-                {
-                    rejected++;
-                    atomicRun = null;
-                    _logger.LogWarning("Rejected atomic technical evidence run: {Reason}", ex.Message);
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                        or InvalidDataException or InvalidOperationException or JsonException or CryptographicException
+                        or FormatException)
+                    {
+                        rejected++;
+                        _logger.LogWarning("Rejected atomic technical evidence run for {Symbol}: {Reason}",
+                            instrument.Symbol, ex.Message);
+                    }
                 }
                 continue;
             }
@@ -358,7 +419,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             }
         }
 
-        return new LoadResult(artifacts, scanned, rejected, atomicRun);
+        return new LoadResult(artifacts, scanned, rejected, atomicRuns);
     }
 
     private LoadedArtifact LoadBundleArtifact(
@@ -496,7 +557,9 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
 
     private AtomicTechnicalRun LoadAtomicTechnicalRun(
         string directory,
-        EvidenceKindDefinition definition)
+        EvidenceKindDefinition definition,
+        string expectedSymbol,
+        IReadOnlyList<string> expectedTimeframes)
     {
         var pointerPath = Path.Combine(directory, "latest-success.json");
         var pointerBytes = ReadBounded(pointerPath);
@@ -527,7 +590,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         RequireObject(index, "technical run index");
         if (!string.Equals(RequiredString(index, "schema"), "btc-technical-evidence-run-index/v1", StringComparison.Ordinal)
             || !string.Equals(RequiredString(index, "claimType"), "descriptive_technical_event_history", StringComparison.Ordinal)
-            || !string.Equals(RequiredString(index, "symbol"), "BTCUSDT", StringComparison.Ordinal)
+            || !string.Equals(RequiredString(index, "symbol"), expectedSymbol, StringComparison.Ordinal)
             || !string.Equals(RequiredString(index, "status"), "succeeded", StringComparison.Ordinal))
             throw new InvalidDataException("Technical run index scope, status or claim type is invalid.");
         _ = OptionalUtcDateTime(index, "completedAtUtc")
@@ -539,11 +602,10 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
             throw new InvalidDataException("Technical run contract definitions hash is invalid or stale.");
 
         var bundlesElement = RequiredProperty(index, "bundles");
-        if (bundlesElement.ValueKind != JsonValueKind.Array || bundlesElement.GetArrayLength() != 3)
-            throw new InvalidDataException("Technical run index must reference exactly three bundles.");
-        string[] expectedTimeframes = ["1h", "4h", "1d"];
-        var references = new List<AtomicBundleReference>(3);
-        for (var i = 0; i < expectedTimeframes.Length; i++)
+        if (bundlesElement.ValueKind != JsonValueKind.Array || bundlesElement.GetArrayLength() != expectedTimeframes.Count)
+            throw new InvalidDataException("Technical run index bundle count does not match the instrument scope.");
+        var references = new List<AtomicBundleReference>(expectedTimeframes.Count);
+        for (var i = 0; i < expectedTimeframes.Count; i++)
         {
             var bundle = bundlesElement[i];
             RequireObject(bundle, "technical run bundle reference");
@@ -569,14 +631,17 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         }
 
         var artifacts = references.Select(reference => LoadDescriptiveBundleArtifact(
-            Path.Combine(directory, reference.ManifestFileName), reference.ManifestSha256, definition, reference)).ToArray();
-        return new AtomicTechnicalRun(indexFile, indexHash, definitions, references, artifacts);
+            Path.Combine(directory, reference.ManifestFileName), reference.ManifestSha256, definition,
+            expectedSymbol, expectedTimeframes, reference)).ToArray();
+        return new AtomicTechnicalRun(expectedSymbol, indexFile, indexHash, definitions, references, artifacts);
     }
 
     private LoadedArtifact LoadDescriptiveBundleArtifact(
         string manifestPath,
         string id,
         EvidenceKindDefinition definition,
+        string expectedSymbol,
+        IReadOnlyList<string> expectedTimeframes,
         AtomicBundleReference? expected = null)
     {
         var manifestBytes = ReadBounded(manifestPath);
@@ -595,11 +660,12 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         var symbol = RequiredString(scope, "symbol");
         var timeframe = RequiredString(scope, "timeframe");
         var cutoffMs = OptionalInt64(scope, "cutoffMs");
-        if (!string.Equals(symbol, "BTCUSDT", StringComparison.Ordinal)
-            || timeframe is not ("1h" or "4h" or "1d")
+        if (!string.Equals(symbol, expectedSymbol, StringComparison.Ordinal)
+            || !expectedTimeframes.Contains(timeframe, StringComparer.Ordinal)
             || cutoffMs is null
             || cutoffMs != OptionalInt64(manifest, "createdFromCutoffMs"))
-            throw new InvalidDataException("Descriptive evidence is outside the BTCUSDT 1h/4h/1d cutoff scope.");
+            throw new InvalidDataException(
+                $"Descriptive evidence is outside the {expectedSymbol} {string.Join("/", expectedTimeframes)} cutoff scope.");
         if (expected is not null && (!string.Equals(expected.Timeframe, timeframe, StringComparison.Ordinal)
             || expected.CutoffMs != cutoffMs || !string.Equals(expected.ManifestSha256, id, StringComparison.Ordinal)))
             throw new InvalidDataException("Atomic run index scope does not match the descriptive manifest.");
@@ -891,7 +957,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         var sourceLineage = RequiredProperty(manifest, "sourceLineage");
         var source = SafeDescriptor(OptionalString(sourceLineage, "source")) ?? "versioned immutable research input";
         var datasetHash = OptionalString(sourceLineage, "contentSha256");
-        var summary = $"Descriptive history for {eligible:N0} causally eligible technical events from {stored:N0} stored BTCUSDT {timeframe} rows; {realized:N0} have a realized six-bar horizon.";
+        var summary = $"Descriptive history for {eligible:N0} causally eligible technical events from {stored:N0} stored {symbol} {timeframe} rows; {realized:N0} have a realized six-bar horizon.";
         var limitations = new List<string>
         {
             "Historical event distributions are not probabilities or predictions for a current event.",
@@ -1800,6 +1866,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         long Excluded,
         long RealizedAtMaxHorizon);
     private sealed record AtomicTechnicalRun(
+        string Symbol,
         string RunIndexFileName,
         string RunIndexSha256,
         string ContractDefinitionsSha256,
@@ -1809,5 +1876,5 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         IReadOnlyList<LoadedArtifact> Artifacts,
         int Scanned,
         int Rejected,
-        AtomicTechnicalRun? AtomicRun);
+        IReadOnlyList<AtomicTechnicalRun> AtomicRuns);
 }

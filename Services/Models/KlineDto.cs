@@ -1,6 +1,6 @@
 namespace Backend.Services.Models;
 
-public class KlineDto
+public class KlineDto : IOhlcvBar
 {
     public long OpenTimeMs { get; set; }
     public string TimeIso { get; set; } = string.Empty;

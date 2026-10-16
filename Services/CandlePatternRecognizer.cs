@@ -6,7 +6,7 @@ public static class CandlePatternRecognizer
 {
     private const double Epsilon = 0.0000001;
 
-    public static PatternRecognitionResult Recognize(IReadOnlyList<KlineDto> klines, int tailCount = 30)
+    public static PatternRecognitionResult Recognize(IReadOnlyList<IOhlcvBar> klines, int tailCount = 30)
     {
         if (klines.Count == 0)
             return new PatternRecognitionResult();
@@ -63,7 +63,7 @@ public static class CandlePatternRecognizer
         };
     }
 
-    private static RecognizedCandle MapToRecognized(KlineDto k)
+    private static RecognizedCandle MapToRecognized(IOhlcvBar k)
     {
         return new RecognizedCandle
         {
@@ -80,7 +80,7 @@ public static class CandlePatternRecognizer
     /// Trend tại thởi điểm nến index <paramref name="endIndex"/>, dựa trên tối đa 6 nến
     /// kết thúc tại index đó. Dùng chung cho recognizer và indexer.
     /// </summary>
-    internal static TrendDirection DetectTrendAt(IReadOnlyList<KlineDto> klines, int endIndex)
+    internal static TrendDirection DetectTrendAt(IReadOnlyList<IOhlcvBar> klines, int endIndex)
     {
         if (endIndex < 0 || endIndex >= klines.Count) return TrendDirection.Sideways;
         int start = Math.Max(0, endIndex - 5);

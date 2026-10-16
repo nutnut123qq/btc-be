@@ -28,7 +28,7 @@ public class CandleVolumeIndexer
     public async Task<int> IndexAsync(
         string symbol,
         string timeframe,
-        IReadOnlyList<KlineDto> klines,
+        IReadOnlyList<IOhlcvBar> klines,
         CancellationToken cancellationToken = default)
     {
         if (klines.Count == 0) return 0;
@@ -46,7 +46,7 @@ public class CandleVolumeIndexer
     public async Task<int> IndexAsync(
         string symbol,
         string timeframe,
-        IReadOnlyList<KlineDto> klines,
+        IReadOnlyList<IOhlcvBar> klines,
         HashSet<long> existingTimes,
         CancellationToken cancellationToken = default)
     {
@@ -139,7 +139,7 @@ public class CandleVolumeIndexer
     /// <summary>
     /// Tính SMA20 và VsMax10 bằng sliding window O(1) mỗi nến.
     /// </summary>
-    private static (decimal[] Sma20, double[] VsMax10) ComputeRollingStats(IReadOnlyList<KlineDto> klines)
+    private static (decimal[] Sma20, double[] VsMax10) ComputeRollingStats(IReadOnlyList<IOhlcvBar> klines)
     {
         var n = klines.Count;
         var sma20 = new decimal[n];
@@ -177,7 +177,7 @@ public class CandleVolumeIndexer
         return (sma20, vsMax10);
     }
 
-    private static string DetermineTrend(IReadOnlyList<KlineDto> klines, int idx)
+    private static string DetermineTrend(IReadOnlyList<IOhlcvBar> klines, int idx)
     {
         if (idx < 2) return "normal";
         var v0 = klines[idx - 2].Volume;

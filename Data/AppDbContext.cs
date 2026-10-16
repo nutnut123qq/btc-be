@@ -51,8 +51,12 @@ public class AppDbContext : DbContext
     public DbSet<LiquidationSnapshot> LiquidationSnapshots => Set<LiquidationSnapshot>();
     public DbSet<WalletBalanceSnapshot> WalletBalanceSnapshots => Set<WalletBalanceSnapshot>();
     public DbSet<KlineGapState> KlineGapStates => Set<KlineGapState>();
+    public DbSet<InstrumentCandle> InstrumentCandles => Set<InstrumentCandle>();
     public DbSet<KlineDataRepairRun> KlineDataRepairRuns => Set<KlineDataRepairRun>();
     public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
+    public DbSet<EquityPositionLot> EquityPositionLots => Set<EquityPositionLot>();
+    public DbSet<EquityPositionAccount> EquityPositionAccounts => Set<EquityPositionAccount>();
+    public DbSet<MbbSignalObservation> MbbSignalObservations => Set<MbbSignalObservation>();
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -195,6 +199,19 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CloseTimeMs });
         });
 
+        modelBuilder.Entity<InstrumentCandle>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Provider).HasMaxLength(32);
+            e.Property(x => x.PriceBasis).HasMaxLength(32);
+            e.Property(x => x.Venue).HasMaxLength(32);
+            e.Property(x => x.SourceTimezone).HasMaxLength(64);
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.OpenTimeMs }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.CloseTimeMs });
+        });
+
         modelBuilder.Entity<KlineGapState>(e =>
         {
             e.HasKey(x => x.Id);
@@ -229,6 +246,62 @@ public class AppDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(16);
             e.Property(x => x.LastError).HasMaxLength(1000);
             e.Property(x => x.LastCycleDetail).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<EquityPositionLot>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.HasIndex(x => new { x.Symbol, x.AcquireDate });
+        });
+
+        modelBuilder.Entity<EquityPositionAccount>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.HasIndex(x => x.Symbol).IsUnique();
+        });
+
+        modelBuilder.Entity<MbbSignalObservation>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.DecisionId).HasMaxLength(128);
+            e.Property(x => x.RecorderVersion).HasMaxLength(80);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.Decision).HasMaxLength(24);
+            e.Property(x => x.RulesVersion).HasMaxLength(80);
+            e.Property(x => x.EvidenceStatus).HasMaxLength(64);
+            e.Property(x => x.PriceBasis).HasMaxLength(32);
+            e.Property(x => x.DecisionPayloadJson).HasColumnType("jsonb");
+            e.Property(x => x.FillSource).HasMaxLength(64);
+            e.Property(x => x.OutcomeHorizon).HasMaxLength(40);
+            e.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            e.HasIndex(x => x.DecisionId).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.Timeframe, x.SignalBarOpenTimeMs }).IsUnique();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_MbbSignalObservations_Scope",
+                    "\"Symbol\" = 'MBB' AND \"Timeframe\" IN ('1h','1d')");
+                t.HasCheckConstraint("CK_MbbSignalObservations_SignalBar",
+                    "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\"");
+                t.HasCheckConstraint("CK_MbbSignalObservations_Chronology",
+                    "\"AvailableTimeMs\" >= \"SignalBarCloseTimeMs\"");
+                t.HasCheckConstraint("CK_MbbSignalObservations_Decision",
+                    "\"Decision\" IN ('hold','wait','buy-more','reduce','sell','conditional-sell')");
+                t.HasCheckConstraint("CK_MbbSignalObservations_ProspectiveClock",
+                    "ABS(\"AvailableTimeMs\" - (EXTRACT(EPOCH FROM \"ObservedAtUtc\") * 1000)::bigint) <= 1000");
+                t.HasCheckConstraint("CK_MbbSignalObservations_FillCoherence",
+                    "(\"FillPrice\" IS NULL AND \"FillObservedAtUtc\" IS NULL AND \"FillSource\" IS NULL AND \"FillBarOpenTimeMs\" IS NULL) OR (" +
+                    "\"Decision\" IN ('buy-more','reduce','sell','conditional-sell') AND \"FillPrice\" > 0 " +
+                    "AND \"FillObservedAtUtc\" >= \"ObservedAtUtc\" AND NULLIF(BTRIM(\"FillSource\"), '') IS NOT NULL " +
+                    "AND \"FillBarOpenTimeMs\" > \"SignalBarOpenTimeMs\")");
+                t.HasCheckConstraint("CK_MbbSignalObservations_OutcomeCoherence",
+                    "(\"OutcomeReturn\" IS NULL AND \"OutcomeObservedAtUtc\" IS NULL AND \"OutcomeHorizon\" IS NULL) OR (" +
+                    "\"FillPrice\" IS NOT NULL AND \"OutcomeReturn\" IS NOT NULL " +
+                    "AND \"OutcomeObservedAtUtc\" >= \"FillObservedAtUtc\" AND NULLIF(BTRIM(\"OutcomeHorizon\"), '') IS NOT NULL)");
+            });
         });
 
         modelBuilder.Entity<TechnicalIndicator>(e =>

@@ -28,6 +28,7 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
 
         var catalog = service.GetCatalog();
         var item = Assert.Single(catalog.Items);
+        Assert.Equal("BTCUSDT", catalog.Symbol);
         Assert.Equal(id, item.Id);
         Assert.Equal("model", item.Kind);
         Assert.Equal("supported", item.Status);
@@ -286,6 +287,101 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         Assert.Equal("unavailable", pipeline.State);
         Assert.False(pipeline.IntegrityVerified);
         Assert.Empty(pipeline.Timeframes);
+    }
+
+    [Fact]
+    public void Catalog_PublishesMbbAtomicRun_FromSymbolSubdirectory()
+    {
+        var btcIds = WriteAtomicTechnicalRun();
+        var mbbIds = WriteAtomicTechnicalRun(
+            symbol: "MBB", timeframes: ["1h", "1d"], subdirectory: "MBB");
+
+        var catalog = CreateService().GetCatalog();
+
+        Assert.Equal(5, catalog.Items.Count);
+        Assert.Equal(btcIds.Order(), catalog.Items.Where(x => x.Symbol == "BTCUSDT").Select(x => x.Id).Order());
+        var mbbItems = catalog.Items.Where(x => x.Symbol == "MBB").OrderBy(x => x.Timeframe, StringComparer.Ordinal).ToArray();
+        Assert.Equal(mbbIds.Order(), mbbItems.Select(x => x.Id).Order());
+        Assert.Equal(["1d", "1h"], mbbItems.Select(x => x.Timeframe));
+        Assert.All(mbbItems, x => Assert.Equal("descriptive", x.EvidenceTier));
+        Assert.Equal("ALL", catalog.Symbol);
+    }
+
+    [Fact]
+    public void Catalog_FailsClosed_WhenMbbRunIndexDeclaresWrongSymbol()
+    {
+        WriteAtomicTechnicalRun();
+        WriteAtomicTechnicalRun(
+            symbol: "MBB", timeframes: ["1h", "1d"], subdirectory: "MBB",
+            indexSymbolOverride: "BTCUSDT");
+
+        var catalog = CreateService().GetCatalog();
+
+        Assert.Equal(3, catalog.Items.Count);
+        Assert.DoesNotContain(catalog.Items, x => x.Symbol == "MBB");
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+        Assert.Equal("BTCUSDT", catalog.Symbol);
+    }
+
+    [Fact]
+    public void Catalog_FailsClosed_WhenMbbRunIndexDropsAnInstrumentTimeframe()
+    {
+        WriteAtomicTechnicalRun();
+        WriteAtomicTechnicalRun(symbol: "MBB", timeframes: ["1h"], subdirectory: "MBB");
+
+        var catalog = CreateService().GetCatalog();
+
+        Assert.Equal(3, catalog.Items.Count);
+        Assert.DoesNotContain(catalog.Items, x => x.Symbol == "MBB");
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+    }
+
+    [Fact]
+    public void Catalog_ExposesPerSymbolPipelineStatuses_WithInstrumentTimeframes()
+    {
+        var btcIds = WriteAtomicTechnicalRun();
+        var mbbIds = WriteAtomicTechnicalRun(
+            symbol: "MBB", timeframes: ["1h", "1d"], subdirectory: "MBB");
+        WritePipelineStatus(btcIds, tamperAfterHash: false, stale: false);
+        WritePipelineStatus(mbbIds, tamperAfterHash: false, stale: false,
+            timeframes: ["1h", "1d"], subdirectory: "MBB");
+
+        var catalog = CreateService().GetCatalog();
+
+        var pipeline = Assert.IsType<ResearchEvidencePipelineStatusDto>(catalog.Pipeline);
+        Assert.Equal("BTCUSDT", pipeline.Symbol);
+        Assert.Equal("succeeded", pipeline.State);
+        Assert.Equal(3, pipeline.Timeframes.Count);
+
+        var pipelines = Assert.IsAssignableFrom<IReadOnlyList<ResearchEvidencePipelineStatusDto>>(catalog.Pipelines);
+        Assert.Equal(2, pipelines.Count);
+        Assert.Equal("BTCUSDT", pipelines[0].Symbol);
+        var mbb = Assert.Single(pipelines, x => x.Symbol == "MBB");
+        Assert.Equal("succeeded", mbb.State);
+        Assert.True(mbb.IntegrityVerified);
+        Assert.Equal(new[] { "1d", "1h" }, mbb.Timeframes.Select(x => x.Timeframe));
+        Assert.All(mbb.Timeframes, x => Assert.True(x.SemanticVerification));
+    }
+
+    [Fact]
+    public void Catalog_FailsClosedMbbPipelineStatus_WhenTimeframeIsOutsideInstrumentScope()
+    {
+        var btcIds = WriteAtomicTechnicalRun();
+        var mbbIds = WriteAtomicTechnicalRun(
+            symbol: "MBB", timeframes: ["1h", "1d"], subdirectory: "MBB");
+        WritePipelineStatus(btcIds, tamperAfterHash: false, stale: false);
+        WritePipelineStatus(
+            [mbbIds[0], btcIds[1], mbbIds[1]], tamperAfterHash: false, stale: false,
+            timeframes: ["1h", "4h", "1d"], subdirectory: "MBB");
+
+        var catalog = CreateService().GetCatalog();
+
+        var pipeline = Assert.IsType<ResearchEvidencePipelineStatusDto>(catalog.Pipeline);
+        Assert.Equal("succeeded", pipeline.State);
+        var mbb = Assert.Single(catalog.Pipelines!, x => x.Symbol == "MBB");
+        Assert.Equal("unavailable", mbb.State);
+        Assert.False(mbb.IntegrityVerified);
+        Assert.Empty(mbb.Timeframes);
     }
 
     [Theory]
@@ -703,23 +799,33 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         };
     }
 
-    private string? _latestRunIndexHash;
-    private string? _latestRunIndexFile;
+    private readonly Dictionary<string, (string File, string Hash)> _runIndexByDirectory =
+        new(StringComparer.Ordinal);
 
-    private string[] WriteAtomicTechnicalRun(bool tamper4hLedger = false, bool predictive4h = false)
+    private string[] WriteAtomicTechnicalRun(
+        bool tamper4hLedger = false,
+        bool predictive4h = false,
+        string symbol = "BTCUSDT",
+        IReadOnlyList<string>? timeframes = null,
+        string? subdirectory = null,
+        string? indexSymbolOverride = null)
     {
-        var ids = new[]
-        {
-            WriteTechnicalDescriptiveBundle(timeframe: "1h"),
-            WriteTechnicalDescriptiveBundle(timeframe: "4h", predictiveEvidence: predictive4h),
-            WriteTechnicalDescriptiveBundle(timeframe: "1d")
-        };
+        timeframes ??= ["1h", "4h", "1d"];
+        var ids = timeframes
+            .Select(timeframe => WriteTechnicalDescriptiveBundle(
+                timeframe: timeframe,
+                predictiveEvidence: predictive4h && timeframe == "4h",
+                symbol: symbol,
+                subdirectory: subdirectory))
+            .ToArray();
+        var target = subdirectory is null
+            ? Path.Combine(_root, "technical-descriptive")
+            : Path.Combine(_root, "technical-descriptive", subdirectory);
         if (tamper4hLedger)
         {
-            var ledgerPath = Directory.EnumerateFiles(Path.Combine(_root, "technical-descriptive"), "*.ledger.jsonl").Single();
+            var ledgerPath = Directory.EnumerateFiles(target, "*.ledger.jsonl").Single();
             File.AppendAllText(ledgerPath, "{\"tampered\":true}\n", new UTF8Encoding(false));
         }
-        var timeframes = new[] { "1h", "4h", "1d" };
         var bundles = ids.Select((id, index) => new SortedDictionary<string, object?>
         {
             ["cutoffMs"] = 1_789_948_799_999L,
@@ -740,17 +846,18 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             ["contractDefinitionsSha256"] = new string('a', 64),
             ["schema"] = "btc-technical-evidence-run-index/v1",
             ["status"] = "succeeded",
-            ["symbol"] = "BTCUSDT"
+            ["symbol"] = indexSymbolOverride ?? symbol
         };
         var indexBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(indexValue) + "\n");
-        _latestRunIndexHash = HashBytes(indexBytes);
-        _latestRunIndexFile = $"{_latestRunIndexHash}.run-index.json";
-        var target = Path.Combine(_root, "technical-descriptive");
-        File.WriteAllBytes(Path.Combine(target, _latestRunIndexFile), indexBytes);
+        var indexHash = HashBytes(indexBytes);
+        var indexFile = $"{indexHash}.run-index.json";
+        Directory.CreateDirectory(target);
+        File.WriteAllBytes(Path.Combine(target, indexFile), indexBytes);
+        _runIndexByDirectory[target] = (indexFile, indexHash);
         var pointer = new SortedDictionary<string, object?>
         {
-            ["runIndexFileName"] = _latestRunIndexFile,
-            ["runIndexSha256"] = _latestRunIndexHash,
+            ["runIndexFileName"] = indexFile,
+            ["runIndexSha256"] = indexHash,
             ["schema"] = "btc-technical-evidence-run-pointer/v1",
             ["updatedAtUtc"] = "2026-09-21T13:05:01Z"
         };
@@ -762,9 +869,13 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
     private string WriteTechnicalDescriptiveBundle(
         string timeframe = "4h",
         bool tamperLedger = false,
-        bool predictiveEvidence = false)
+        bool predictiveEvidence = false,
+        string symbol = "BTCUSDT",
+        string? subdirectory = null)
     {
-        var target = Path.Combine(_root, "technical-descriptive");
+        var target = subdirectory is null
+            ? Path.Combine(_root, "technical-descriptive")
+            : Path.Combine(_root, "technical-descriptive", subdirectory);
         Directory.CreateDirectory(target);
         var snapshotBytes = Encoding.UTF8.GetBytes("{\"schema\":\"btc-technical-event-descriptive-evidence/v1\"}\n");
         var ledgerBytes = Encoding.UTF8.GetBytes("{\"eventId\":\"one\"}\n{\"eventId\":\"two\"}\n");
@@ -939,7 +1050,7 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             ["scope"] = new SortedDictionary<string, object?>
             {
                 ["cutoffMs"] = 1_789_948_799_999L,
-                ["symbol"] = "BTCUSDT",
+                ["symbol"] = symbol,
                 ["timeframe"] = timeframe
             }
         };
@@ -981,7 +1092,7 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             ["scope"] = new SortedDictionary<string, object?>
             {
                 ["cutoffMs"] = 1_789_948_799_999L,
-                ["symbol"] = "BTCUSDT",
+                ["symbol"] = symbol,
                 ["timeframe"] = timeframe
             },
             ["sourceLineage"] = new SortedDictionary<string, object?>
@@ -1006,13 +1117,21 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         };
     }
 
-    private void WritePipelineStatus(IReadOnlyList<string> ids, bool tamperAfterHash, bool stale)
+    private void WritePipelineStatus(
+        IReadOnlyList<string> ids,
+        bool tamperAfterHash,
+        bool stale,
+        IReadOnlyList<string>? timeframes = null,
+        string? subdirectory = null)
     {
-        var target = Path.Combine(_root, "technical-descriptive");
+        var target = subdirectory is null
+            ? Path.Combine(_root, "technical-descriptive")
+            : Path.Combine(_root, "technical-descriptive", subdirectory);
         Directory.CreateDirectory(target);
-        var timeframes = new[] { "1h", "4h", "1d" };
+        timeframes ??= ["1h", "4h", "1d"];
+        var runIndex = _runIndexByDirectory[target];
         var rows = new List<SortedDictionary<string, object?>>();
-        for (var index = 0; index < timeframes.Length; index++)
+        for (var index = 0; index < timeframes.Count; index++)
         {
             rows.Add(new SortedDictionary<string, object?>
             {
@@ -1035,8 +1154,8 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             ["lastSucceededAtUtc"] = "2026-09-21T13:05:00Z",
             ["locked"] = false,
             ["running"] = false,
-            ["runIndexFileName"] = _latestRunIndexFile,
-            ["runIndexSha256"] = _latestRunIndexHash,
+            ["runIndexFileName"] = runIndex.File,
+            ["runIndexSha256"] = runIndex.Hash,
             ["schema"] = "btc-technical-evidence-pipeline-status/v1",
             ["staleAfterUtc"] = stale ? "2026-09-21T13:30:00Z" : "2026-09-22T13:05:00Z",
             ["timeframes"] = rows,

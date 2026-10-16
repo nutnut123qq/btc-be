@@ -6,7 +6,11 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Backend.Filters;
 
-/// <summary>Enforces the BTC-only scope after request model binding.</summary>
+/// <summary>
+/// Enforces the enabled production symbol scope after request model binding. Known but
+/// not-yet-enabled instruments (e.g. MBB) and unknown symbols are both rejected here;
+/// per-instrument capabilities open paths lane by lane.
+/// </summary>
 public sealed class ProductionSymbolScopeFilter(ProductionSymbolPolicy policy) : IActionFilter
 {
     public void OnActionExecuting(ActionExecutingContext context)

@@ -15,6 +15,7 @@ namespace Backend.Controllers;
 public sealed class ResearchCurrentConditionsController : ControllerBase
 {
     private readonly CurrentConditionsService _conditions;
+    private readonly ProductionSymbolPolicy _symbolPolicy;
 
     // Depends only on already-registered services (the "AIService" named
     // HttpClient and the IResearchEvidenceCatalog singleton). The optional
@@ -26,10 +27,12 @@ public sealed class ResearchCurrentConditionsController : ControllerBase
         ILogger<CurrentConditionsService> serviceLogger,
         ILogger<ResearchCurrentConditionsController> logger,
         CurrentConditionsService? service = null,
-        IMemoryCache? cache = null)
+        IMemoryCache? cache = null,
+        ProductionSymbolPolicy? symbolPolicy = null)
     {
         _ = logger;
         _conditions = service ?? new CurrentConditionsService(httpClientFactory, catalog, serviceLogger, cache);
+        _symbolPolicy = symbolPolicy ?? new ProductionSymbolPolicy();
     }
 
     [HttpGet]
@@ -39,20 +42,38 @@ public sealed class ResearchCurrentConditionsController : ControllerBase
     [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status502BadGateway)]
     public async Task<IActionResult> GetCurrentConditions(
         [FromQuery] string? timeframe,
+        [FromQuery] string? symbol = null,
         CancellationToken cancellationToken = default)
     {
-        if (timeframe is not ("1h" or "4h" or "1d"))
+        // Catalog check only: the global ProductionSymbolScopeFilter still rejects
+        // known-but-disabled instruments (MBB) before this action runs, so the
+        // per-instrument timeframe validation below is the ready-state behavior.
+        var descriptor = _symbolPolicy.GetInstrument(
+            string.IsNullOrWhiteSpace(symbol) ? ProductionSymbolPolicy.Symbol : symbol);
+        if (descriptor is null)
         {
             return BadRequest(new ApiErrorEnvelope
             {
-                Code = "INVALID_TIMEFRAME",
-                Message = "timeframe must be one of 1h, 4h, 1d.",
+                Code = "UNSUPPORTED_SYMBOL",
+                Message = _symbolPolicy.InactiveMessage(symbol),
                 Retryable = false,
                 RequestId = HttpContext.TraceIdentifier
             });
         }
 
-        var result = await _conditions.GetAsync(timeframe, cancellationToken);
+        if (timeframe is null
+            || !descriptor.ActiveTimeframes.Contains(timeframe, StringComparer.Ordinal))
+        {
+            return BadRequest(new ApiErrorEnvelope
+            {
+                Code = "INVALID_TIMEFRAME",
+                Message = $"timeframe must be one of {string.Join(", ", descriptor.ActiveTimeframes)} for {descriptor.Symbol}.",
+                Retryable = false,
+                RequestId = HttpContext.TraceIdentifier
+            });
+        }
+
+        var result = await _conditions.GetAsync(descriptor.Symbol, timeframe, cancellationToken);
         return result.Outcome switch
         {
             CurrentConditionsOutcome.Ok => Ok(result.Payload),

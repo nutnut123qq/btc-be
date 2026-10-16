@@ -63,15 +63,15 @@ public sealed class CurrentConditionsService
         _cacheTtl = cacheTtl ?? TimeSpan.FromSeconds(30);
     }
 
-    public Task<CurrentConditionsResult> GetAsync(string timeframe, CancellationToken cancellationToken) =>
+    public Task<CurrentConditionsResult> GetAsync(string symbol, string timeframe, CancellationToken cancellationToken) =>
         _cache is null
-            ? FetchAndBuildAsync(timeframe, cancellationToken)
-            : GetCachedAsync(timeframe, cancellationToken);
+            ? FetchAndBuildAsync(symbol, timeframe, cancellationToken)
+            : GetCachedAsync(symbol, timeframe, cancellationToken);
 
-    private async Task<CurrentConditionsResult> GetCachedAsync(string timeframe, CancellationToken cancellationToken)
+    private async Task<CurrentConditionsResult> GetCachedAsync(string symbol, string timeframe, CancellationToken cancellationToken)
     {
         var cache = _cache!; // GetAsync only routes here when a cache was injected.
-        var key = $"current-conditions:{timeframe}";
+        var key = $"current-conditions:{symbol}:{timeframe}";
         if (cache.TryGetValue(key, out CurrentConditionsResult? cached) && cached is not null)
             return cached;
 
@@ -82,7 +82,7 @@ public sealed class CurrentConditionsService
             // Re-check inside the gate: a concurrent miss may have filled it.
             if (cache.TryGetValue(key, out cached) && cached is not null)
                 return cached;
-            var result = await FetchAndBuildAsync(timeframe, cancellationToken);
+            var result = await FetchAndBuildAsync(symbol, timeframe, cancellationToken);
             // Staleness: TTL-only (30s default), no write-path invalidation —
             // upstream conditions only change when the AI service recomputes.
             // Only successful payloads are cached; transient 502s are not pinned.
@@ -96,18 +96,18 @@ public sealed class CurrentConditionsService
         }
     }
 
-    private async Task<CurrentConditionsResult> FetchAndBuildAsync(string timeframe, CancellationToken cancellationToken)
+    private async Task<CurrentConditionsResult> FetchAndBuildAsync(string symbol, string timeframe, CancellationToken cancellationToken)
     {
         JsonDocument document;
         try
         {
             using var response = await _aiClient.GetAsync(
-                $"/api/current-conditions?timeframe={timeframe}", cancellationToken);
+                $"/api/current-conditions?timeframe={timeframe}&symbol={symbol}", cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
-                    "AI current-conditions returned {StatusCode} for {Timeframe}.",
-                    (int)response.StatusCode, timeframe);
+                    "AI current-conditions returned {StatusCode} for {Symbol} {Timeframe}.",
+                    (int)response.StatusCode, symbol, timeframe);
                 return new CurrentConditionsResult(CurrentConditionsOutcome.SourceUnavailable, null);
             }
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -117,7 +117,7 @@ public sealed class CurrentConditionsService
             }
             catch (JsonException ex)
             {
-                _logger.LogWarning(ex, "AI current-conditions returned non-JSON content for {Timeframe}.", timeframe);
+                _logger.LogWarning(ex, "AI current-conditions returned non-JSON content for {Symbol} {Timeframe}.", symbol, timeframe);
                 return new CurrentConditionsResult(CurrentConditionsOutcome.PayloadInvalid, null);
             }
         }
@@ -128,29 +128,29 @@ public sealed class CurrentConditionsService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "AI current-conditions request failed for {Timeframe}.", timeframe);
+            _logger.LogWarning(ex, "AI current-conditions request failed for {Symbol} {Timeframe}.", symbol, timeframe);
             return new CurrentConditionsResult(CurrentConditionsOutcome.SourceUnavailable, null);
         }
 
         using (document)
         {
-            var validationError = ValidatePayload(document.RootElement, timeframe);
+            var validationError = ValidatePayload(document.RootElement, symbol, timeframe);
             if (validationError is not null)
             {
                 _logger.LogWarning(
-                    "AI current-conditions payload failed validation for {Timeframe}: {Reason}",
-                    timeframe, validationError);
+                    "AI current-conditions payload failed validation for {Symbol} {Timeframe}: {Reason}",
+                    symbol, timeframe, validationError);
                 return new CurrentConditionsResult(CurrentConditionsOutcome.PayloadInvalid, null);
             }
             return new CurrentConditionsResult(
-                CurrentConditionsOutcome.Ok, BuildResponse(document.RootElement, timeframe));
+                CurrentConditionsOutcome.Ok, BuildResponse(document.RootElement, symbol, timeframe));
         }
     }
 
-    private JsonObject BuildResponse(JsonElement root, string timeframe)
+    private JsonObject BuildResponse(JsonElement root, string symbol, string timeframe)
     {
         var asOfMs = root.GetProperty("asOfMs").GetInt64();
-        var evidence = LoadEvidence(timeframe, ReadString(root.GetProperty("contract"), "definitionsSha256"));
+        var evidence = LoadEvidence(symbol, timeframe, ReadString(root.GetProperty("contract"), "definitionsSha256"));
         var passers = new List<EvidencePasser>();
         var conditions = new JsonArray();
         foreach (var element in root.GetProperty("conditions").EnumerateArray())
@@ -195,7 +195,7 @@ public sealed class CurrentConditionsService
         };
     }
 
-    private EvidenceContext LoadEvidence(string timeframe, string? conditionsContractSha256)
+    private EvidenceContext LoadEvidence(string symbol, string timeframe, string? conditionsContractSha256)
     {
         ResearchEvidenceCatalogResponse catalog;
         try
@@ -208,9 +208,13 @@ public sealed class CurrentConditionsService
             return EvidenceContext.Unavailable("evidence-catalog-unavailable");
         }
 
+        // Evidence is scoped per instrument: BTC statistical evidence must never be
+        // attached to an MBB payload (and vice versa). No verified item for the
+        // requested symbol means honest "evidence-unavailable", not a fallback.
         var item = catalog.Items
             .Where(x => string.Equals(x.Kind, "event", StringComparison.Ordinal)
                 && string.Equals(x.EvidenceTier, "descriptive", StringComparison.Ordinal)
+                && string.Equals(x.Symbol, symbol, StringComparison.Ordinal)
                 && string.Equals(x.Timeframe, timeframe, StringComparison.Ordinal)
                 && x.Integrity.Verified)
             .OrderByDescending(x => x.CreatedAtUtc)
@@ -243,8 +247,12 @@ public sealed class CurrentConditionsService
         }
 
         var specSha256 = ReadString(statistics, "specSha256");
+        // The report scope must agree on BOTH symbol and timeframe. A scope that
+        // omits symbol is accepted only for the BTCUSDT legacy reports — for any
+        // other instrument an absent scope symbol fails closed.
         if (!TryGetObject(statistics, "scope", out var scope)
-            || !string.Equals(ReadString(scope, "timeframe"), timeframe, StringComparison.Ordinal))
+            || !string.Equals(ReadString(scope, "timeframe"), timeframe, StringComparison.Ordinal)
+            || !ScopeSymbolMatches(scope, symbol))
         {
             return EvidenceContext.Unavailable(
                 "evidence-scope-mismatch", item.Id, item.ManifestSha256, specSha256, cutoffMs);
@@ -380,15 +388,26 @@ public sealed class CurrentConditionsService
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToArray();
 
+    /// <summary>
+    /// Fail-closed symbol guard on the evidence report scope: an explicit
+    /// <c>scope.symbol</c> must equal the requested symbol; a scope with no
+    /// symbol only satisfies the BTCUSDT request (legacy reports predate the
+    /// instrument catalog and are BTC by construction).
+    /// </summary>
+    private static bool ScopeSymbolMatches(JsonElement scope, string symbol) =>
+        ReadString(scope, "symbol") is { } scopeSymbol
+            ? string.Equals(scopeSymbol, symbol, StringComparison.Ordinal)
+            : string.Equals(symbol, ProductionSymbolPolicy.Symbol, StringComparison.Ordinal);
+
     /// <summary>Returns null when the payload conforms to the frozen schema, else a reason.</summary>
-    internal static string? ValidatePayload(JsonElement root, string timeframe)
+    internal static string? ValidatePayload(JsonElement root, string symbol, string timeframe)
     {
         if (root.ValueKind != JsonValueKind.Object)
             return "root is not an object";
         if (!string.Equals(ReadString(root, "schemaVersion"), ConditionsSchemaVersion, StringComparison.Ordinal))
             return "schemaVersion is missing or unsupported";
-        if (!string.Equals(ReadString(root, "symbol"), "BTCUSDT", StringComparison.Ordinal))
-            return "symbol is missing or unsupported";
+        if (!string.Equals(ReadString(root, "symbol"), symbol, StringComparison.Ordinal))
+            return "symbol is missing or does not match the request";
         if (!string.Equals(ReadString(root, "timeframe"), timeframe, StringComparison.Ordinal))
             return "timeframe is missing or does not match the request";
         if (!IsInt64(root, "asOfMs") || !IsNumber(root, "generatedAtMs"))

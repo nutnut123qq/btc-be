@@ -25,7 +25,7 @@ public class CandlePatternIndexer : ICandlePatternIndexer
     public async Task<int> IndexAsync(
         string symbol,
         string timeframe,
-        IReadOnlyList<KlineDto> klines,
+        IReadOnlyList<IOhlcvBar> klines,
         CancellationToken cancellationToken = default)
     {
         if (klines.Count == 0) return 0;
@@ -43,7 +43,7 @@ public class CandlePatternIndexer : ICandlePatternIndexer
     public async Task<int> IndexAsync(
         string symbol,
         string timeframe,
-        IReadOnlyList<KlineDto> klines,
+        IReadOnlyList<IOhlcvBar> klines,
         HashSet<(long OpenTimeMs, string PatternType)> existingKeys,
         CancellationToken cancellationToken = default)
     {

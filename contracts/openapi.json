@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-09-research-evidence-v9"
+    "version": "2026-10-mbb-position-decision-v1"
   },
   "paths": {
     "/api/ai-chat/capabilities": {
@@ -128,6 +128,16 @@
               "type": "integer",
               "format": "int32",
               "default": 50
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
             }
           },
           {
@@ -2240,6 +2250,35 @@
         }
       }
     },
+    "/api/instruments": {
+      "get": {
+        "tags": [
+          "Instruments"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentsResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentsResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/liquidation/latest": {
       "get": {
         "tags": [
@@ -3474,6 +3513,697 @@
         }
       }
     },
+    "/api/mbb/admin/sync": {
+      "post": {
+        "tags": [
+          "MbbAdmin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbSyncReport"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbSyncReport"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbSyncReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/admin/backfill": {
+      "post": {
+        "tags": [
+          "MbbAdmin"
+        ],
+        "parameters": [
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbTimeframeSync"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbTimeframeSync"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbTimeframeSync"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/admin/recompute": {
+      "post": {
+        "tags": [
+          "MbbAdmin"
+        ],
+        "parameters": [
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbTechnicalRecomputeReport"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbTechnicalRecomputeReport"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbTechnicalRecomputeReport"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/admin/observe": {
+      "post": {
+        "tags": [
+          "MbbAdmin"
+        ],
+        "parameters": [
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveReport"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveReport"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/candles": {
+      "get": {
+        "tags": [
+          "MbbMarketData"
+        ],
+        "parameters": [
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 500
+            }
+          },
+          {
+            "name": "endTimeMs",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbCandleDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbCandleDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbCandleDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/conditions": {
+      "get": {
+        "tags": [
+          "MbbMarketData"
+        ],
+        "parameters": [
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Server Error",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/observations": {
+      "get": {
+        "tags": [
+          "MbbMarketData"
+        ],
+        "parameters": [
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbObservationDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbObservationDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MbbObservationDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/data-quality": {
+      "get": {
+        "tags": [
+          "MbbMarketData"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbCoverageReport"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbCoverageReport"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbCoverageReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/position": {
+      "get": {
+        "tags": [
+          "MbbPosition"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbPositionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbPositionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbPositionDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MbbPosition"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMbbPositionRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMbbPositionRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMbbPositionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbPositionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbPositionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbPositionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mbb/decision": {
+      "get": {
+        "tags": [
+          "MbbPosition"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbDecisionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbDecisionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MbbDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/meta": {
       "get": {
         "tags": [
@@ -4357,6 +5087,76 @@
         }
       }
     },
+    "/api/research/current-conditions": {
+      "get": {
+        "tags": [
+          "ResearchCurrentConditions"
+        ],
+        "parameters": [
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Server Error",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/research/evidence": {
       "get": {
         "tags": [
@@ -4597,6 +5397,47 @@
             "style": "form",
             "schema": {
               "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/discovery/runs": {
+      "get": {
+        "tags": [
+          "RuleDiscovery"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "default": "BTCUSDT"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
             }
           }
         ],
@@ -6162,6 +7003,24 @@
         },
         "additionalProperties": false
       },
+      "CandleGapRange": {
+        "type": "object",
+        "properties": {
+          "startOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingBars": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "CandlePatternEventDto": {
         "type": "object",
         "properties": {
@@ -7597,6 +8456,139 @@
         },
         "additionalProperties": false
       },
+      "InstrumentCapabilities": {
+        "type": "object",
+        "properties": {
+          "technicalAnalysis": {
+            "type": "boolean"
+          },
+          "news": {
+            "type": "boolean"
+          },
+          "sentiment": {
+            "type": "boolean"
+          },
+          "futures": {
+            "type": "boolean"
+          },
+          "liquidation": {
+            "type": "boolean"
+          },
+          "orderBook": {
+            "type": "boolean"
+          },
+          "execution": {
+            "type": "boolean"
+          },
+          "paperTrading": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "InstrumentDescriptor": {
+        "required": [
+          "activeTimeframes",
+          "aliases",
+          "assetClass",
+          "capabilities",
+          "currency",
+          "dataProvider",
+          "defaultTimeframe",
+          "label",
+          "priceBasis",
+          "symbol",
+          "timezone",
+          "venue"
+        ],
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "venue": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "assetClass": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timezone": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "dataProvider": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "crossCheckDataProvider": {
+            "type": "string",
+            "nullable": true
+          },
+          "priceBasis": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "activeTimeframes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaultTimeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/InstrumentCapabilities"
+          }
+        },
+        "additionalProperties": false
+      },
+      "InstrumentsResponse": {
+        "required": [
+          "contractVersion",
+          "generatedAtUtc",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstrumentDescriptor"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "KlineDataIssueDto": {
         "required": [
           "affectedDownstreamArtifacts",
@@ -8349,6 +9341,761 @@
         },
         "additionalProperties": false
       },
+      "MbbBuyMoreCapacity": {
+        "required": [
+          "estimatedCostVnd",
+          "maxBuyableLots",
+          "maxBuyableShares"
+        ],
+        "type": "object",
+        "properties": {
+          "maxBuyableShares": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxBuyableLots": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimatedCostVnd": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbCandleDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "timeIso": {
+            "type": "string",
+            "nullable": true
+          },
+          "open": {
+            "type": "number",
+            "format": "double"
+          },
+          "high": {
+            "type": "number",
+            "format": "double"
+          },
+          "low": {
+            "type": "number",
+            "format": "double"
+          },
+          "close": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          },
+          "closeTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quoteVolume": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "tradeCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "takerBuyVolume": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "takerBuyQuoteVolume": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbCoverageReport": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "crossCheckProvider": {
+            "type": "string",
+            "nullable": true
+          },
+          "priceBasis": {
+            "type": "string",
+            "nullable": true
+          },
+          "venue": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceTimezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeframes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MbbTimeframeCoverage"
+            },
+            "nullable": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbDecisionDto": {
+        "required": [
+          "action",
+          "dataFreshness",
+          "evidenceStatus",
+          "generatedAtUtc",
+          "market",
+          "position",
+          "priceBasis",
+          "reasons",
+          "symbol",
+          "triggers"
+        ],
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "action": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "triggers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MbbDecisionTrigger"
+            }
+          },
+          "invalidation": {
+            "type": "string",
+            "nullable": true
+          },
+          "position": {
+            "$ref": "#/components/schemas/MbbPositionSummary"
+          },
+          "buyMore": {
+            "$ref": "#/components/schemas/MbbBuyMoreCapacity"
+          },
+          "market": {
+            "$ref": "#/components/schemas/MbbMarketContext"
+          },
+          "evidenceStatus": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "priceBasis": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "dataFreshness": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MbbTimeframeFreshness"
+            }
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbDecisionTrigger": {
+        "required": [
+          "condition",
+          "name",
+          "timeframe"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "priceLevelVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "condition": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "withinPriceBand": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "nonFillRisk": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbMarketContext": {
+        "required": [
+          "rsiZone",
+          "trend"
+        ],
+        "type": "object",
+        "properties": {
+          "trend": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "rsiZone": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "rsi14": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "atr14": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sma50": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ema50": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lastDailyCloseVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "previousDailyCloseVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "latestHourlyCloseVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ceilingPriceVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "floorPriceVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbObservationDto": {
+        "type": "object",
+        "properties": {
+          "decisionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "recorderVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "signalBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "signalBarCloseTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decision": {
+            "type": "string",
+            "nullable": true
+          },
+          "evidenceStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "priceBasis": {
+            "type": "string",
+            "nullable": true
+          },
+          "marketCloseVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fillPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fillObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "fillSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "fillBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "outcomeReturn": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "outcomeObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "outcomeHorizon": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbPositionDto": {
+        "required": [
+          "availableCashVnd",
+          "lots",
+          "pendingShares",
+          "settledShares",
+          "symbol",
+          "totalShares"
+        ],
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "totalShares": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "settledShares": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingShares": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "avgCostPerShareVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "availableCashVnd": {
+            "type": "number",
+            "format": "double"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MbbPositionLotDto"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbPositionLotDto": {
+        "required": [
+          "acquireDate",
+          "costPerShareVnd",
+          "id",
+          "quantity",
+          "settled",
+          "settleDate",
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "costPerShareVnd": {
+            "type": "number",
+            "format": "double"
+          },
+          "acquireDate": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "settleDate": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "settled": {
+            "type": "boolean"
+          },
+          "source": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbPositionSummary": {
+        "required": [
+          "pendingShares",
+          "sellableSharesNow",
+          "settledShares",
+          "totalShares"
+        ],
+        "type": "object",
+        "properties": {
+          "totalShares": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "settledShares": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingShares": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sellableSharesNow": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "avgCostPerShareVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lastPriceVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "unrealizedPnlVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "unrealizedPnlPct": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "netProceedsIfSellableNowVnd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbRecomputeModuleResult": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "rowsWritten": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbSyncReport": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MbbTimeframeSync"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbTechnicalRecomputeReport": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "candleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MbbRecomputeModuleResult"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbTimeframeCoverage": {
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "firstOpenUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastOpenUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expectedBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "coveragePct": {
+            "type": "number",
+            "format": "double"
+          },
+          "gapRangeCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "topGaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CandleGapRange"
+            },
+            "nullable": true
+          },
+          "unexpectedSessionBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unexpectedSessionOpenTimeMs": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "nullable": true
+          },
+          "invalidOhlcvRows": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestExpectedFinalizedOpenUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "latestBarAgeSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "isStale": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbTimeframeFreshness": {
+        "required": [
+          "isStale",
+          "timeframe"
+        ],
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "latestOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "latestExpectedFinalizedOpenMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "isStale": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MbbTimeframeSync": {
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "fetchedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "insertedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skippedFormingBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rejectedInvalidBars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "missingExpectedBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gapRangesProcessed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "gapRangesRemaining": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fetchedRequests": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "MetaResponse": {
         "type": "object",
         "properties": {
@@ -8394,6 +10141,45 @@
           "maxDate": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ObserveReport": {
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "signalBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "decision": {
+            "type": "string",
+            "nullable": true
+          },
+          "decisionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "fillsResolved": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "outcomesResolved": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "detail": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -8937,6 +10723,13 @@
           },
           "pipeline": {
             "$ref": "#/components/schemas/ResearchEvidencePipelineStatusDto"
+          },
+          "pipelines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidencePipelineStatusDto"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -9136,6 +10929,15 @@
           },
           "statisticalEvidence": {
             "nullable": true
+          },
+          "sensitivityAudit": {
+            "nullable": true
+          },
+          "reportExclusions": {
+            "nullable": true
+          },
+          "eventTypeDetail": {
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -9227,10 +11029,15 @@
       "ResearchEvidencePipelineStatusDto": {
         "required": [
           "state",
+          "symbol",
           "timeframes"
         ],
         "type": "object",
         "properties": {
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
           "state": {
             "minLength": 1,
             "type": "string"
@@ -10607,6 +12414,49 @@
         },
         "additionalProperties": false
       },
+      "UpdateMbbPositionLotItem": {
+        "required": [
+          "acquireDate",
+          "costPerShareVnd",
+          "quantity"
+        ],
+        "type": "object",
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "costPerShareVnd": {
+            "type": "number",
+            "format": "double"
+          },
+          "acquireDate": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateMbbPositionRequest": {
+        "required": [
+          "availableCashVnd",
+          "lots"
+        ],
+        "type": "object",
+        "properties": {
+          "lots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpdateMbbPositionLotItem"
+            }
+          },
+          "availableCashVnd": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "UpdatePriceAlertSettingsDto": {
         "type": "object",
         "properties": {
@@ -10863,6 +12713,31 @@
           },
           "message": {
             "type": "string",
+            "nullable": true
+          },
+          "attempted": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "succeeded": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int32",
             "nullable": true
           }
         },

@@ -4,7 +4,7 @@ namespace Backend.Services;
 
 public static class VolumeAnalyzer
 {
-    public static void Compute(IReadOnlyList<RecognizedCandle> candles, IReadOnlyList<KlineDto> allKlines, int lookback = 20)
+    public static void Compute(IReadOnlyList<RecognizedCandle> candles, IReadOnlyList<IOhlcvBar> allKlines, int lookback = 20)
     {
         if (candles.Count == 0) return;
 

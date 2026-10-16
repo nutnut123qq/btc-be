@@ -24,6 +24,19 @@ public class ProductionSymbolScopeFilterTests
     }
 
     [Fact]
+    public void OnActionExecuting_RejectsKnownButNotEnabledMbb()
+    {
+        var context = CreateContext(new Dictionary<string, object?> { ["symbol"] = "MBB" });
+
+        new ProductionSymbolScopeFilter(new ProductionSymbolPolicy()).OnActionExecuting(context);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(context.Result);
+        var error = Assert.IsType<ApiErrorEnvelope>(badRequest.Value);
+        Assert.Equal("UNSUPPORTED_SYMBOL", error.Code);
+        Assert.Contains("not enabled", error.Message);
+    }
+
+    [Fact]
     public void OnActionExecuting_NormalizesBtcAliasInsideRequestDto()
     {
         var request = new SymbolRequest { Symbol = " btc " };

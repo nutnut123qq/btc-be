@@ -2,7 +2,7 @@ namespace Backend.Data;
 
 public static class ResearchVersions
 {
-    public const string ApiContract = "2026-09-research-evidence-v9";
+    public const string ApiContract = "2026-10-mbb-position-decision-v1";
     public const string HistoricalAnalogApiContract = "2026-09-historical-analogs-v2";
     public const string EnsembleApiContract = "2026-09-truthful-ensemble";
     public const string ResearchSpecification = "btc-4h-next-bar-v1";

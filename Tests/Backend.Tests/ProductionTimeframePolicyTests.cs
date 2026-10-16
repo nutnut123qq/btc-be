@@ -48,4 +48,43 @@ public class ProductionTimeframePolicyTests
         var error = Assert.Throws<InvalidOperationException>(() => new ProductionTimeframePolicy(options));
         Assert.Contains("exactly 4h", error.Message);
     }
+
+    [Fact]
+    public void SymbolAwareQueries_KeepBtcScopeUnchanged()
+    {
+        var policy = new ProductionTimeframePolicy();
+
+        Assert.Equal(["1h", "4h", "1d"], policy.ActiveFor("BTCUSDT"));
+        Assert.Equal("4h", policy.DefaultFor("BTC"));
+        Assert.True(policy.IsActive("BTCUSDT", "4h"));
+        Assert.Equal("4h", policy.EnsureActive(" btc ", " 4H "));
+        Assert.Equal(["1d", "1h", "4h"], policy.NormalizeAndEnsureActive("BTCUSDT", ["1d", "1h", "4h"]));
+    }
+
+    [Fact]
+    public void SymbolAwareQueries_ApplyMbbContract()
+    {
+        var policy = new ProductionTimeframePolicy();
+
+        Assert.Equal(["1h", "1d"], policy.ActiveFor("MBB"));
+        Assert.Equal("1d", policy.DefaultFor("MBB"));
+        Assert.True(policy.IsActive("MBB", "1h"));
+        Assert.True(policy.IsActive(" mbb ", "1d"));
+        Assert.False(policy.IsActive("MBB", "4h"));
+        Assert.Equal("1d", policy.EnsureActive("MBB", " 1D "));
+        Assert.Equal("1h", policy.EnsureActive("MBB", "1h"));
+        Assert.Throws<ArgumentException>(() => policy.EnsureActive("MBB", "4h"));
+        Assert.Throws<ArgumentException>(() => policy.EnsureActive("MBB", "15m"));
+    }
+
+    [Fact]
+    public void SymbolAwareQueries_FailClosedOnUnknownSymbols()
+    {
+        var policy = new ProductionTimeframePolicy();
+
+        Assert.False(policy.IsActive("ETHUSDT", "1d"));
+        Assert.Throws<ArgumentException>(() => policy.ActiveFor("ETHUSDT"));
+        Assert.Throws<ArgumentException>(() => policy.EnsureActive("DOGEUSDT", "1d"));
+        Assert.Throws<ArgumentException>(() => policy.NormalizeAndEnsureActive("DOGEUSDT", ["1d"]));
+    }
 }

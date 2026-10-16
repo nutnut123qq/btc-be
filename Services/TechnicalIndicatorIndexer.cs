@@ -22,7 +22,10 @@ public class TechnicalIndicatorIndexer
     private readonly IndexingOptions _options;
 
     /// <summary>
-    /// Projection nhẹ để tránh giữ hàng triệu entity Kline đầy đủ trong memory.
+    /// Projection nhẹ để tránh giữ hàng triệu entity candle đầy đủ trong memory.
+    /// Chỉ OHLCV + open time: các chỉ báo không dùng field riêng Binance
+    /// (QuoteVolume/TakerBuy/TradeCount), nên bar nội bộ giữ đúng những gì
+    /// mọi provider thật sự cung cấp (MBB-03).
     /// </summary>
     internal readonly record struct Bar(
         long OpenTimeMs,
@@ -30,11 +33,7 @@ public class TechnicalIndicatorIndexer
         decimal High,
         decimal Low,
         decimal Close,
-        decimal Volume,
-        decimal QuoteVolume,
-        decimal TakerBuyVolume,
-        decimal TakerBuyQuoteVolume,
-        long TradeCount);
+        decimal Volume);
 
     public TechnicalIndicatorIndexer(
         AppDbContext db,
@@ -95,21 +94,37 @@ public class TechnicalIndicatorIndexer
         }
 
         var existingKeys = await LoadExistingKeysAsync(symbol, timeframe, bars[0].OpenTimeMs, bars[^1].OpenTimeMs, cancellationToken);
-        return await IndexBarsAsync(symbol, timeframe, bars, existingKeys, cancellationToken);
+        return await IndexBarsAsync(symbol, timeframe, bars, existingKeys, adjacency: null, cancellationToken);
     }
 
     /// <summary>
-    /// Index từ klines đã có sẵn (caller cung cấp). Tránh query DB lại.
+    /// Index từ candles đã có sẵn (caller cung cấp). Tránh query DB lại.
+    /// Adjacency mặc định là cadence cố định <paramref name="timeframe"/> (đúng cho
+    /// crypto); instruments có phiên giao dịch (MBB/HOSE) truyền <see cref="BarAdjacency"/>
+    /// qua overload bên dưới để lunch/overnight/weekend không bị coi là data gap.
+    /// </summary>
+    public Task<int> IndexAsync(
+        string symbol,
+        string timeframe,
+        IReadOnlyList<IOhlcvBar> klines,
+        CancellationToken cancellationToken = default) =>
+        IndexAsync(symbol, timeframe, klines, adjacency: null, cancellationToken);
+
+    /// <summary>
+    /// Index với quan hệ kề-nhau do caller định nghĩa (ví dụ expected session opens
+    /// của <see cref="VietnamMarketCalendar"/>). Một cặp bar mà adjacency trả false
+    /// là data gap thật: mọi chỉ báo reset tại đó thay vì cầu nối qua nến thiếu.
     /// </summary>
     public async Task<int> IndexAsync(
         string symbol,
         string timeframe,
-        IReadOnlyList<KlineDto> klines,
+        IReadOnlyList<IOhlcvBar> klines,
+        BarAdjacency? adjacency,
         CancellationToken cancellationToken = default)
     {
         if (klines.Count < 50)
         {
-            _logger.LogWarning("Not enough klines to compute indicators for {Symbol} {Timeframe}", symbol, timeframe);
+            _logger.LogWarning("Not enough candles to compute indicators for {Symbol} {Timeframe}", symbol, timeframe);
             return 0;
         }
 
@@ -119,17 +134,13 @@ public class TechnicalIndicatorIndexer
             k.High,
             k.Low,
             k.Close,
-            k.Volume,
-            k.QuoteVolume,
-            k.TakerBuyVolume,
-            k.TakerBuyQuoteVolume,
-            k.TradeCount)).ToList();
+            k.Volume)).ToList();
 
         var startMs = klines[0].OpenTimeMs;
         var endMs = klines[^1].OpenTimeMs;
         var existingKeys = await LoadExistingKeysAsync(symbol, timeframe, startMs, endMs, cancellationToken);
 
-        return await IndexBarsAsync(symbol, timeframe, bars, existingKeys, cancellationToken);
+        return await IndexBarsAsync(symbol, timeframe, bars, existingKeys, adjacency, cancellationToken);
     }
 
     private async Task<int> IndexBarsAsync(
@@ -137,9 +148,10 @@ public class TechnicalIndicatorIndexer
         string timeframe,
         IReadOnlyList<Bar> bars,
         HashSet<long> existingKeys,
+        BarAdjacency? adjacency,
         CancellationToken cancellationToken)
     {
-        var indicators = CalculateIndicators(bars, Timeframes.IntervalToMs(timeframe));
+        var indicators = CalculateIndicators(bars, Timeframes.IntervalToMs(timeframe), adjacency);
 
         var batchSize = Math.Max(100, _options.TechnicalIndicatorsBatchSize);
         var batch = new List<TechnicalIndicator>(batchSize);
@@ -259,15 +271,12 @@ public class TechnicalIndicatorIndexer
                 k.High,
                 k.Low,
                 k.Close,
-                k.Volume,
-                k.QuoteVolume,
-                k.TakerBuyVolume,
-                k.TakerBuyQuoteVolume,
-                k.TradeCount))
+                k.Volume))
             .ToListAsync(cancellationToken);
     }
 
-    internal static IndicatorSeries CalculateIndicators(IReadOnlyList<Bar> bars, long intervalMs)
+    internal static IndicatorSeries CalculateIndicators(
+        IReadOnlyList<Bar> bars, long intervalMs, BarAdjacency? adjacency = null)
     {
         var series = IndicatorSeries.Empty(bars.Count);
         if (bars.Count == 0)
@@ -278,13 +287,23 @@ public class TechnicalIndicatorIndexer
         {
             // A gap makes prior-close and cumulative state unknowable. Restart
             // every indicator and expose null warmup rather than bridge it.
-            if (i < bars.Count && intervalMs > 0 && bars[i].OpenTimeMs - bars[i - 1].OpenTimeMs == intervalMs)
+            // Without an explicit adjacency, continuity = fixed-interval cadence
+            // (correct for crypto). Session calendars inject their own notion so
+            // lunch/weekend/holiday breaks stay contiguous while missing expected
+            // bars still restart state.
+            if (i < bars.Count && IsAdjacent(bars[i - 1].OpenTimeMs, bars[i].OpenTimeMs))
                 continue;
 
             FillSegment(series, bars, segmentStart, i - segmentStart);
             segmentStart = i;
         }
+
         return series;
+
+        bool IsAdjacent(long previousOpenMs, long nextOpenMs) =>
+            adjacency is not null
+                ? adjacency(previousOpenMs, nextOpenMs)
+                : intervalMs > 0 && nextOpenMs - previousOpenMs == intervalMs;
     }
 
     private static void FillSegment(IndicatorSeries target, IReadOnlyList<Bar> bars, int start, int count)

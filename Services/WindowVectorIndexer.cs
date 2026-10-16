@@ -27,7 +27,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
     public async Task<int> BuildAllForTimeframeAsync(
         string symbol,
         string timeframe,
-        IReadOnlyList<KlineDto> klines,
+        IReadOnlyList<IOhlcvBar> klines,
         IEnumerable<string> featureTypes,
         IEnumerable<int> windowSizes,
         CancellationToken cancellationToken = default)
@@ -65,7 +65,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
 
             for (var start = 0; start <= klines.Count - ws; start++)
             {
-                var window = new SliceView<KlineDto>(klines, start, ws);
+                var window = new SliceView<IOhlcvBar>(klines, start, ws);
                 var windowStartMs = window[0].OpenTimeMs;
                 var windowEndMs = window[^1].OpenTimeMs;
 
@@ -149,7 +149,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         string symbol,
         string timeframe,
         string featureType,
-        IReadOnlyList<KlineDto> rows,
+        IReadOnlyList<IOhlcvBar> rows,
         int windowSize,
         CancellationToken cancellationToken = default)
     {
@@ -242,10 +242,10 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         }
     }
 
-    public static float[]? BuildVector(IReadOnlyList<KlineDto> window, string featureType)
+    public static float[]? BuildVector(IReadOnlyList<IOhlcvBar> window, string featureType)
         => BuildVector(window, 0, window.Count, featureType);
 
-    public static float[]? BuildVector(IReadOnlyList<KlineDto> source, int start, int count, string featureType)
+    public static float[]? BuildVector(IReadOnlyList<IOhlcvBar> source, int start, int count, string featureType)
     {
         if (count == 0) return null;
         if (string.Equals(featureType, PatternVectorFeatureType.ReturnsShape, StringComparison.OrdinalIgnoreCase))
@@ -290,7 +290,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
     }
 
     private static float[] BuildNormalizedArray(
-        IReadOnlyList<KlineDto> source, int start, int count, Func<KlineDto, double> selector,
+        IReadOnlyList<IOhlcvBar> source, int start, int count, Func<IOhlcvBar, double> selector,
         double minLow, double range)
     {
         var vec = new float[count];
@@ -299,7 +299,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         return vec;
     }
 
-    private static float[] BuildAllVector(IReadOnlyList<KlineDto> source, int start, int count, double minLow, double range)
+    private static float[] BuildAllVector(IReadOnlyList<IOhlcvBar> source, int start, int count, double minLow, double range)
     {
         var vec = new float[count * 4];
         var offset = 0;
@@ -314,7 +314,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         return vec;
     }
 
-    private static float[] BuildReturnsShapeVector(IReadOnlyList<KlineDto> source, int start, int count)
+    private static float[] BuildReturnsShapeVector(IReadOnlyList<IOhlcvBar> source, int start, int count)
     {
         var vec = new float[count * 4];
         var offset = 0;
@@ -355,7 +355,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         return vec;
     }
 
-    private static float[] BuildReturnsLogVector(IReadOnlyList<KlineDto> source, int start, int count)
+    private static float[] BuildReturnsLogVector(IReadOnlyList<IOhlcvBar> source, int start, int count)
     {
         var raw = new double[count];
         for (int i = 0; i < count; i++)
@@ -368,7 +368,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         return MinMaxNormalize(raw);
     }
 
-    private static float[] BuildVolumeNormVector(IReadOnlyList<KlineDto> source, int start, int count)
+    private static float[] BuildVolumeNormVector(IReadOnlyList<IOhlcvBar> source, int start, int count)
     {
         var volumes = new double[count];
         for (int i = 0; i < count; i++)
@@ -380,7 +380,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         return MinMaxNormalize(raw);
     }
 
-    private static float[] BuildVolatilityVector(IReadOnlyList<KlineDto> source, int start, int count)
+    private static float[] BuildVolatilityVector(IReadOnlyList<IOhlcvBar> source, int start, int count)
     {
         var returns = new double[count];
         for (int i = 0; i < count; i++)
@@ -409,7 +409,7 @@ public class WindowVectorIndexer : IWindowVectorIndexer
         return MinMaxNormalize(vol);
     }
 
-    private static float[] BuildTrendVector(IReadOnlyList<KlineDto> source, int start, int count)
+    private static float[] BuildTrendVector(IReadOnlyList<IOhlcvBar> source, int start, int count)
     {
         var n = count;
         var closes = new double[n];

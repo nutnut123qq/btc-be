@@ -29,6 +29,7 @@ public sealed record ResearchEvidencePipelineTimeframeStatusDto(
     bool SemanticVerification);
 
 public sealed record ResearchEvidencePipelineStatusDto(
+    [property: Required] string Symbol,
     [property: Required] string State,
     bool IntegrityVerified,
     bool Running,
@@ -69,14 +70,22 @@ public sealed record ResearchEvidenceCatalogResponse(
     [property: Required] DateTime GeneratedAtUtc,
     [property: Required] IReadOnlyList<ResearchEvidenceCatalogItemDto> Items,
     [property: Required] EvidenceIntegritySummaryDto Integrity,
-    ResearchEvidencePipelineStatusDto? Pipeline = null)
+    ResearchEvidencePipelineStatusDto? Pipeline = null,
+    IReadOnlyList<ResearchEvidencePipelineStatusDto>? Pipelines = null)
 {
     public static ResearchEvidenceCatalogResponse Create(
         DateTime generatedAtUtc,
         IReadOnlyList<ResearchEvidenceCatalogItemDto> items,
         EvidenceIntegritySummaryDto integrity,
-        ResearchEvidencePipelineStatusDto? pipeline = null) =>
-        new(ResearchVersions.ResearchEvidenceCatalog, "BTCUSDT", generatedAtUtc, items, integrity, pipeline);
+        ResearchEvidencePipelineStatusDto? pipeline = null,
+        IReadOnlyList<ResearchEvidencePipelineStatusDto>? pipelines = null)
+    {
+        // The unfiltered catalog can now hold per-symbol evidence (MBB alongside
+        // BTCUSDT); emitting a bare "BTCUSDT" for mixed items would be a lie.
+        var symbols = items.Select(x => x.Symbol).Distinct(StringComparer.Ordinal).ToArray();
+        var symbol = symbols.Length == 1 ? symbols[0] : "ALL";
+        return new(ResearchVersions.ResearchEvidenceCatalog, symbol, generatedAtUtc, items, integrity, pipeline, pipelines);
+    }
 }
 
 public sealed record ResearchEvidenceDatasetDto(

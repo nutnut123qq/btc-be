@@ -96,6 +96,8 @@ builder.Services.Configure<KlinesIngestionOptions>(builder.Configuration.GetSect
 builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
 builder.Services.Configure<CausalSmartMoneyRebuildOptions>(builder.Configuration.GetSection(CausalSmartMoneyRebuildOptions.SectionName));
 builder.Services.Configure<ProductionTimeframeOptions>(builder.Configuration.GetSection(ProductionTimeframeOptions.SectionName));
+builder.Services.Configure<MbbIngestionOptions>(builder.Configuration.GetSection(MbbIngestionOptions.SectionName));
+builder.Services.AddSingleton(InstrumentCatalog.Default);
 builder.Services.AddSingleton<ProductionTimeframePolicy>();
 builder.Services.AddSingleton<ProductionSymbolPolicy>();
 builder.Services.AddSingleton<ProductionSymbolScopeFilter>();
@@ -184,6 +186,37 @@ builder.Services.AddScoped<IEnsemblePaperTraderService, EnsemblePaperTraderServi
 builder.Services.AddScoped<IAiContextService, AiContextService>();
 builder.Services.AddScoped<IFuturesMetricsService, FuturesMetricsService>();
 builder.Services.AddScoped<IBtcDominanceService, BtcDominanceService>();
+
+// MBB (HOSE equity) lane — services are registered for explicit/manual invocation only.
+// There is intentionally no hosted worker: MBB stays disabled in InstrumentCatalog /
+// ProductionSymbolPolicy and must not join the production scheduler (MBB-02 contract).
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MbbIngestionOptions>>().Value);
+builder.Services.AddSingleton(sp =>
+{
+    var opts = sp.GetRequiredService<MbbIngestionOptions>();
+    return new VietnamMarketCalendar(
+        VietnamMarketCalendar.ParseNonTradingDates(opts.NonTradingDates),
+        TimeSpan.FromMinutes(opts.PublishGraceMinutes));
+});
+// Both VCI and KBS sit behind CDNs that may return Content-Encoding: gzip even
+// without an Accept-Encoding request header; AutomaticDecompression makes the
+// handler transparent (probe hit raw gzip bytes -> JSON parse failure).
+builder.Services.AddHttpClient<IVciOhlcvClient, VciMarketDataClient>(client => client.Timeout = TimeSpan.FromSeconds(60))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
+    });
+builder.Services.AddHttpClient<IKbsOhlcvClient, KbsMarketDataClient>(client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
+    });
+builder.Services.AddScoped<MbbIngestionService>();
+builder.Services.AddScoped<MbbDataQualityService>();
+builder.Services.AddScoped<MbbTechnicalRecomputeService>();
+builder.Services.AddScoped<MbbDecisionService>();
+builder.Services.AddScoped<MbbSignalObservationService>();
 builder.Services.AddHttpClient("BinanceFuturesTestnet", client =>
 {
     var baseUrl = builder.Configuration["BinanceTestnet:BaseUrl"] ?? "https://testnet.binancefuture.com";

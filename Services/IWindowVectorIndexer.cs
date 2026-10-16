@@ -10,7 +10,7 @@ public interface IWindowVectorIndexer
     Task<int> BuildAllForTimeframeAsync(
         string symbol,
         string timeframe,
-        IReadOnlyList<KlineDto> klines,
+        IReadOnlyList<IOhlcvBar> klines,
         IEnumerable<string> featureTypes,
         IEnumerable<int> windowSizes,
         CancellationToken cancellationToken = default);
@@ -27,7 +27,7 @@ public interface IWindowVectorIndexer
         string symbol,
         string timeframe,
         string featureType,
-        IReadOnlyList<KlineDto> rows,
+        IReadOnlyList<IOhlcvBar> rows,
         int windowSize,
         CancellationToken cancellationToken = default);
 

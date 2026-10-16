@@ -1199,6 +1199,73 @@ namespace Backend.Migrations
                     b.ToTable("EnsemblePredictionRecords");
                 });
 
+            modelBuilder.Entity("Backend.Data.EquityPositionAccount", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("AvailableCashVnd")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol")
+                        .IsUnique();
+
+                    b.ToTable("EquityPositionAccounts");
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityPositionLot", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateOnly>("AcquireDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("CostPerShareVnd")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "AcquireDate");
+
+                    b.ToTable("EquityPositionLots");
+                });
+
             modelBuilder.Entity("Backend.Data.FuturesMetric", b =>
                 {
                     b.Property<long>("Id")
@@ -1272,6 +1339,84 @@ namespace Backend.Migrations
                         .IsUnique();
 
                     b.ToTable("FuturesMetrics", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Data.InstrumentCandle", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Close")
+                        .HasColumnType("numeric");
+
+                    b.Property<long>("CloseTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("FetchedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("High")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("Low")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("Open")
+                        .HasColumnType("numeric");
+
+                    b.Property<long>("OpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PriceBasis")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceTimezone")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Venue")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("Volume")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "Timeframe", "CloseTimeMs");
+
+                    b.HasIndex("Symbol", "Timeframe", "OpenTimeMs")
+                        .IsUnique();
+
+                    b.ToTable("InstrumentCandles");
                 });
 
             modelBuilder.Entity("Backend.Data.Kline", b =>
@@ -1659,6 +1804,123 @@ namespace Backend.Migrations
                     b.HasIndex("Symbol", "Timeframe", "RegimeType");
 
                     b.ToTable("MarketRegimes");
+                });
+
+            modelBuilder.Entity("Backend.Data.MbbSignalObservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("DecisionId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("DecisionPayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("EvidenceStatus")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long?>("FillBarOpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("FillObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("FillPrice")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("FillSource")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<decimal?>("MarketCloseVnd")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset>("ObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OutcomeHorizon")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset?>("OutcomeObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("OutcomeReturn")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("PriceBasis")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RecorderVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("RulesVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<long>("SignalBarCloseTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("SignalBarOpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DecisionId")
+                        .IsUnique();
+
+                    b.HasIndex("Symbol", "Timeframe", "SignalBarOpenTimeMs")
+                        .IsUnique();
+
+                    b.ToTable("MbbSignalObservations", t =>
+                        {
+                            t.HasCheckConstraint("CK_MbbSignalObservations_Chronology", "\"AvailableTimeMs\" >= \"SignalBarCloseTimeMs\"");
+
+                            t.HasCheckConstraint("CK_MbbSignalObservations_Decision", "\"Decision\" IN ('hold','wait','buy-more','reduce','sell','conditional-sell')");
+
+                            t.HasCheckConstraint("CK_MbbSignalObservations_FillCoherence", "(\"FillPrice\" IS NULL AND \"FillObservedAtUtc\" IS NULL AND \"FillSource\" IS NULL AND \"FillBarOpenTimeMs\" IS NULL) OR (\"Decision\" IN ('buy-more','reduce','sell','conditional-sell') AND \"FillPrice\" > 0 AND \"FillObservedAtUtc\" >= \"ObservedAtUtc\" AND NULLIF(BTRIM(\"FillSource\"), '') IS NOT NULL AND \"FillBarOpenTimeMs\" > \"SignalBarOpenTimeMs\")");
+
+                            t.HasCheckConstraint("CK_MbbSignalObservations_OutcomeCoherence", "(\"OutcomeReturn\" IS NULL AND \"OutcomeObservedAtUtc\" IS NULL AND \"OutcomeHorizon\" IS NULL) OR (\"FillPrice\" IS NOT NULL AND \"OutcomeReturn\" IS NOT NULL AND \"OutcomeObservedAtUtc\" >= \"FillObservedAtUtc\" AND NULLIF(BTRIM(\"OutcomeHorizon\"), '') IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_MbbSignalObservations_ProspectiveClock", "ABS(\"AvailableTimeMs\" - (EXTRACT(EPOCH FROM \"ObservedAtUtc\") * 1000)::bigint) <= 1000");
+
+                            t.HasCheckConstraint("CK_MbbSignalObservations_Scope", "\"Symbol\" = 'MBB' AND \"Timeframe\" IN ('1h','1d')");
+
+                            t.HasCheckConstraint("CK_MbbSignalObservations_SignalBar", "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\"");
+                        });
                 });
 
             modelBuilder.Entity("Backend.Data.MlFeatureStore", b =>
