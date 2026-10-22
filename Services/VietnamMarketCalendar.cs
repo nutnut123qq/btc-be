@@ -48,15 +48,84 @@ public sealed class VietnamMarketCalendar
         [new TimeOnly(9, 0), new(10, 0), new(11, 0), new(13, 0), new(14, 0)];
 
     private readonly IReadOnlySet<DateOnly> _nonTradingDates;
+    private readonly IReadOnlySet<DateOnly> _unverifiedDates;
     private readonly TimeSpan _publishGrace;
 
+    /// <summary>
+    /// Explicit calendar (tests / fixtures): exactly <paramref name="nonTradingDates"/> plus weekends.
+    /// Production uses <see cref="FromSource"/> over the canonical file (EQX v2 A1).
+    /// </summary>
     public VietnamMarketCalendar(IEnumerable<DateOnly>? nonTradingDates = null, TimeSpan? publishGrace = null)
     {
         _nonTradingDates = nonTradingDates is null
             ? new HashSet<DateOnly>()
             : new HashSet<DateOnly>(nonTradingDates);
+        _unverifiedDates = new HashSet<DateOnly>();
         _publishGrace = publishGrace ?? TimeSpan.FromMinutes(10);
     }
+
+    private VietnamMarketCalendar(MarketCalendarSource source, TimeSpan? publishGrace)
+    {
+        Source = source;
+        _nonTradingDates = new HashSet<DateOnly>(source.AllNonTradingDates());
+        _unverifiedDates = new HashSet<DateOnly>(source.Days
+            .Where(d => d.Verification != MarketCalendarVerification.Verified)
+            .Select(d => d.Date)
+            .Concat(source.ConfigOverrideDates));
+        _publishGrace = publishGrace ?? TimeSpan.FromMinutes(10);
+    }
+
+    /// <summary>Calendar over the canonical HOSE file (∪ config override dates, which stay reported).</summary>
+    public static VietnamMarketCalendar FromSource(MarketCalendarSource source, TimeSpan? publishGrace = null) =>
+        new(source, publishGrace);
+
+    /// <summary>
+    /// Canonical calendar file ∪ <paramref name="configuredOverrides"/> ("yyyy-MM-dd"). Used by DI and by
+    /// services constructed without an explicit calendar. Throws when the canonical file is missing/invalid.
+    /// </summary>
+    public static VietnamMarketCalendar CreateDefault(IEnumerable<string>? configuredOverrides = null, TimeSpan? publishGrace = null) =>
+        new(MarketCalendarSource.Default.WithOverrides(ParseNonTradingDates(configuredOverrides)), publishGrace);
+
+    /// <summary>Canonical source behind this calendar; null for an explicit (test) calendar.</summary>
+    public MarketCalendarSource? Source { get; }
+
+    /// <summary>Reason/flag: a needed date is after the canonical file's coverage.toDate (EQX v2 review #1).</summary>
+    public const string CoverageExpiredReason = "calendar-coverage-expired";
+
+    /// <summary>Flag: a date is before coverage.fromDate — holidays there are unknown, gaps are not real gaps.</summary>
+    public const string BelowCoverageReason = "below-calendar-coverage";
+
+    /// <summary>Coverage of the canonical file; null bounds for an explicit (test) calendar = unbounded.</summary>
+    public DateOnly? CoverageFrom => Source?.CoverageFrom;
+    public DateOnly? CoverageTo => Source?.CoverageTo;
+
+    /// <summary>
+    /// After coverage.toDate the calendar does NOT know the holidays: a weekday there is not known to trade,
+    /// so callers must fail closed / flag <see cref="CoverageExpiredReason"/> instead of assuming it does.
+    /// </summary>
+    public bool IsBeyondCoverage(DateOnly date) => CoverageTo is { } to && date > to;
+
+    public bool IsBelowCoverage(DateOnly date) => CoverageFrom is { } from && date < from;
+
+    /// <summary>How [from, to] relates to the calendar coverage.</summary>
+    public CalendarCoverageStatus Coverage(DateOnly from, DateOnly to) => new(
+        CoverageFrom, CoverageTo,
+        BelowCoverage: IsBelowCoverage(from),
+        BeyondCoverage: IsBeyondCoverage(to));
+
+    /// <summary>Throws <see cref="CalendarCoverageExpiredException"/> when <paramref name="date"/> is beyond coverage.</summary>
+    public void EnsureCovered(DateOnly date, string what)
+    {
+        if (IsBeyondCoverage(date))
+            throw new CalendarCoverageExpiredException(
+                $"{what} {date:yyyy-MM-dd} is after the HOSE calendar coverage ({CoverageTo:yyyy-MM-dd}); add the new HOSE notice to {MarketCalendarSource.DefaultRelativePath}.");
+    }
+
+    /// <summary>
+    /// Non-trading date that is NOT backed by an official source (unverified-legacy or config override).
+    /// Still treated as closed (no fake gap), but reported by data quality.
+    /// </summary>
+    public bool IsUnverifiedNonTradingDate(DateOnly date) => _unverifiedDates.Contains(date);
 
     public static long ToUtcMs(DateOnly localDate, TimeOnly localTime) =>
         new DateTimeOffset(localDate.ToDateTime(localTime), VietnamOffset).ToUnixTimeMilliseconds();
@@ -263,4 +332,17 @@ public sealed class VietnamMarketCalendar
         }
         return set;
     }
+}
+
+/// <summary>Coverage relation of a date range (EQX v2 review #1).</summary>
+public sealed record CalendarCoverageStatus(DateOnly? CoverageFrom, DateOnly? CoverageTo, bool BelowCoverage, bool BeyondCoverage)
+{
+    public bool FullyCovered => !BelowCoverage && !BeyondCoverage;
+}
+
+/// <summary>A computation needed a calendar date after the canonical coverage (fail closed).</summary>
+public sealed class CalendarCoverageExpiredException : InvalidOperationException
+{
+    public CalendarCoverageExpiredException(string message) : base(message) { }
+    public string Code => "CALENDAR_COVERAGE_EXPIRED";
 }

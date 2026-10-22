@@ -19,5 +19,13 @@ public class EquityPositionAccount
     [Column(TypeName = "numeric")]
     public decimal AvailableCashVnd { get; set; }
 
+    /// <summary>
+    /// Declared buy-more budget for this symbol, drawn from the shared EquityCashAccount pool (EQX v2 A3).
+    /// Null = undeclared ⇒ no buy quantity is proposed. AvailableCashVnd above is legacy and no longer
+    /// used for buying power (per-symbol cash double-counted the same broker balance).
+    /// </summary>
+    [Column(TypeName = "numeric")]
+    public decimal? BuyBudgetVnd { get; set; }
+
     public DateTime UpdatedAtUtc { get; set; }
 }

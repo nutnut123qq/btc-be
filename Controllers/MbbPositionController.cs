@@ -58,6 +58,16 @@ public sealed class MbbPositionController : ControllerBase
         {
             return Ok(await _decisions.ReplacePositionAsync(body, cancellationToken: cancellationToken));
         }
+        catch (EquityCashValidationException ex)
+        {
+            return BadRequest(new ApiErrorEnvelope
+            {
+                Code = ex.Code,
+                Message = ex.Message,
+                Retryable = false,
+                RequestId = HttpContext.TraceIdentifier,
+            });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new ApiErrorEnvelope

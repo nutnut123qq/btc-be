@@ -28,7 +28,11 @@ namespace Backend.Services;
 /// </summary>
 public sealed class MbbTechnicalRecomputeService
 {
-    /// <summary>Only instrument whose candles live in InstrumentCandles in v1.</summary>
+    /// <summary>
+    /// The /api/mbb alias symbol. Since EQX the lane serves every equity carrying the
+    /// TechnicalAnalysis + Ingestion capabilities (MBB, BID); context-only instruments
+    /// (VCB, CTG, VNINDEX) and Binance instruments are rejected.
+    /// </summary>
     public const string SupportedSymbol = "MBB";
 
     private const int MinIndicatorBars = 50;
@@ -91,10 +95,15 @@ public sealed class MbbTechnicalRecomputeService
                 string.Join(", ", _catalog.Instruments.Select(x => x.Symbol)),
                 nameof(symbol));
 
-        if (!string.Equals(instrument.Symbol, SupportedSymbol, StringComparison.Ordinal))
+        if (!EquityScope.IsEquityLaneAsset(instrument) || !instrument.Capabilities.Ingestion)
             throw new ArgumentException(
                 $"Symbol '{instrument.Symbol}' does not use the InstrumentCandles store. " +
-                $"This lane supports {SupportedSymbol} only; Binance instruments recompute via Klines indexers.",
+                "Binance instruments recompute via Klines indexers.",
+                nameof(symbol));
+        if (!EquityScope.Has(instrument, EquityCapability.TechnicalAnalysis))
+            throw new ArgumentException(
+                $"Symbol '{instrument.Symbol}' does not support capability 'technicalAnalysis' " +
+                "(context-only instrument).",
                 nameof(symbol));
 
         var tf = ProductionTimeframePolicy.Canonicalize(timeframe);

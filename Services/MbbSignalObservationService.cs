@@ -22,13 +22,26 @@ namespace Backend.Services;
 ///    the next session open. Outcome = raw close-to-fill return over the fill
 ///    bar. Until the matching bar/trigger exists, fields stay NULL.
 ///
-/// Idempotent by key: DecisionId = mbb-observe/{timeframe}/{signalBarOpenTimeMs}
-/// plus a unique (Symbol, Timeframe, SignalBarOpenTimeMs) index — repeat polls
-/// of the same bar are no-ops.
+/// Idempotent by key: DecisionId = equity-observe/{SYMBOL}/{timeframe}/{signalBarOpenTimeMs}
+/// (EQX, recorder equity-observe-v2) plus a unique (Symbol, Timeframe,
+/// SignalBarOpenTimeMs) index — repeat polls of the same bar are no-ops. Legacy MBB
+/// rows (mbb-observe/{tf}/{open}, mbb-observe-v1) stay readable and untouched; the
+/// already-recorded check keys off (Symbol, Timeframe, SignalBarOpenTimeMs), so a bar
+/// recorded under the legacy id is never recorded twice.
+///
+/// Multi-symbol (EQX): any catalog equity with the Decision capability, on its
+/// ActiveTimeframes only (MBB 1h/1d, BID 1d). Pending fill/outcome resolution is
+/// scoped to the polled symbol.
 /// </summary>
 public sealed class MbbSignalObservationService
 {
-    public const string RecorderVersion = "mbb-observe-v1";
+    public const string RecorderVersion = "equity-observe-v2";
+
+    /// <summary>Recorder of rows written before EQX (DecisionId mbb-observe/{tf}/{open}).</summary>
+    public const string LegacyRecorderVersion = "mbb-observe-v1";
+
+    public static string DecisionIdFor(string symbol, string timeframe, long signalBarOpenTimeMs) =>
+        $"equity-observe/{symbol}/{timeframe}/{signalBarOpenTimeMs}";
     public const string OutcomeHorizonNextBarClose = "next-bar-close";
     public const string FillSourceNextBarOpen = "next-bar-open-vci-adjusted";
     public const string FillSourcePostTriggerNextOpen = "post-trigger-close-next-open";
@@ -43,17 +56,20 @@ public sealed class MbbSignalObservationService
     private readonly MbbDecisionService _decision;
     private readonly VietnamMarketCalendar _calendar;
     private readonly TimeProvider _timeProvider;
+    private readonly InstrumentCatalog _catalog;
 
     public MbbSignalObservationService(
         AppDbContext db,
         MbbDecisionService decision,
         VietnamMarketCalendar calendar,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        InstrumentCatalog? catalog = null)
     {
         _db = db;
         _decision = decision;
         _calendar = calendar;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _catalog = catalog ?? InstrumentCatalog.Default;
     }
 
     public sealed record ObserveReport(
@@ -64,7 +80,9 @@ public sealed class MbbSignalObservationService
         string? DecisionId,
         int FillsResolved,
         int OutcomesResolved,
-        string? Detail);
+        string? Detail,
+        string? Symbol = null,
+        int? ForecastOutcomesResolved = null);
 
     /// <summary>
     /// Records one observation if the latest expected finalized bar is stored
@@ -72,36 +90,61 @@ public sealed class MbbSignalObservationService
     /// honest status for the no-op cases (nothing to observe / already
     /// recorded / finalized bar not yet ingested).
     /// </summary>
-    public async Task<ObserveReport> RecordAsync(string timeframe, CancellationToken cancellationToken = default)
+    public Task<ObserveReport> RecordAsync(string timeframe, CancellationToken cancellationToken = default) =>
+        RecordAsync(MbbDecisionService.SupportedSymbol, timeframe, cancellationToken);
+
+    /// <summary>Multi-symbol entry point (EQX): Decision-capable symbol on one of its ActiveTimeframes.</summary>
+    public async Task<ObserveReport> RecordAsync(
+        string symbol, string timeframe, CancellationToken cancellationToken = default)
     {
-        var canonical = ProductionTimeframePolicy.Canonicalize(timeframe);
-        if (canonical is not (EquityCandleTimeframes.Hour or EquityCandleTimeframes.Day))
+        var instrument = _catalog.Get(symbol)
+            ?? throw new ArgumentException(
+                $"Unknown symbol '{InstrumentCatalog.Canonicalize(symbol)}'.", nameof(symbol));
+        if (!EquityScope.Has(instrument, EquityCapability.Decision))
             throw new ArgumentException(
-                $"MBB observations support '1h' and '1d' only; got '{timeframe}'.", nameof(timeframe));
+                $"Symbol '{instrument.Symbol}' does not support capability 'decision'.", nameof(symbol));
+        var canonical = ProductionTimeframePolicy.Canonicalize(timeframe);
+        if (canonical is not (EquityCandleTimeframes.Hour or EquityCandleTimeframes.Day)
+            || !instrument.ActiveTimeframes.Contains(canonical, StringComparer.Ordinal))
+            throw new ArgumentException(
+                $"{instrument.Symbol} observations support {string.Join(", ", instrument.ActiveTimeframes.Select(t => $"'{t}'"))} only; got '{timeframe}'.",
+                nameof(timeframe));
 
         var nowMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
         var nowUtc = _timeProvider.GetUtcNow();
 
-        var record = await TryRecordAsync(canonical, nowMs, nowUtc, cancellationToken);
+        var record = await TryRecordAsync(instrument.Symbol, canonical, nowMs, nowUtc, cancellationToken);
         // Fill/outcome resolution runs on EVERY poll — also when there is nothing
         // new to record — so pending rows resolve once later bars are ingested.
-        var resolved = await ResolvePendingAsync(cancellationToken);
-        return record with { FillsResolved = resolved.Fills, OutcomesResolved = resolved.Outcomes };
+        var resolved = await ResolvePendingAsync(instrument.Symbol, cancellationToken);
+        return record with
+        {
+            FillsResolved = resolved.Fills, OutcomesResolved = resolved.Outcomes, Symbol = instrument.Symbol,
+        };
     }
 
+    private Task<bool> AlreadyRecordedAsync(
+        string symbol, string timeframe, long signalOpenMs, CancellationToken cancellationToken) =>
+        // Keyed on the natural key, not DecisionId: legacy mbb-observe/... rows count too.
+        _db.MbbSignalObservations.AsNoTracking()
+            .AnyAsync(o => o.Symbol == symbol
+                           && o.Timeframe == timeframe
+                           && o.SignalBarOpenTimeMs == signalOpenMs,
+                cancellationToken);
+
     private async Task<ObserveReport> TryRecordAsync(
-        string canonical, long nowMs, DateTimeOffset nowUtc, CancellationToken cancellationToken)
+        string symbol, string canonical, long nowMs, DateTimeOffset nowUtc, CancellationToken cancellationToken)
     {
+        var todayLocal = DateOnly.FromDateTime(VietnamMarketCalendar.ToLocal(nowMs).DateTime);
+        if (_calendar.IsBeyondCoverage(todayLocal))
+            return new ObserveReport(canonical, VietnamMarketCalendar.CoverageExpiredReason, null, null, null, 0, 0,
+                $"today {todayLocal:yyyy-MM-dd} is after the HOSE calendar coverage ({_calendar.CoverageTo:yyyy-MM-dd}): the latest finalized bar cannot be determined; nothing is recorded");
         var signalOpenMs = _calendar.LastExpectedFinalizedOpenUtcMs(canonical, nowMs);
         if (signalOpenMs is null)
             return new ObserveReport(canonical, "no-expected-open", null, null, null, 0, 0,
                 "no finalized expected open exists yet for this timeframe");
 
-        var already = await _db.MbbSignalObservations.AsNoTracking()
-            .AnyAsync(o => o.Symbol == MbbDecisionService.SupportedSymbol
-                           && o.Timeframe == canonical
-                           && o.SignalBarOpenTimeMs == signalOpenMs.Value,
-                cancellationToken);
+        var already = await AlreadyRecordedAsync(symbol, canonical, signalOpenMs.Value, cancellationToken);
         if (already)
         {
             return new ObserveReport(canonical, "already-recorded", signalOpenMs, null, null, 0, 0,
@@ -109,7 +152,7 @@ public sealed class MbbSignalObservationService
         }
 
         var signalBar = await _db.InstrumentCandles.AsNoTracking()
-            .Where(c => c.Symbol == MbbDecisionService.SupportedSymbol
+            .Where(c => c.Symbol == symbol
                         && c.Timeframe == canonical
                         && c.OpenTimeMs == signalOpenMs.Value)
             .FirstOrDefaultAsync(cancellationToken);
@@ -124,13 +167,13 @@ public sealed class MbbSignalObservationService
                 "signal bar close is still in the future");
         }
 
-        var decision = await _decision.DecideAsync(MbbDecisionService.SupportedSymbol, cancellationToken);
+        var decision = await _decision.DecideAsync(symbol, cancellationToken);
         var row = new MbbSignalObservation
         {
             Id = Guid.NewGuid(),
-            DecisionId = $"mbb-observe/{canonical}/{signalOpenMs.Value}",
+            DecisionId = DecisionIdFor(symbol, canonical, signalOpenMs.Value),
             RecorderVersion = RecorderVersion,
-            Symbol = MbbDecisionService.SupportedSymbol,
+            Symbol = symbol,
             Timeframe = canonical,
             SignalBarOpenTimeMs = signalBar.OpenTimeMs,
             SignalBarCloseTimeMs = signalBar.CloseTimeMs,
@@ -151,11 +194,16 @@ public sealed class MbbSignalObservationService
         }
         catch (DbUpdateException)
         {
+            // Detach first so a failed Added entity never leaks into later SaveChanges.
+            _db.Entry(row).State = EntityState.Detached;
             var alreadyInserted = await _db.MbbSignalObservations.AsNoTracking()
-                .AnyAsync(o => o.DecisionId == row.DecisionId, cancellationToken);
+                .AnyAsync(o => o.DecisionId == row.DecisionId
+                               || (o.Symbol == symbol
+                                   && o.Timeframe == canonical
+                                   && o.SignalBarOpenTimeMs == signalOpenMs.Value),
+                    cancellationToken);
             if (!alreadyInserted) throw;
             // Concurrent poll inserted the same deterministic key — idempotent no-op.
-            _db.Entry(row).State = EntityState.Detached;
             return new ObserveReport(canonical, "already-recorded", signalOpenMs, decision.Action,
                 row.DecisionId, 0, 0, "concurrent insert; already observed");
         }
@@ -167,14 +215,14 @@ public sealed class MbbSignalObservationService
     /// Resolves fills/outcomes for unresolved actionable observations from
     /// already-stored later bars. Write-once: only NULL fields are updated.
     /// </summary>
-    private async Task<(int Fills, int Outcomes)> ResolvePendingAsync(CancellationToken cancellationToken)
+    private async Task<(int Fills, int Outcomes)> ResolvePendingAsync(string symbol, CancellationToken cancellationToken)
     {
         var nowUtc = _timeProvider.GetUtcNow();
         var fills = 0;
         var outcomes = 0;
 
         var unfilled = await _db.MbbSignalObservations
-            .Where(o => o.Symbol == MbbDecisionService.SupportedSymbol
+            .Where(o => o.Symbol == symbol
                         && o.FillPrice == null
                         && (o.Decision == MbbDecisionActions.BuyMore
                             || o.Decision == MbbDecisionActions.Reduce
@@ -220,7 +268,7 @@ public sealed class MbbSignalObservationService
             await _db.SaveChangesAsync(cancellationToken);
 
         var unresolvedOutcomes = await _db.MbbSignalObservations
-            .Where(o => o.Symbol == MbbDecisionService.SupportedSymbol
+            .Where(o => o.Symbol == symbol
                         && o.FillPrice != null
                         && o.FillBarOpenTimeMs != null
                         && o.OutcomeReturn == null)

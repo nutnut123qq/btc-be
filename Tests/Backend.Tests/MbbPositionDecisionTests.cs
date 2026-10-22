@@ -96,11 +96,16 @@ public class MbbPositionDecisionTests
         await db.SaveChangesAsync();
     }
 
-    private static async Task SeedCashAsync(AppDbContext db, decimal cash)
+    /// <summary>EQX v2 A3: shared pool = cash and MBB declares the whole pool as its buy budget.</summary>
+    private static async Task SeedCashAsync(AppDbContext db, decimal cash, decimal? budget = -1m)
     {
+        db.EquityCashAccounts.Add(new EquityCashAccount
+        {
+            AccountId = MbbDecisionService.CashAccountId, AvailableCashVnd = cash, UpdatedAtUtc = DateTime.UtcNow,
+        });
         db.EquityPositionAccounts.Add(new EquityPositionAccount
         {
-            Symbol = "MBB", AvailableCashVnd = cash, UpdatedAtUtc = DateTime.UtcNow,
+            Symbol = "MBB", BuyBudgetVnd = budget == -1m ? cash : budget, UpdatedAtUtc = DateTime.UtcNow,
         });
         await db.SaveChangesAsync();
     }
@@ -329,6 +334,56 @@ public class MbbPositionDecisionTests
     }
 
     [Fact]
+    public async Task Decide_StopHit_AfterCorporateActionSinceAcquisition_WaitsInsteadOfSelling()
+    {
+        await using var db = NewDb(nameof(Decide_StopHit_AfterCorporateActionSinceAcquisition_WaitsInsteadOfSelling));
+        var acquired = TodayLocal().AddDays(-14);
+        await SeedLotAsync(db, 200, 25_000m, acquired);
+        await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38);
+        // A rights issue went ex after the lot was bought: it is never auto-converted (subscription
+        // unknown), so the real cost basis is not comparable and the stop-loss sell is suppressed
+        // (spec §6, EQX v2 A3). A cash dividend alone no longer blocks (see the cash-dividend test).
+        db.EquityCorporateActions.Add(new EquityCorporateAction
+        {
+            Symbol = "MBB", ExDate = acquired.AddDays(3), ActionType = "rights-issue",
+            SourceUrl = "https://iq.vietcap.com.vn/x", Provenance = "provider:VCI",
+            VerificationStatus = "verified", ShareRatio = 0.2m, AvailableAtUtc = DateTime.UtcNow.AddDays(-10),
+        });
+        // Rejected rows and ex-dates before the acquisition never count.
+        db.EquityCorporateActions.Add(new EquityCorporateAction
+        {
+            Symbol = "MBB", ExDate = acquired.AddDays(4), ActionType = "other",
+            SourceUrl = "https://x", Provenance = "admin-manual", VerificationStatus = "rejected",
+        });
+        await db.SaveChangesAsync();
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.Wait, d.Action);
+        Assert.Contains(MbbDecisionService.CorporateActionReason, d.Reasons);
+        Assert.DoesNotContain("stop-loss-hit", d.Reasons); // the stop level is cost-derived: not evaluated
+        Assert.Empty(d.Triggers);
+        Assert.Null(d.Position.UnrealizedPnlVnd);
+        Assert.Null(d.Position.UnrealizedPnlPct);
+        Assert.False(d.Position.CostBasisComparable);
+        Assert.Equal(MbbDecisionService.CostBasisNotComparableNote, d.Position.CostBasisNote);
+        Assert.Contains("corporate-action-unconverted:rights-issue", d.Reasons);
+        Assert.Null(d.Position.NetProceedsIfSellableNowVnd); // proceeds withheld too (review NEW-2)
+        Assert.Equal(MbbCorporateActionStatuses.Unconverted, Assert.Single(d.Position.CorporateActions!).Status);
+        Assert.Equal(22_000m, d.Position.LastPriceVnd); // price-only facts remain
+
+        // Same setup without an effective corporate action still sells.
+        db.EquityCorporateActions.RemoveRange(db.EquityCorporateActions);
+        db.EquityCorporateActions.Add(new EquityCorporateAction
+        {
+            Symbol = "MBB", ExDate = acquired.AddDays(-3), ActionType = "cash-dividend",
+            SourceUrl = "https://x", Provenance = "provider:VCI", VerificationStatus = "verified",
+        });
+        await db.SaveChangesAsync();
+        Assert.Equal(MbbDecisionActions.Sell, (await NewService(db).DecideAsync()).Action);
+    }
+
+    [Fact]
     public async Task Decide_StopHit_ButNothingSettled_Waits_InsteadOfSelling()
     {
         await using var db = NewDb(nameof(Decide_StopHit_ButNothingSettled_Waits_InsteadOfSelling));
@@ -378,6 +433,32 @@ public class MbbPositionDecisionTests
         Assert.Equal(MbbDecisionActions.Reduce, d.Action);
         Assert.Contains("trend-bearish", d.Reasons);
         Assert.Contains("reduce-threshold-hit", d.Reasons);
+    }
+
+    [Fact]
+    public async Task Decide_BearishAfterCorporateAction_EmitsNoCostDerivedTriggers()
+    {
+        await using var db = NewDb(nameof(Decide_BearishAfterCorporateAction_EmitsNoCostDerivedTriggers));
+        var acquired = TodayLocal().AddDays(-14);
+        await SeedLotAsync(db, 200, 25_000m, acquired);
+        await SeedDailyAsync(db, [24_700m, 24_500m], sma50: 25_000m, rsi14: 40); // bearish, as in the conditional-sell case
+        db.EquityCorporateActions.Add(new EquityCorporateAction
+        {
+            Symbol = "MBB", ExDate = acquired.AddDays(2), ActionType = "stock-dividend",
+            SourceUrl = "https://iq.vietcap.com.vn/x", Provenance = "provider:VCI", VerificationStatus = "unverified",
+        });
+        await db.SaveChangesAsync();
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.Wait, d.Action);
+        Assert.Contains("trend-bearish", d.Reasons); // trend-only information remains
+        Assert.Contains(MbbDecisionService.CorporateActionReason, d.Reasons);
+        Assert.Empty(d.Triggers);                    // no reduce-below-cost / stop-loss levels
+        Assert.Null(d.Invalidation);
+        Assert.False(d.Position.CostBasisComparable);
+        Assert.Null(d.Position.UnrealizedPnlVnd);
+        Assert.Equal("down", d.Market.Trend);
     }
 
     [Fact]
@@ -467,5 +548,245 @@ public class MbbPositionDecisionTests
 
         Assert.Equal(MbbDecisionActions.Wait, d.Action);
         Assert.Contains("no-position", d.Reasons);
+    }
+
+    // --- EQX v2 A3: corporate-action conversion -------------------------------------
+
+    private static async Task SeedActionAsync(AppDbContext db, DateOnly exDate, string type, string verification,
+        decimal? shareRatio = null)
+    {
+        db.EquityCorporateActions.Add(new EquityCorporateAction
+        {
+            Symbol = "MBB", ExDate = exDate, ActionType = type, ShareRatio = shareRatio,
+            SourceUrl = "https://example.com/ca", Provenance = "admin-manual", VerificationStatus = verification,
+            AvailableAtUtc = DateTime.UtcNow.AddDays(-20),
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Decide_VerifiedStockDividend_ConvertsSharesAndCost_ProceedsUseConvertedShares()
+    {
+        await using var db = NewDb(nameof(Decide_VerifiedStockDividend_ConvertsSharesAndCost_ProceedsUseConvertedShares));
+        var acquired = TodayLocal().AddDays(-20);
+        await SeedLotAsync(db, 200, 25_000m, acquired);
+        await SeedActionAsync(db, acquired.AddDays(5), "stock-dividend", "verified", 0.15m); // 100:15
+        db.EquityEvents.Add(new EquityEvent
+        {
+            Symbol = "MBB", EventType = "additional-listing", EventDate = acquired.AddDays(9), Title = "Niêm yết bổ sung",
+            SourceUrl = "https://example.com/listing", Provenance = "admin-manual", AvailableAtUtc = DateTime.UtcNow.AddDays(-5),
+        });
+        await db.SaveChangesAsync();
+        // bearish (22,000 < SMA50 23,000, RSI 38) but neither stop (20,000) nor reduce (~20,870) on the converted cost.
+        await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.True(d.Position.CostBasisComparable);
+        Assert.Equal(230, d.Position.TotalShares);        // floor(200 × 1.15)
+        Assert.Equal(230, d.Position.SellableSharesNow);  // additional listing recorded
+        Assert.Equal(25_000m / 1.15m, d.Position.AvgCostPerShareVnd!.Value, 6);
+        Assert.Equal(60_000m, Math.Round(d.Position.UnrealizedPnlVnd!.Value, 2)); // 230×22,000 − 5,000,000
+        Assert.Equal(VietnamExecutionRules.QuoteSell(230, 22_000m).NetVnd, d.Position.NetProceedsIfSellableNowVnd);
+        Assert.Contains("corporate-action-converted:stock-dividend", d.Reasons);
+        Assert.DoesNotContain(MbbDecisionService.CorporateActionReason, d.Reasons);
+        Assert.Equal(MbbDecisionActions.ConditionalSell, d.Action);
+        Assert.Contains(d.Triggers, t => t.Name == "stop-loss" && Math.Round(t.PriceLevelVnd!.Value) == 20_000m);
+        var app = Assert.Single(d.Position.CorporateActions!);
+        Assert.Equal((MbbCorporateActionStatuses.Converted, 1, 0.15m), (app.Status, app.AffectedLots, app.ShareRatio!.Value));
+
+        // The stored lot stays the user's fact (raw).
+        var stored = await db.EquityPositionLots.SingleAsync();
+        Assert.Equal((200, 25_000m), (stored.Quantity, stored.CostPerShareVnd));
+    }
+
+    [Fact]
+    public async Task Decide_VerifiedBonusShares_WithoutListingEvent_AddedSharesStayPending()
+    {
+        await using var db = NewDb(nameof(Decide_VerifiedBonusShares_WithoutListingEvent_AddedSharesStayPending));
+        var acquired = TodayLocal().AddDays(-20);
+        await SeedLotAsync(db, 200, 25_000m, acquired);
+        await SeedActionAsync(db, acquired.AddDays(5), "bonus-shares", "verified", 0.5m);
+        await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(300, d.Position.TotalShares);
+        Assert.Equal(200, d.Position.SellableSharesNow);
+        Assert.Equal(100, d.Position.PendingShares);
+        Assert.Equal(VietnamExecutionRules.QuoteSell(200, 22_000m).NetVnd, d.Position.NetProceedsIfSellableNowVnd);
+        Assert.Contains(MbbDecisionService.PendingBonusSharesNote, d.Position.CostBasisNote);
+    }
+
+    [Fact]
+    public async Task Decide_UnverifiedStockDividend_Abstains_WithUnconvertedReason()
+    {
+        await using var db = NewDb(nameof(Decide_UnverifiedStockDividend_Abstains_WithUnconvertedReason));
+        var acquired = TodayLocal().AddDays(-20);
+        await SeedLotAsync(db, 200, 25_000m, acquired);
+        await SeedActionAsync(db, acquired.AddDays(5), "stock-dividend", "unverified", 0.15m);
+        await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.False(d.Position.CostBasisComparable);
+        Assert.Contains("corporate-action-unconverted:stock-dividend", d.Reasons);
+        Assert.Equal(200, d.Position.TotalShares); // raw, not converted
+        Assert.Null(d.Position.UnrealizedPnlVnd);
+        Assert.Null(d.Position.NetProceedsIfSellableNowVnd);
+        Assert.Empty(d.Triggers);
+        Assert.Equal("not verified", Assert.Single(d.Position.CorporateActions!).Reason);
+    }
+
+    [Theory]
+    [InlineData("other", "verified", 0.1)]
+    [InlineData("rights-issue", "verified", 0.2)]
+    [InlineData("split", "verified", null)] // verified but no share ratio
+    public async Task Decide_NonConvertibleActions_AreRecognized_AndWithheld(string type, string verification, double? ratio)
+    {
+        await using var db = NewDb(nameof(Decide_NonConvertibleActions_AreRecognized_AndWithheld) + type);
+        var acquired = TodayLocal().AddDays(-20);
+        await SeedLotAsync(db, 200, 25_000m, acquired);
+        await SeedActionAsync(db, acquired.AddDays(5), type, verification, ratio is null ? null : (decimal)ratio.Value);
+        await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Contains($"corporate-action-unconverted:{type}", d.Reasons);
+        Assert.Null(d.Position.UnrealizedPnlVnd);
+        Assert.Null(d.Position.NetProceedsIfSellableNowVnd);
+        Assert.DoesNotContain(d.Triggers, t => t.Name is "stop-loss" or "reduce-below-cost");
+    }
+
+    [Fact]
+    public async Task Decide_CashDividend_NoShareChange_StillSellsOnStop()
+    {
+        await using var db = NewDb(nameof(Decide_CashDividend_NoShareChange_StillSellsOnStop));
+        var acquired = TodayLocal().AddDays(-20);
+        await SeedLotAsync(db, 200, 25_000m, acquired);
+        await SeedActionAsync(db, acquired.AddDays(5), "cash-dividend", "unverified");
+        await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38); // stop 23,000 hit
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.Sell, d.Action);
+        Assert.True(d.Position.CostBasisComparable);
+        Assert.Equal(200, d.Position.TotalShares);
+        Assert.Equal(-600_000m, d.Position.UnrealizedPnlVnd);
+        Assert.Equal(MbbDecisionService.CashDividendNote, d.Position.CostBasisNote);
+        Assert.Equal(MbbCorporateActionStatuses.NoShareChange, Assert.Single(d.Position.CorporateActions!).Status);
+    }
+
+    // --- EQX v2 A3: shared cash pool + buy budget ----------------------------------
+
+    [Fact]
+    public async Task Decide_Bullish_CashUnknown_NoBuyQuantity()
+    {
+        await using var db = NewDb(nameof(Decide_Bullish_CashUnknown_NoBuyQuantity));
+        await SeedLotAsync(db, 200, 18_000m, TodayLocal().AddDays(-14));
+        // Legacy per-symbol cash is ignored for buying power.
+        db.EquityPositionAccounts.Add(new EquityPositionAccount { Symbol = "MBB", AvailableCashVnd = 50_000_000m, UpdatedAtUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        await SeedDailyAsync(db, [19_700m, 20_000m], sma50: 19_000m, rsi14: 60);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.Hold, d.Action);
+        Assert.Contains(MbbDecisionService.ReasonCashUnknown, d.Reasons);
+        Assert.Contains(MbbDecisionService.ReasonBuyBudgetUndeclared, d.Reasons);
+        Assert.DoesNotContain("cash-below-one-lot", d.Reasons);
+        Assert.Null(d.BuyMore);
+        Assert.Equal(EquityCashSources.Unknown, d.Cash!.CashSource);
+    }
+
+    [Fact]
+    public async Task Decide_Bullish_BudgetUndeclared_NoBuyQuantity()
+    {
+        await using var db = NewDb(nameof(Decide_Bullish_BudgetUndeclared_NoBuyQuantity));
+        await SeedLotAsync(db, 200, 18_000m, TodayLocal().AddDays(-14));
+        await SeedCashAsync(db, 5_000_000m, budget: null);
+        await SeedDailyAsync(db, [19_700m, 20_000m], sma50: 19_000m, rsi14: 60);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.Hold, d.Action);
+        Assert.Contains(MbbDecisionService.ReasonBuyBudgetUndeclared, d.Reasons);
+        Assert.DoesNotContain(MbbDecisionService.ReasonCashUnknown, d.Reasons);
+        Assert.DoesNotContain("cash-below-one-lot", d.Reasons);
+        Assert.Null(d.BuyMore);
+        Assert.Equal((5_000_000m, (decimal?)null), (d.Cash!.SharedCashVnd!.Value, d.Cash.BuyBudgetVnd));
+    }
+
+    [Fact]
+    public async Task Decide_Bullish_BudgetsExceedLoweredPool_NoBuyQuantity()
+    {
+        await using var db = NewDb(nameof(Decide_Bullish_BudgetsExceedLoweredPool_NoBuyQuantity));
+        await SeedLotAsync(db, 200, 18_000m, TodayLocal().AddDays(-14));
+        await SeedCashAsync(db, 3_000_000m, budget: 3_000_000m);
+        db.EquityPositionAccounts.Add(new EquityPositionAccount { Symbol = "BID", BuyBudgetVnd = 2_000_000m, UpdatedAtUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        await SeedDailyAsync(db, [19_700m, 20_000m], sma50: 19_000m, rsi14: 60);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.Hold, d.Action);
+        Assert.Contains(MbbDecisionService.ReasonBudgetExceedsCash, d.Reasons);
+        Assert.Null(d.BuyMore);
+        Assert.Equal(5_000_000m, d.Cash!.TotalDeclaredBudgetsVnd);
+        Assert.Null(d.Cash.SpendableVnd);
+    }
+
+    [Fact]
+    public async Task Decide_Bullish_BuyQuantityUsesBudget_NotWholePool()
+    {
+        await using var db = NewDb(nameof(Decide_Bullish_BuyQuantityUsesBudget_NotWholePool));
+        await SeedLotAsync(db, 200, 18_000m, TodayLocal().AddDays(-14));
+        await SeedCashAsync(db, 50_000_000m, budget: 4_100_000m);
+        await SeedDailyAsync(db, [19_700m, 20_000m], sma50: 19_000m, rsi14: 60);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.BuyMore, d.Action);
+        Assert.Equal(200, d.BuyMore!.MaxBuyableShares); // 4,100,000 / 20,030 = 204 -> 2 lots
+        Assert.Equal(4_100_000m, d.Cash!.SpendableVnd);
+    }
+
+    [Fact]
+    public async Task ReplacePosition_SharedPool_NoDoubleCounting_AndBudgetValidation()
+    {
+        await using var db = NewDb(nameof(ReplacePosition_SharedPool_NoDoubleCounting_AndBudgetValidation));
+        var svc = NewService(db);
+        var day = TodayLocal().AddDays(-7).ToString("yyyy-MM-dd");
+
+        // Budget before any pool exists ⇒ CASH_UNKNOWN.
+        var unknown = await Assert.ThrowsAsync<EquityCashValidationException>(() => svc.ReplacePositionAsync(
+            new UpdateMbbPositionRequest([new UpdateMbbPositionLotItem(100, 20_000m, day)], buyBudgetVnd: 1_000_000m)));
+        Assert.Equal("CASH_UNKNOWN", unknown.Code);
+
+        // Legacy availableCashVnd on MBB writes the SHARED pool, documented in the response.
+        var mbb = await svc.ReplacePositionAsync(new UpdateMbbPositionRequest(
+            [new UpdateMbbPositionLotItem(100, 20_000m, day)], availableCashVnd: 10_000_000m, buyBudgetVnd: 6_000_000m));
+        Assert.Equal((10_000_000m, 6_000_000m, EquityCashSources.SharedPool), (mbb.SharedCashVnd!.Value, mbb.BuyBudgetVnd!.Value, mbb.CashSource));
+        Assert.Contains(MbbDecisionService.LegacyCashWriteNote, mbb.CashNotes!);
+
+        // The same 10M is NOT available again for BID: 6M + 5M > 10M.
+        var exceeds = await Assert.ThrowsAsync<EquityCashValidationException>(() => svc.ReplacePositionAsync(
+            new UpdateMbbPositionRequest([], buyBudgetVnd: 5_000_000m), "BID"));
+        Assert.Equal("BUDGET_EXCEEDS_CASH", exceeds.Code);
+        var bid = await svc.ReplacePositionAsync(new UpdateMbbPositionRequest([], buyBudgetVnd: 4_000_000m), "BID");
+        Assert.Equal((10_000_000m, 4_000_000m, 10_000_000m), (bid.AvailableCashVnd, bid.BuyBudgetVnd!.Value, bid.TotalDeclaredBudgetsVnd!.Value));
+        Assert.DoesNotContain(MbbDecisionService.LegacyCashWriteNote, bid.CashNotes!);
+        Assert.Single(await db.EquityCashAccounts.ToListAsync());
+
+        // Lowering the pool below the budgets is allowed and reported.
+        var cash = await svc.SetSharedCashAsync(8_000_000m);
+        Assert.True(cash.BudgetsExceedCash);
+        Assert.Equal(10_000_000m, cash.TotalDeclaredBudgetsVnd);
+        await Assert.ThrowsAsync<ArgumentException>(() => svc.SetSharedCashAsync(-1m));
+
+        // Full replace without buyBudgetVnd clears this symbol's budget (undeclared).
+        var cleared = await svc.ReplacePositionAsync(new UpdateMbbPositionRequest([new UpdateMbbPositionLotItem(100, 20_000m, day)]));
+        Assert.Null(cleared.BuyBudgetVnd);
+        Assert.Equal(8_000_000m, cleared.SharedCashVnd);
     }
 }

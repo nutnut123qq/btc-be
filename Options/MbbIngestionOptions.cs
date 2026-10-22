@@ -51,6 +51,27 @@ public sealed class MbbIngestionOptions
     public string HourlyBackfillStartLocal { get; set; } = "2023-09-11";
 
     /// <summary>
+    /// Per-symbol daily history start (EQX W0 probe, VCI first daily bar). Symbols absent here
+    /// (MBB) use <see cref="DailyBackfillStartLocal"/>. VNINDEX starts 2010-01-01 on purpose:
+    /// VCI serves ~29 malformed OHLC rows around 2005 that must never be ingested.
+    /// </summary>
+    public Dictionary<string, string> DailyBackfillStartBySymbol { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["BID"] = "2014-01-24",
+        ["VCB"] = "2009-06-30",
+        ["CTG"] = "2009-07-16",
+        ["VNINDEX"] = "2010-01-01",
+    };
+
+    /// <summary>
+    /// Page cap for the full-history refetch triggered when an incremental sync sees a stored
+    /// finalized bar change price (VCI/KBS back-adjust the WHOLE history at every ex-date).
+    /// The refetch only writes once every page is in hand, so the DB never mixes two
+    /// adjustment factors; hitting the cap writes nothing and reports an error instead.
+    /// </summary>
+    public int RevisionRefetchMaxPages { get; set; } = 12;
+
+    /// <summary>
     /// Gap-fill floor for incremental sync (local date). Older gaps are still reported by
     /// data quality, but are not retried every sync cycle: configured holiday coverage is
     /// best-effort from 2020, so pre-2020 expected opens can include permanent non-trading
@@ -59,36 +80,28 @@ public sealed class MbbIngestionOptions
     public string GapFillStartLocal { get; set; } = "2020-01-01";
 
     /// <summary>
-    /// Explicit non-trading dates ("yyyy-MM-dd", local Vietnam calendar): public holidays
-    /// and known suspension days. These are NON-gaps by construction — the expected-open
-    /// set excludes them. Best-effort defaults cover the verified hourly window
-    /// (2023-09 -> 2026); an unlisted holiday/suspension surfaces as a pending gap on
-    /// trading weekdays, which is the honest failure mode (visible, fixable here) rather
-    /// than a silently hidden one.
+    /// Copy of these options scoped to one catalog symbol (EQX: one ingestion lane instance per
+    /// symbol). Timeframes are still intersected with the instrument's ActiveTimeframes by the
+    /// services; the daily start comes from <see cref="DailyBackfillStartBySymbol"/> when set.
+    /// For MBB the copy is value-identical to the original (alias parity).
     /// </summary>
-    public string[] NonTradingDates { get; set; } =
-    [
-        // 2020
-        "2020-01-01", "2020-01-23", "2020-01-24", "2020-01-27", "2020-01-28", "2020-01-29",
-        "2020-04-02", "2020-04-30", "2020-05-01", "2020-09-02",
-        // 2021
-        "2021-01-01", "2021-02-10", "2021-02-11", "2021-02-12", "2021-02-15", "2021-02-16",
-        "2021-04-21", "2021-04-30", "2021-05-03", "2021-09-02", "2021-09-03", "2021-12-31",
-        // 2022
-        "2022-01-31", "2022-02-01", "2022-02-02", "2022-02-03", "2022-02-04",
-        "2022-04-11", "2022-05-02", "2022-05-03", "2022-09-01", "2022-09-02",
-        // 2023
-        "2023-01-02", "2023-01-20", "2023-01-23", "2023-01-24", "2023-01-25", "2023-01-26",
-        "2023-05-01", "2023-05-02", "2023-05-03", "2023-09-01", "2023-09-04",
-        // 2024
-        "2024-01-01", "2024-02-08", "2024-02-09", "2024-02-12", "2024-02-13", "2024-02-14",
-        "2024-04-18", "2024-04-29", "2024-04-30", "2024-05-01", "2024-09-02", "2024-09-03",
-        // 2025
-        "2025-01-01", "2025-01-27", "2025-01-28", "2025-01-29", "2025-01-30", "2025-01-31",
-        "2025-02-03", "2025-04-07", "2025-04-30", "2025-05-01", "2025-05-02",
-        "2025-09-01", "2025-09-02",
-        // 2026 (verified horizon through the MBB-00 probe date 2026-10-15)
-        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
-        "2026-04-27", "2026-04-30", "2026-05-01", "2026-09-02",
-    ];
+    public MbbIngestionOptions ForSymbol(string symbol)
+    {
+        var copy = (MbbIngestionOptions)MemberwiseClone();
+        copy.Symbol = symbol;
+        copy.Timeframes = (string[])Timeframes.Clone();
+        copy.NonTradingDates = (string[])NonTradingDates.Clone();
+        copy.DailyBackfillStartBySymbol = new Dictionary<string, string>(DailyBackfillStartBySymbol, StringComparer.OrdinalIgnoreCase);
+        if (DailyBackfillStartBySymbol.TryGetValue(symbol, out var start) && !string.IsNullOrWhiteSpace(start))
+            copy.DailyBackfillStartLocal = start;
+        return copy;
+    }
+
+    /// <summary>
+    /// OVERRIDE ONLY (EQX v2 A1): extra non-trading dates ("yyyy-MM-dd", local Vietnam calendar) unioned on top
+    /// of the canonical calendar file <c>Data/Calendars/vn-hose-non-trading-days.json</c>. Empty by default;
+    /// every override date is reported by data quality / GET /api/market-calendar/vn-hose as unverified and is
+    /// synced to MarketCalendarDays so the Python jobs see the same set. Never add a date only because bars are missing.
+    /// </summary>
+    public string[] NonTradingDates { get; set; } = [];
 }

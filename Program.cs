@@ -97,6 +97,7 @@ builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(Ind
 builder.Services.Configure<CausalSmartMoneyRebuildOptions>(builder.Configuration.GetSection(CausalSmartMoneyRebuildOptions.SectionName));
 builder.Services.Configure<ProductionTimeframeOptions>(builder.Configuration.GetSection(ProductionTimeframeOptions.SectionName));
 builder.Services.Configure<MbbIngestionOptions>(builder.Configuration.GetSection(MbbIngestionOptions.SectionName));
+builder.Services.Configure<EquityIngestionOptions>(builder.Configuration.GetSection(EquityIngestionOptions.SectionName));
 builder.Services.AddSingleton(InstrumentCatalog.Default);
 builder.Services.AddSingleton<ProductionTimeframePolicy>();
 builder.Services.AddSingleton<ProductionSymbolPolicy>();
@@ -187,18 +188,25 @@ builder.Services.AddScoped<IAiContextService, AiContextService>();
 builder.Services.AddScoped<IFuturesMetricsService, FuturesMetricsService>();
 builder.Services.AddScoped<IBtcDominanceService, BtcDominanceService>();
 
-// MBB (HOSE equity) lane — services are registered for explicit/manual invocation only.
-// There is intentionally no hosted worker: MBB stays disabled in InstrumentCatalog /
-// ProductionSymbolPolicy and must not join the production scheduler (MBB-02 contract).
+// MBB/equity (HOSE) lane — services are registered for explicit/manual invocation (admin
+// endpoints) and for EquityIngestionWorker, which is opt-in via EquityIngestion:Enabled.
+// Equities stay disabled in ProductionSymbolPolicy and never join the BTC scheduler.
 builder.Services.AddSingleton(sp =>
     sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MbbIngestionOptions>>().Value);
+// HOSE calendar (EQX v2 A1): canonical checked-in file (MarketCalendar:FilePath overrides the location)
+// ∪ MbbIngestion:NonTradingDates as a reported override. Missing/invalid file fails closed at first use.
 builder.Services.AddSingleton(sp =>
 {
     var opts = sp.GetRequiredService<MbbIngestionOptions>();
-    return new VietnamMarketCalendar(
-        VietnamMarketCalendar.ParseNonTradingDates(opts.NonTradingDates),
-        TimeSpan.FromMinutes(opts.PublishGraceMinutes));
+    var path = MarketCalendarSource.ResolveDefaultPath(builder.Configuration["MarketCalendar:FilePath"]);
+    var source = MarketCalendarSource.LoadFile(path)
+        .WithOverrides(VietnamMarketCalendar.ParseNonTradingDates(opts.NonTradingDates));
+    return VietnamMarketCalendar.FromSource(source, TimeSpan.FromMinutes(opts.PublishGraceMinutes));
 });
+builder.Services.AddSingleton<MarketCalendarSyncStatusStore>();
+// Reference-data sync file → MarketCalendarDays; independent of BackgroundWorkers (not a scheduler).
+if (builder.Configuration.GetValue("MarketCalendar:SyncOnStartup", true))
+    builder.Services.AddHostedService<MarketCalendarSyncHostedService>();
 // Both VCI and KBS sit behind CDNs that may return Content-Encoding: gzip even
 // without an Accept-Encoding request header; AutomaticDecompression makes the
 // handler transparent (probe hit raw gzip bytes -> JSON parse failure).
@@ -217,6 +225,35 @@ builder.Services.AddScoped<MbbDataQualityService>();
 builder.Services.AddScoped<MbbTechnicalRecomputeService>();
 builder.Services.AddScoped<MbbDecisionService>();
 builder.Services.AddScoped<MbbSignalObservationService>();
+// Equity lane (EQX): per-symbol pipeline + data-plane status; the scheduler itself is the
+// EquityIngestionWorker below (BackgroundWorkers-gated, EquityIngestion:Enabled=false default).
+builder.Services.AddSingleton<EquityIngestionStatusStore>();
+builder.Services.AddScoped<IEquitySessionPostProcessor, EquitySessionPostProcessor>();
+builder.Services.AddScoped<IEquityLanePipeline, EquityLanePipeline>();
+builder.Services.AddScoped<EquityBaseRatesService>();
+builder.Services.AddScoped<EquityForecastJournalService>();
+builder.Services.AddScoped<EquityContextService>();
+builder.Services.AddScoped<EquityContextCollector>();
+builder.Services.AddScoped<EquityDossierService>();
+builder.Services.AddScoped<EquityLlmRunService>();
+// EQX v2 C2/B: research readiness/snapshot, session research notes, issuer source documents.
+// EQX v3: document pipeline runs/facts/coverage. The runner is also a hosted service only so that host
+// shutdown kills supervised pipeline process trees (it schedules nothing).
+builder.Services.AddEquityResearch();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<EquityPipelineProcessRunner>());
+builder.Services.Configure<EquityLlmOptions>(builder.Configuration.GetSection(EquityLlmOptions.SectionName));
+// Dedicated client for the (slow) equity LLM run: its timeout must exceed the AI's whole-run deadline EQUITY_LLM_TOTAL_TIMEOUT_S (default 240 s) and stay below the FE proxy (290 s).
+builder.Services.AddHttpClient(EquityLlmOptions.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["AiService:BaseUrl"] ?? "http://127.0.0.1:8000");
+    var seconds = builder.Configuration.GetValue("EquityLlm:RequestTimeoutSeconds", 270);
+    client.Timeout = TimeSpan.FromSeconds(Math.Clamp(seconds, 30, 3600));
+});
+builder.Services.AddHttpClient<IEquityContextSource, HttpEquityContextSource>(client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
+    });
 builder.Services.AddHttpClient("BinanceFuturesTestnet", client =>
 {
     var baseUrl = builder.Configuration["BinanceTestnet:BaseUrl"] ?? "https://testnet.binancefuture.com";
@@ -254,6 +291,16 @@ if (builder.Configuration.GetValue("BackgroundWorkers:Enabled", true))
     builder.Services.AddHostedService<EmbeddingBackfillWorker>();
     builder.Services.AddHostedService<MlDatasetBuilder>();
     builder.Services.AddHostedService<WindowDatasetBuilder>();
+    // Exits immediately unless EquityIngestion:Enabled=true (not enabled in any appsettings).
+    builder.Services.AddHostedService<EquityIngestionWorker>();
+    // Exits immediately unless EquityDocuments:PipelineEnabled=true (not enabled in any appsettings).
+    builder.Services.AddHostedService<EquityDocumentPipelineWorker>();
+}
+else if (builder.Configuration.GetValue("EquityDocuments:WorkerStandalone", false))
+{
+    // Explicit opt-in to run ONLY the document worker (local/ops verification) without starting every other
+    // background job above; it still exits immediately unless EquityDocuments:PipelineEnabled=true.
+    builder.Services.AddHostedService<EquityDocumentPipelineWorker>();
 }
 
 // CORS: Next (3000), Flutter web (port ngẫu nhiên ví dụ 58340), Swagger — cùng máy thì origin hay đổi port.

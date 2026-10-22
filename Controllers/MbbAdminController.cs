@@ -17,6 +17,10 @@ namespace Backend.Controllers;
 /// a Disabled status / per-timeframe error — a truthful answer, not a silent
 /// no-op. Recompute always works off stored InstrumentCandles regardless of the
 /// ingestion flag.
+///
+/// EQX: fixed-MBB alias of /api/equities/{symbol}/admin/* over the same services. Every
+/// action holds the MBB <see cref="EquityLaneLocks"/> lease (shared with the equities
+/// routes and EquityIngestionWorker) and answers 409 LANE_BUSY while the lane is in use.
 /// </summary>
 [ApiController]
 [Route("api/mbb/admin")]
@@ -27,13 +31,16 @@ public sealed class MbbAdminController : ControllerBase
     private readonly MbbTechnicalRecomputeService _recompute;
     private readonly MbbSignalObservationService _observations;
     private readonly InstrumentDescriptor _instrument;
+    private readonly EquityForecastJournalService? _journal;
 
     public MbbAdminController(
         MbbIngestionService ingestion,
         MbbTechnicalRecomputeService recompute,
         MbbSignalObservationService observations,
+        EquityForecastJournalService? journal = null,
         InstrumentCatalog? instruments = null)
     {
+        _journal = journal;
         _ingestion = ingestion;
         _recompute = recompute;
         _observations = observations;
@@ -48,8 +55,11 @@ public sealed class MbbAdminController : ControllerBase
     [HttpPost("sync")]
     [ProducesResponseType(typeof(MbbSyncReport), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<MbbSyncReport>> Sync(CancellationToken cancellationToken)
     {
+        using var lease = EquityLaneLocks.TryAcquire(_instrument.Symbol);
+        if (lease is null) return EquityLaneHttp.LaneBusy(this, _instrument.Symbol);
         return Ok(await _ingestion.SyncAsync(cancellationToken));
     }
 
@@ -61,6 +71,7 @@ public sealed class MbbAdminController : ControllerBase
     /// </summary>
     [HttpPost("backfill")]
     [ProducesResponseType(typeof(MbbTimeframeSync), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Backfill(
@@ -76,6 +87,8 @@ public sealed class MbbAdminController : ControllerBase
         if (!TryParseLocalDate(to, out var toDate, out var toError))
             return BadRequest(toError);
 
+        using var lease = EquityLaneLocks.TryAcquire(_instrument.Symbol);
+        if (lease is null) return EquityLaneHttp.LaneBusy(this, _instrument.Symbol);
         try
         {
             return Ok(await _ingestion.BackfillAsync(tf, fromDate, toDate, cancellationToken));
@@ -99,6 +112,7 @@ public sealed class MbbAdminController : ControllerBase
     /// </summary>
     [HttpPost("recompute")]
     [ProducesResponseType(typeof(IReadOnlyList<MbbTechnicalRecomputeReport>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<IReadOnlyList<MbbTechnicalRecomputeReport>>> Recompute(
@@ -117,6 +131,8 @@ public sealed class MbbAdminController : ControllerBase
             timeframes = new[] { tf };
         }
 
+        using var lease = EquityLaneLocks.TryAcquire(_instrument.Symbol);
+        if (lease is null) return EquityLaneHttp.LaneBusy(this, _instrument.Symbol);
         var reports = new List<MbbTechnicalRecomputeReport>(timeframes.Count);
         foreach (var tf in timeframes)
         {
@@ -146,6 +162,7 @@ public sealed class MbbAdminController : ControllerBase
     /// </summary>
     [HttpPost("observe")]
     [ProducesResponseType(typeof(MbbSignalObservationService.ObserveReport), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Observe(
@@ -155,9 +172,15 @@ public sealed class MbbAdminController : ControllerBase
         if (!TryResolveTimeframe(timeframe, out var tf))
             return InvalidTimeframe(timeframe);
 
+        using var lease = EquityLaneLocks.TryAcquire(_instrument.Symbol);
+        if (lease is null) return EquityLaneHttp.LaneBusy(this, _instrument.Symbol);
         try
         {
-            return Ok(await _observations.RecordAsync(tf, cancellationToken));
+            var report = await _observations.RecordAsync(_instrument.Symbol, tf, cancellationToken);
+            return Ok(_journal is null ? report : report with
+            {
+                ForecastOutcomesResolved = await _journal.ResolveOutcomesAsync(_instrument.Symbol, cancellationToken),
+            });
         }
         catch (ArgumentException ex)
         {

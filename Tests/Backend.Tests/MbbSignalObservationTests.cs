@@ -108,7 +108,9 @@ public class MbbSignalObservationTests
         Assert.Equal("1d", row.Timeframe);
         Assert.Equal(signal, row.SignalBarOpenTimeMs);
         Assert.True(row.AvailableTimeMs >= row.SignalBarCloseTimeMs);
-        Assert.Equal($"mbb-observe/1d/{signal}", row.DecisionId);
+        // EQX: new rows use the multi-symbol id + recorder v2 (legacy mbb-observe rows untouched).
+        Assert.Equal($"equity-observe/MBB/1d/{signal}", row.DecisionId);
+        Assert.Equal("equity-observe-v2", row.RecorderVersion);
         Assert.Equal("wait", row.Decision); // no position seeded → wait/no-position
         Assert.Null(row.FillPrice);
         Assert.False(string.IsNullOrWhiteSpace(row.DecisionPayloadJson));

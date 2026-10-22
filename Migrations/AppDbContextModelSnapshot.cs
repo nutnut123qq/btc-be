@@ -1199,6 +1199,763 @@ namespace Backend.Migrations
                     b.ToTable("EnsemblePredictionRecords");
                 });
 
+            modelBuilder.Entity("Backend.Data.EquityCashAccount", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal?>("AvailableCashVnd")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId")
+                        .IsUnique();
+
+                    b.ToTable("EquityCashAccounts", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityCashAccounts_Cash", "\"AvailableCashVnd\" IS NULL OR \"AvailableCashVnd\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityCorporateAction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal?>("AdjustmentFactor")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateOnly?>("AnnouncedDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("AvailableAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("CashPerShareVnd")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("ExDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RatioText")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateOnly?>("RecordDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("ShareRatio")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "ExDate", "ActionType")
+                        .IsUnique();
+
+                    b.ToTable("EquityCorporateActions", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityCorporateActions_Factor", "\"AdjustmentFactor\" IS NULL OR \"AdjustmentFactor\" > 0");
+
+                            t.HasCheckConstraint("CK_EquityCorporateActions_ShareRatio", "\"ShareRatio\" IS NULL OR \"ShareRatio\" > 0");
+
+                            t.HasCheckConstraint("CK_EquityCorporateActions_Source", "\"SourceUrl\" ~ '^https?://' AND NULLIF(BTRIM(\"Provenance\"), '') IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_EquityCorporateActions_Type", "\"ActionType\" IN ('cash-dividend','stock-dividend','bonus-shares','rights-issue','split','other')");
+
+                            t.HasCheckConstraint("CK_EquityCorporateActions_Verification", "\"VerificationStatus\" IN ('unverified','verified','rejected')");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityDocumentExtraction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ArtifactPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ExtractorVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTime>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("PageCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PagesOcr")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("QualityJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId", "ExtractorVersion")
+                        .IsUnique();
+
+                    b.ToTable("EquityDocumentExtractions", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityDocumentExtractions_Enums", "\"Method\" IN ('text-layer','ocr','mixed') AND \"Status\" IN ('succeeded','partial','failed')");
+
+                            t.HasCheckConstraint("CK_EquityDocumentExtractions_Pages", "\"PageCount\" >= 0 AND \"PagesOcr\" >= 0 AND \"PagesOcr\" <= \"PageCount\" AND \"FinishedAtUtc\" >= \"StartedAtUtc\"");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AvailableAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("EventDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "EventType", "EventDate", "Title")
+                        .IsUnique();
+
+                    b.ToTable("EquityEvents", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityEvents_Source", "\"SourceUrl\" ~ '^https?://' AND NULLIF(BTRIM(\"Provenance\"), '') IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_EquityEvents_Type", "\"EventType\" IN ('earnings','agm','additional-listing','other')");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityFinancialFact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AvailableAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ColumnRole")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Consolidation")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DerivationJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ExtractionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FactKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("FiscalYear")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDerived")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MetricCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("MetricDefinitionVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("MetricGroup")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("PageNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("PeriodEnd")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PeriodLabel")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateOnly?>("PeriodStart")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PeriodType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("RawLabel")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RawUnitText")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RawValueText")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("Scale")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Statement")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("ValidationJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("ExtractionId");
+
+                    b.HasIndex("FactKey")
+                        .IsUnique();
+
+                    b.HasIndex("Symbol", "MetricCode", "PeriodType", "PeriodEnd");
+
+                    b.ToTable("EquityFinancialFacts", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityFinancialFacts_Enums", "\"MetricGroup\" IN ('balance-sheet','income-statement','cash-flow','credit-quality','deposits-funding','capital','shares') AND \"Statement\" IN ('balance-sheet','income-statement','cash-flow','note','derived') AND \"PeriodType\" IN ('quarter','ytd','half-year','annual','point-in-time') AND \"Consolidation\" IN ('consolidated','separate') AND \"Unit\" IN ('VND','percent','shares','count','ratio') AND \"ColumnRole\" IN ('current','comparative','cumulative-current','cumulative-comparative','derived') AND \"Status\" IN ('extracted','validated','review-needed','quarantined')");
+
+                            t.HasCheckConstraint("CK_EquityFinancialFacts_Period", "\"PeriodLabel\" ~ '^[0-9]{4}(Q[1-4]|H[12]|-9M|-6M|-3M)?$' AND (\"PeriodStart\" IS NULL OR \"PeriodStart\" <= \"PeriodEnd\") AND \"Scale\" > 0");
+
+                            t.HasCheckConstraint("CK_EquityFinancialFacts_Provenance", "(\"IsDerived\" AND \"DerivationJson\" IS NOT NULL AND \"ExtractionId\" IS NULL AND \"ColumnRole\" = 'derived') OR (NOT \"IsDerived\" AND \"DerivationJson\" IS NULL AND \"ExtractionId\" IS NOT NULL AND \"PageNumber\" IS NOT NULL AND \"PageNumber\" > 0 AND NULLIF(BTRIM(\"RawValueText\"), '') IS NOT NULL AND \"ColumnRole\" <> 'derived')");
+
+                            t.HasCheckConstraint("CK_EquityFinancialFacts_Scope", "\"Symbol\" IN ('MBB','BID')");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityForecastRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AbstainReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("Abstained")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ConfigId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("EntryBarOpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("EntryPrice")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("ForecastId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("HorizonSessions")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("InputSnapshotSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("LlmRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MethodVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("OutcomeLabel")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("OutcomeResolvedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("OutcomeReturnNet")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ProbStopFirst")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("ProbTargetFirst")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("PromptVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid?>("ResearchNoteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("ResolvedBarOpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SchemaVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<long>("SignalBarCloseTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("SignalBarOpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<double>("StopPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<double>("TargetPct")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<bool>("Validated")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ForecastId")
+                        .IsUnique();
+
+                    b.HasIndex("ResearchNoteId");
+
+                    b.HasIndex("Symbol", "ConfigId", "SignalBarOpenTimeMs");
+
+                    b.ToTable("EquityForecastRecords", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityForecastRecords_Abstention", "NOT \"Abstained\" OR (\"ProbTargetFirst\" IS NULL AND \"ProbStopFirst\" IS NULL AND NULLIF(BTRIM(\"AbstainReason\"), '') IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_EquityForecastRecords_Chronology", "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\" AND \"AvailableTimeMs\" >= \"SignalBarCloseTimeMs\"");
+
+                            t.HasCheckConstraint("CK_EquityForecastRecords_LlmUnvalidated", "\"Source\" <> 'llm-judge' OR (NOT \"Validated\" AND \"LlmRunId\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_EquityForecastRecords_OutcomeCoherence", "(\"EntryBarOpenTimeMs\" IS NULL AND \"EntryPrice\" IS NULL AND \"OutcomeLabel\" IS NULL AND \"OutcomeReturnNet\" IS NULL AND \"ResolvedBarOpenTimeMs\" IS NULL AND \"OutcomeResolvedAtUtc\" IS NULL) OR (\"OutcomeLabel\" IN ('target-first','stop-first','timeout') AND \"EntryPrice\" > 0 AND \"OutcomeReturnNet\" IS NOT NULL AND \"EntryBarOpenTimeMs\" IS NOT NULL AND \"ResolvedBarOpenTimeMs\" IS NOT NULL AND \"EntryBarOpenTimeMs\" > \"SignalBarOpenTimeMs\" AND \"EntryBarOpenTimeMs\" >= \"AvailableTimeMs\" AND \"ResolvedBarOpenTimeMs\" >= \"EntryBarOpenTimeMs\" AND \"OutcomeResolvedAtUtc\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_EquityForecastRecords_Probability", "(\"ProbTargetFirst\" IS NULL OR (\"ProbTargetFirst\" >= 0 AND \"ProbTargetFirst\" <= 1)) AND (\"ProbStopFirst\" IS NULL OR (\"ProbStopFirst\" >= 0 AND \"ProbStopFirst\" <= 1)) AND (\"ProbTargetFirst\" IS NULL OR \"ProbStopFirst\" IS NULL OR \"ProbTargetFirst\" + \"ProbStopFirst\" <= 1.000001)");
+
+                            t.HasCheckConstraint("CK_EquityForecastRecords_Scope", "\"Symbol\" IN ('MBB','BID') AND \"Timeframe\" = '1d' AND \"HorizonSessions\" > 0");
+
+                            t.HasCheckConstraint("CK_EquityForecastRecords_SessionUnvalidated", "\"Source\" <> 'session-research' OR (NOT \"Validated\" AND \"ResearchNoteId\" IS NOT NULL AND NULLIF(BTRIM(\"MethodVersion\"), '') IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_EquityForecastRecords_Source", "\"Source\" IN ('quant-knn','llm-judge','session-research')");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityFundamental", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AsOfUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("AvailableAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Metric")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<DateOnly>("PeriodEndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateOnly?>("PublishedDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceLocation")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("UnavailableReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("Value")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("Symbol", "Period", "Metric", "Source")
+                        .IsUnique();
+
+                    b.ToTable("EquityFundamentals", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityFundamentals_Metric", "\"Metric\" IN ('BVPS','PB','ROE','NIM','NPL','COVERAGE','LLR','CAR','LDR','TOTAL_ASSETS','NET_PROFIT','EQUITY')");
+
+                            t.HasCheckConstraint("CK_EquityFundamentals_Period", "\"Period\" ~ '^[0-9]{4}Q[1-4]$'");
+
+                            t.HasCheckConstraint("CK_EquityFundamentals_Source", "\"SourceUrl\" ~ '^https?://' AND NULLIF(BTRIM(\"Provenance\"), '') IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_EquityFundamentals_Unit", "\"Unit\" IN ('VND','ratio','percent')");
+
+                            t.HasCheckConstraint("CK_EquityFundamentals_ValueOrReason", "\"Value\" IS NOT NULL OR NULLIF(BTRIM(\"UnavailableReason\"), '') IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityLlmRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("DurationMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("InputSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("InputSnapshotSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("JudgeModel")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("OutputJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("PromptVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ResearchModel")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<long>("SignalBarOpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("UsageJson")
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "CreatedAtUtc");
+
+                    b.ToTable("EquityLlmRuns", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityLlmRuns_Output", "\"Status\" <> 'succeeded' OR \"OutputJson\" IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_EquityLlmRuns_Scope", "\"Symbol\" IN ('MBB','BID')");
+
+                            t.HasCheckConstraint("CK_EquityLlmRuns_Status", "\"Status\" IN ('succeeded','failed','unavailable')");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityPipelineRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CheckpointJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("CountsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("HeartbeatAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LogTail")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EquityPipelineRuns_OneRunningPerSymbol")
+                        .HasFilter("\"Status\" = 'running'");
+
+                    b.HasIndex("Symbol", "StartedAtUtc");
+
+                    b.ToTable("EquityPipelineRuns", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityPipelineRuns_Chronology", "\"HeartbeatAtUtc\" >= \"StartedAtUtc\" AND (\"FinishedAtUtc\" IS NULL OR \"FinishedAtUtc\" >= \"StartedAtUtc\") AND ((\"Status\" = 'running') = (\"FinishedAtUtc\" IS NULL))");
+
+                            t.HasCheckConstraint("CK_EquityPipelineRuns_Enums", "\"Mode\" IN ('backfill','incremental') AND \"Trigger\" IN ('worker','admin','cli') AND \"Status\" IN ('running','succeeded','partial','failed','cancelled') AND \"Symbol\" IN ('MBB','BID')");
+                        });
+                });
+
             modelBuilder.Entity("Backend.Data.EquityPositionAccount", b =>
                 {
                     b.Property<long>("Id")
@@ -1208,6 +1965,9 @@ namespace Backend.Migrations
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<decimal>("AvailableCashVnd")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("BuyBudgetVnd")
                         .HasColumnType("numeric");
 
                     b.Property<string>("Symbol")
@@ -1264,6 +2024,337 @@ namespace Backend.Migrations
                     b.HasIndex("Symbol", "AcquireDate");
 
                     b.ToTable("EquityPositionLots");
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityResearchNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActionBasis")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("ActionView")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("AvailableTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("BodyJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("HorizonSessions")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("MethodVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("NoteId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("RequestedAsOfUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("SignalBarCloseTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("SignalBarOpenTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SkillVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SnapshotId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SnapshotSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NoteId")
+                        .IsUnique();
+
+                    b.HasIndex("Symbol", "SignalBarOpenTimeMs");
+
+                    b.ToTable("EquityResearchNotes", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquityResearchNotes_ActionBasis", "\"ActionView\" = 'none' OR \"ActionBasis\" <> 'insufficient-input'");
+
+                            t.HasCheckConstraint("CK_EquityResearchNotes_Chronology", "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\" AND (\"Mode\" <> 'forward' OR \"AvailableTimeMs\" >= \"SignalBarCloseTimeMs\")");
+
+                            t.HasCheckConstraint("CK_EquityResearchNotes_Enums", "\"Direction\" IN ('up','down','sideways','no-view') AND \"ActionView\" IN ('buy-more','hold','reduce','sell','wait','none') AND \"ActionBasis\" IN ('position-aware','market-only','insufficient-input')");
+
+                            t.HasCheckConstraint("CK_EquityResearchNotes_Provenance", "\"SnapshotSha256\" ~ '^[0-9a-f]{64}$' AND NULLIF(BTRIM(\"SnapshotId\"), '') IS NOT NULL AND NULLIF(BTRIM(\"SkillVersion\"), '') IS NOT NULL AND NULLIF(BTRIM(\"MethodVersion\"), '') IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_EquityResearchNotes_Scope", "\"Symbol\" IN ('MBB','BID') AND \"Mode\" IN ('forward','retrospective') AND \"HorizonSessions\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquitySourceAttempt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AttemptedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Consolidation")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("DocType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("TargetPeriod")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Url")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("Symbol", "TargetPeriod", "AttemptedAtUtc");
+
+                    b.ToTable("EquitySourceAttempts", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquitySourceAttempts_Outcome", "\"Outcome\" IN ('listed','not-listed','downloaded','unchanged','changed','http-error','rate-limited','timeout','parse-error','budget-exhausted','too-large')");
+
+                            t.HasCheckConstraint("CK_EquitySourceAttempts_Scope", "\"Symbol\" IN ('MBB','BID')");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquitySourceDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AuditStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("ByteSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Consolidation")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("ContentSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DocType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Entity")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ExtractionJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("FetchedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("FirstSeenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReportingPeriod")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("SupersedesDocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "ContentSha256")
+                        .IsUnique();
+
+                    b.HasIndex("Symbol", "ReportingPeriod");
+
+                    b.ToTable("EquitySourceDocuments", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquitySourceDocuments_Enums", "\"Consolidation\" IN ('consolidated','separate','unknown') AND \"AuditStatus\" IN ('audited','reviewed','unaudited','unknown')");
+
+                            t.HasCheckConstraint("CK_EquitySourceDocuments_Period", "\"ReportingPeriod\" IS NULL OR \"ReportingPeriod\" ~ '^[0-9]{4}(Q[1-4]|H[12])?$'");
+
+                            t.HasCheckConstraint("CK_EquitySourceDocuments_Provenance", "\"SourceUrl\" ~ '^https?://' AND \"ContentSha256\" ~ '^[0-9a-f]{64}$' AND NULLIF(BTRIM(\"StoragePath\"), '') IS NOT NULL AND NULLIF(BTRIM(\"Provider\"), '') IS NOT NULL AND \"ByteSize\" > 0 AND \"FetchedAtUtc\" >= \"FirstSeenAtUtc\"");
+
+                            t.HasCheckConstraint("CK_EquitySourceDocuments_Type", "\"DocType\" IN ('financial-statement','investor-presentation','disclosure','annual-report','other')");
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Data.EquitySourceDocumentLocation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("FirstSeenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HttpEtag")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("HttpLastModified")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("LastFetchedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastSeenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("ListingDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ListingTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceUrl");
+
+                    b.HasIndex("DocumentId", "SourceUrl")
+                        .IsUnique();
+
+                    b.ToTable("EquitySourceDocumentLocations", t =>
+                        {
+                            t.HasCheckConstraint("CK_EquitySourceDocumentLocations_Url", "\"SourceUrl\" ~ '^https?://' AND \"LastSeenAtUtc\" >= \"FirstSeenAtUtc\"");
+                        });
                 });
 
             modelBuilder.Entity("Backend.Data.FuturesMetric", b =>
@@ -1675,6 +2766,74 @@ namespace Backend.Migrations
                     b.ToTable("LiquidationSnapshots");
                 });
 
+            modelBuilder.Entity("Backend.Data.MarketCalendarDay", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CalendarVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateOnly>("CoverageFromDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("CoverageToDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SourceTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("SourceUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Venue")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Verification")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Venue", "Date")
+                        .IsUnique();
+
+                    b.ToTable("MarketCalendarDays", t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCalendarDays_Coverage", "\"CoverageFromDate\" <= \"Date\" AND \"Date\" <= \"CoverageToDate\"");
+
+                            t.HasCheckConstraint("CK_MarketCalendarDays_Kind", "\"Kind\" IN ('market-holiday','market-closure')");
+
+                            t.HasCheckConstraint("CK_MarketCalendarDays_Verification", "(\"Verification\" = 'verified' AND \"SourceUrl\" ~ '^https?://') OR \"Verification\" = 'unverified-legacy'");
+                        });
+                });
+
             modelBuilder.Entity("Backend.Data.MarketMetrics", b =>
                 {
                     b.Property<long>("Id")
@@ -1911,13 +3070,13 @@ namespace Backend.Migrations
 
                             t.HasCheckConstraint("CK_MbbSignalObservations_Decision", "\"Decision\" IN ('hold','wait','buy-more','reduce','sell','conditional-sell')");
 
-                            t.HasCheckConstraint("CK_MbbSignalObservations_FillCoherence", "(\"FillPrice\" IS NULL AND \"FillObservedAtUtc\" IS NULL AND \"FillSource\" IS NULL AND \"FillBarOpenTimeMs\" IS NULL) OR (\"Decision\" IN ('buy-more','reduce','sell','conditional-sell') AND \"FillPrice\" > 0 AND \"FillObservedAtUtc\" >= \"ObservedAtUtc\" AND NULLIF(BTRIM(\"FillSource\"), '') IS NOT NULL AND \"FillBarOpenTimeMs\" >= \"AvailableTimeMs\")");
+                            t.HasCheckConstraint("CK_MbbSignalObservations_FillCoherence", "(\"FillPrice\" IS NULL AND \"FillObservedAtUtc\" IS NULL AND \"FillSource\" IS NULL AND \"FillBarOpenTimeMs\" IS NULL) OR (\"FillPrice\" IS NOT NULL AND \"FillObservedAtUtc\" IS NOT NULL AND \"FillBarOpenTimeMs\" IS NOT NULL AND \"Decision\" IN ('buy-more','reduce','sell','conditional-sell') AND \"FillPrice\" > 0 AND \"FillObservedAtUtc\" >= \"ObservedAtUtc\" AND NULLIF(BTRIM(\"FillSource\"), '') IS NOT NULL AND \"FillBarOpenTimeMs\" >= \"AvailableTimeMs\")");
 
-                            t.HasCheckConstraint("CK_MbbSignalObservations_OutcomeCoherence", "(\"OutcomeReturn\" IS NULL AND \"OutcomeObservedAtUtc\" IS NULL AND \"OutcomeHorizon\" IS NULL) OR (\"FillPrice\" IS NOT NULL AND \"OutcomeReturn\" IS NOT NULL AND \"OutcomeObservedAtUtc\" >= \"FillObservedAtUtc\" AND NULLIF(BTRIM(\"OutcomeHorizon\"), '') IS NOT NULL)");
+                            t.HasCheckConstraint("CK_MbbSignalObservations_OutcomeCoherence", "(\"OutcomeReturn\" IS NULL AND \"OutcomeObservedAtUtc\" IS NULL AND \"OutcomeHorizon\" IS NULL) OR (\"FillPrice\" IS NOT NULL AND \"FillObservedAtUtc\" IS NOT NULL AND \"OutcomeReturn\" IS NOT NULL AND \"OutcomeObservedAtUtc\" IS NOT NULL AND \"OutcomeObservedAtUtc\" >= \"FillObservedAtUtc\" AND NULLIF(BTRIM(\"OutcomeHorizon\"), '') IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_MbbSignalObservations_ProspectiveClock", "ABS(\"AvailableTimeMs\" - (EXTRACT(EPOCH FROM \"ObservedAtUtc\") * 1000)::bigint) <= 1000");
 
-                            t.HasCheckConstraint("CK_MbbSignalObservations_Scope", "\"Symbol\" = 'MBB' AND \"Timeframe\" IN ('1h','1d')");
+                            t.HasCheckConstraint("CK_MbbSignalObservations_Scope", "(\"Symbol\" = 'MBB' AND \"Timeframe\" IN ('1h','1d')) OR (\"Symbol\" = 'BID' AND \"Timeframe\" = '1d')");
 
                             t.HasCheckConstraint("CK_MbbSignalObservations_SignalBar", "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\"");
                         });
@@ -3378,6 +4537,46 @@ namespace Backend.Migrations
                         .IsRequired();
 
                     b.Navigation("BacktestRun");
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityDocumentExtraction", b =>
+                {
+                    b.HasOne("Backend.Data.EquitySourceDocument", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityFinancialFact", b =>
+                {
+                    b.HasOne("Backend.Data.EquitySourceDocument", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Backend.Data.EquityDocumentExtraction", null)
+                        .WithMany()
+                        .HasForeignKey("ExtractionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Backend.Data.EquityFundamental", b =>
+                {
+                    b.HasOne("Backend.Data.EquitySourceDocument", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Backend.Data.EquitySourceDocumentLocation", b =>
+                {
+                    b.HasOne("Backend.Data.EquitySourceDocument", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Backend.Data.NewsChunk", b =>

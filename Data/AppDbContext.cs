@@ -57,6 +57,20 @@ public class AppDbContext : DbContext
     public DbSet<EquityPositionLot> EquityPositionLots => Set<EquityPositionLot>();
     public DbSet<EquityPositionAccount> EquityPositionAccounts => Set<EquityPositionAccount>();
     public DbSet<MbbSignalObservation> MbbSignalObservations => Set<MbbSignalObservation>();
+    public DbSet<EquityCorporateAction> EquityCorporateActions => Set<EquityCorporateAction>();
+    public DbSet<EquityEvent> EquityEvents => Set<EquityEvent>();
+    public DbSet<EquityFundamental> EquityFundamentals => Set<EquityFundamental>();
+    public DbSet<EquityForecastRecord> EquityForecastRecords => Set<EquityForecastRecord>();
+    public DbSet<EquityLlmRun> EquityLlmRuns => Set<EquityLlmRun>();
+    public DbSet<MarketCalendarDay> MarketCalendarDays => Set<MarketCalendarDay>();
+    public DbSet<EquityCashAccount> EquityCashAccounts => Set<EquityCashAccount>();
+    public DbSet<EquitySourceDocument> EquitySourceDocuments => Set<EquitySourceDocument>();
+    public DbSet<EquityResearchNote> EquityResearchNotes => Set<EquityResearchNote>();
+    public DbSet<EquitySourceDocumentLocation> EquitySourceDocumentLocations => Set<EquitySourceDocumentLocation>();
+    public DbSet<EquitySourceAttempt> EquitySourceAttempts => Set<EquitySourceAttempt>();
+    public DbSet<EquityDocumentExtraction> EquityDocumentExtractions => Set<EquityDocumentExtraction>();
+    public DbSet<EquityFinancialFact> EquityFinancialFacts => Set<EquityFinancialFact>();
+    public DbSet<EquityPipelineRun> EquityPipelineRuns => Set<EquityPipelineRun>();
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -282,8 +296,10 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.Symbol, x.Timeframe, x.SignalBarOpenTimeMs }).IsUnique();
             e.ToTable(t =>
             {
+                // Decision-capable equities and their declared timeframes (EQX spec §3):
+                // MBB 1h/1d, BID daily-only. A new symbol needs a new migration.
                 t.HasCheckConstraint("CK_MbbSignalObservations_Scope",
-                    "\"Symbol\" = 'MBB' AND \"Timeframe\" IN ('1h','1d')");
+                    "(\"Symbol\" = 'MBB' AND \"Timeframe\" IN ('1h','1d')) OR (\"Symbol\" = 'BID' AND \"Timeframe\" = '1d')");
                 t.HasCheckConstraint("CK_MbbSignalObservations_SignalBar",
                     "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\"");
                 t.HasCheckConstraint("CK_MbbSignalObservations_Chronology",
@@ -293,14 +309,364 @@ public class AppDbContext : DbContext
                 t.HasCheckConstraint("CK_MbbSignalObservations_ProspectiveClock",
                     "ABS(\"AvailableTimeMs\" - (EXTRACT(EPOCH FROM \"ObservedAtUtc\") * 1000)::bigint) <= 1000");
                 t.HasCheckConstraint("CK_MbbSignalObservations_FillCoherence",
-                    "(\"FillPrice\" IS NULL AND \"FillObservedAtUtc\" IS NULL AND \"FillSource\" IS NULL AND \"FillBarOpenTimeMs\" IS NULL) OR (" +
-                    "\"Decision\" IN ('buy-more','reduce','sell','conditional-sell') AND \"FillPrice\" > 0 " +
-                    "AND \"FillObservedAtUtc\" >= \"ObservedAtUtc\" AND NULLIF(BTRIM(\"FillSource\"), '') IS NOT NULL " +
-                    "AND \"FillBarOpenTimeMs\" >= \"AvailableTimeMs\")");
+                    "(\"FillPrice\" IS NULL AND \"FillObservedAtUtc\" IS NULL AND \"FillSource\" IS NULL AND \"FillBarOpenTimeMs\" IS NULL) OR (\"FillPrice\" IS NOT NULL AND \"FillObservedAtUtc\" IS NOT NULL AND \"FillBarOpenTimeMs\" IS NOT NULL AND \"Decision\" IN ('buy-more','reduce','sell','conditional-sell') AND \"FillPrice\" > 0 AND \"FillObservedAtUtc\" >= \"ObservedAtUtc\" AND NULLIF(BTRIM(\"FillSource\"), '') IS NOT NULL AND \"FillBarOpenTimeMs\" >= \"AvailableTimeMs\")");
                 t.HasCheckConstraint("CK_MbbSignalObservations_OutcomeCoherence",
-                    "(\"OutcomeReturn\" IS NULL AND \"OutcomeObservedAtUtc\" IS NULL AND \"OutcomeHorizon\" IS NULL) OR (" +
-                    "\"FillPrice\" IS NOT NULL AND \"OutcomeReturn\" IS NOT NULL " +
-                    "AND \"OutcomeObservedAtUtc\" >= \"FillObservedAtUtc\" AND NULLIF(BTRIM(\"OutcomeHorizon\"), '') IS NOT NULL)");
+                    "(\"OutcomeReturn\" IS NULL AND \"OutcomeObservedAtUtc\" IS NULL AND \"OutcomeHorizon\" IS NULL) OR (\"FillPrice\" IS NOT NULL AND \"FillObservedAtUtc\" IS NOT NULL AND \"OutcomeReturn\" IS NOT NULL AND \"OutcomeObservedAtUtc\" IS NOT NULL AND \"OutcomeObservedAtUtc\" >= \"FillObservedAtUtc\" AND NULLIF(BTRIM(\"OutcomeHorizon\"), '') IS NOT NULL)");
+            });
+        });
+
+        modelBuilder.Entity<EquityCorporateAction>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.ActionType).HasMaxLength(32);
+            e.Property(x => x.RatioText).HasMaxLength(64);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.Provenance).HasMaxLength(32);
+            e.Property(x => x.VerificationStatus).HasMaxLength(16);
+            e.HasIndex(x => new { x.Symbol, x.ExDate, x.ActionType }).IsUnique();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityCorporateActions_Type",
+                    "\"ActionType\" IN ('cash-dividend','stock-dividend','bonus-shares','rights-issue','split','other')");
+                t.HasCheckConstraint("CK_EquityCorporateActions_Verification",
+                    "\"VerificationStatus\" IN ('unverified','verified','rejected')");
+                t.HasCheckConstraint("CK_EquityCorporateActions_Source",
+                    "\"SourceUrl\" ~ '^https?://' AND NULLIF(BTRIM(\"Provenance\"), '') IS NOT NULL");
+                t.HasCheckConstraint("CK_EquityCorporateActions_Factor",
+                    "\"AdjustmentFactor\" IS NULL OR \"AdjustmentFactor\" > 0");
+                t.HasCheckConstraint("CK_EquityCorporateActions_ShareRatio",
+                    "\"ShareRatio\" IS NULL OR \"ShareRatio\" > 0");
+            });
+        });
+
+        modelBuilder.Entity<EquityEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.EventType).HasMaxLength(32);
+            e.Property(x => x.Title).HasMaxLength(500);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.Provenance).HasMaxLength(32);
+            e.HasIndex(x => new { x.Symbol, x.EventType, x.EventDate, x.Title }).IsUnique();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityEvents_Type",
+                    "\"EventType\" IN ('earnings','agm','additional-listing','other')");
+                t.HasCheckConstraint("CK_EquityEvents_Source",
+                    "\"SourceUrl\" ~ '^https?://' AND NULLIF(BTRIM(\"Provenance\"), '') IS NOT NULL");
+            });
+        });
+
+        modelBuilder.Entity<EquityFundamental>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Period).HasMaxLength(8);
+            e.Property(x => x.Metric).HasMaxLength(16);
+            e.Property(x => x.Unit).HasMaxLength(16);
+            e.Property(x => x.UnavailableReason).HasMaxLength(500);
+            e.Property(x => x.Source).HasMaxLength(64);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.Provenance).HasMaxLength(32);
+            e.HasIndex(x => new { x.Symbol, x.Period, x.Metric, x.Source }).IsUnique();
+            e.Property(x => x.SourceLocation).HasMaxLength(500);
+            e.HasIndex(x => x.DocumentId);
+            e.HasOne<EquitySourceDocument>().WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityFundamentals_Metric",
+                    "\"Metric\" IN ('BVPS','PB','ROE','NIM','NPL','COVERAGE','LLR','CAR','LDR','TOTAL_ASSETS','NET_PROFIT','EQUITY')");
+                t.HasCheckConstraint("CK_EquityFundamentals_Unit",
+                    "\"Unit\" IN ('VND','ratio','percent')");
+                t.HasCheckConstraint("CK_EquityFundamentals_Period",
+                    "\"Period\" ~ '^[0-9]{4}Q[1-4]$'");
+                t.HasCheckConstraint("CK_EquityFundamentals_ValueOrReason",
+                    "\"Value\" IS NOT NULL OR NULLIF(BTRIM(\"UnavailableReason\"), '') IS NOT NULL");
+                t.HasCheckConstraint("CK_EquityFundamentals_Source",
+                    "\"SourceUrl\" ~ '^https?://' AND NULLIF(BTRIM(\"Provenance\"), '') IS NOT NULL");
+            });
+        });
+
+        modelBuilder.Entity<EquityForecastRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ForecastId).HasMaxLength(200);
+            e.Property(x => x.Source).HasMaxLength(24);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Timeframe).HasMaxLength(16);
+            e.Property(x => x.ConfigId).HasMaxLength(40);
+            e.Property(x => x.AbstainReason).HasMaxLength(500);
+            e.Property(x => x.MethodVersion).HasMaxLength(80);
+            e.Property(x => x.ModelId).HasMaxLength(80);
+            e.Property(x => x.PromptVersion).HasMaxLength(80);
+            e.Property(x => x.SchemaVersion).HasMaxLength(80);
+            e.Property(x => x.InputSnapshotSha256).HasMaxLength(64);
+            e.Property(x => x.OutcomeLabel).HasMaxLength(16);
+            e.HasIndex(x => x.ForecastId).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.ConfigId, x.SignalBarOpenTimeMs });
+            e.HasIndex(x => x.ResearchNoteId);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityForecastRecords_Source",
+                    "\"Source\" IN ('quant-knn','llm-judge','session-research')");
+                t.HasCheckConstraint("CK_EquityForecastRecords_Scope",
+                    "\"Symbol\" IN ('MBB','BID') AND \"Timeframe\" = '1d' AND \"HorizonSessions\" > 0");
+                t.HasCheckConstraint("CK_EquityForecastRecords_Chronology",
+                    "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\" AND \"AvailableTimeMs\" >= \"SignalBarCloseTimeMs\"");
+                t.HasCheckConstraint("CK_EquityForecastRecords_Probability",
+                    "(\"ProbTargetFirst\" IS NULL OR (\"ProbTargetFirst\" >= 0 AND \"ProbTargetFirst\" <= 1)) AND (\"ProbStopFirst\" IS NULL OR (\"ProbStopFirst\" >= 0 AND \"ProbStopFirst\" <= 1)) AND (\"ProbTargetFirst\" IS NULL OR \"ProbStopFirst\" IS NULL OR \"ProbTargetFirst\" + \"ProbStopFirst\" <= 1.000001)");
+                t.HasCheckConstraint("CK_EquityForecastRecords_Abstention",
+                    "NOT \"Abstained\" OR (\"ProbTargetFirst\" IS NULL AND \"ProbStopFirst\" IS NULL AND NULLIF(BTRIM(\"AbstainReason\"), '') IS NOT NULL)");
+                t.HasCheckConstraint("CK_EquityForecastRecords_SessionUnvalidated",
+                    "\"Source\" <> 'session-research' OR (NOT \"Validated\" AND \"ResearchNoteId\" IS NOT NULL AND NULLIF(BTRIM(\"MethodVersion\"), '') IS NOT NULL)");
+                t.HasCheckConstraint("CK_EquityForecastRecords_LlmUnvalidated",
+                    "\"Source\" <> 'llm-judge' OR (NOT \"Validated\" AND \"LlmRunId\" IS NOT NULL)");
+                t.HasCheckConstraint("CK_EquityForecastRecords_OutcomeCoherence",
+                    "(\"EntryBarOpenTimeMs\" IS NULL AND \"EntryPrice\" IS NULL AND \"OutcomeLabel\" IS NULL AND \"OutcomeReturnNet\" IS NULL AND \"ResolvedBarOpenTimeMs\" IS NULL AND \"OutcomeResolvedAtUtc\" IS NULL) OR (\"OutcomeLabel\" IN ('target-first','stop-first','timeout') AND \"EntryPrice\" > 0 AND \"OutcomeReturnNet\" IS NOT NULL AND \"EntryBarOpenTimeMs\" IS NOT NULL AND \"ResolvedBarOpenTimeMs\" IS NOT NULL AND \"EntryBarOpenTimeMs\" > \"SignalBarOpenTimeMs\" AND \"EntryBarOpenTimeMs\" >= \"AvailableTimeMs\" AND \"ResolvedBarOpenTimeMs\" >= \"EntryBarOpenTimeMs\" AND \"OutcomeResolvedAtUtc\" IS NOT NULL)");
+            });
+        });
+
+        modelBuilder.Entity<EquityLlmRun>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.Reason).HasMaxLength(1000);
+            e.Property(x => x.ResearchModel).HasMaxLength(80);
+            e.Property(x => x.JudgeModel).HasMaxLength(80);
+            e.Property(x => x.PromptVersion).HasMaxLength(80);
+            e.Property(x => x.SchemaVersion).HasMaxLength(80);
+            e.Property(x => x.InputSnapshotSha256).HasMaxLength(64);
+            e.Property(x => x.InputSnapshotJson).HasColumnType("jsonb");
+            e.Property(x => x.OutputJson).HasColumnType("jsonb");
+            e.Property(x => x.UsageJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.Symbol, x.CreatedAtUtc });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityLlmRuns_Status",
+                    "\"Status\" IN ('succeeded','failed','unavailable')");
+                t.HasCheckConstraint("CK_EquityLlmRuns_Scope",
+                    "\"Symbol\" IN ('MBB','BID')");
+                t.HasCheckConstraint("CK_EquityLlmRuns_Output",
+                    "\"Status\" <> 'succeeded' OR \"OutputJson\" IS NOT NULL");
+            });
+        });
+
+        modelBuilder.Entity<MarketCalendarDay>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Venue).HasMaxLength(16);
+            e.Property(x => x.Kind).HasMaxLength(24);
+            e.Property(x => x.Reason).HasMaxLength(300);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.SourceTitle).HasMaxLength(500);
+            e.Property(x => x.Verification).HasMaxLength(24);
+            e.Property(x => x.CalendarVersion).HasMaxLength(40);
+            e.HasIndex(x => new { x.Venue, x.Date }).IsUnique();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_MarketCalendarDays_Coverage",
+                    "\"CoverageFromDate\" <= \"Date\" AND \"Date\" <= \"CoverageToDate\"");
+                t.HasCheckConstraint("CK_MarketCalendarDays_Kind",
+                    "\"Kind\" IN ('market-holiday','market-closure')");
+                t.HasCheckConstraint("CK_MarketCalendarDays_Verification",
+                    "(\"Verification\" = 'verified' AND \"SourceUrl\" ~ '^https?://') OR \"Verification\" = 'unverified-legacy'");
+            });
+        });
+
+        modelBuilder.Entity<EquityCashAccount>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.AccountId).HasMaxLength(32);
+            e.HasIndex(x => x.AccountId).IsUnique();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityCashAccounts_Cash",
+                    "\"AvailableCashVnd\" IS NULL OR \"AvailableCashVnd\" >= 0");
+            });
+        });
+
+        modelBuilder.Entity<EquitySourceDocument>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Entity).HasMaxLength(200);
+            e.Property(x => x.DocType).HasMaxLength(32);
+            e.Property(x => x.Title).HasMaxLength(500);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.Provider).HasMaxLength(64);
+            e.Property(x => x.ContentSha256).HasMaxLength(64);
+            e.Property(x => x.StoragePath).HasMaxLength(500);
+            e.Property(x => x.MimeType).HasMaxLength(100);
+            e.Property(x => x.ReportingPeriod).HasMaxLength(8);
+            e.Property(x => x.Consolidation).HasMaxLength(16);
+            e.Property(x => x.AuditStatus).HasMaxLength(16);
+            e.Property(x => x.ExtractionJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.Symbol, x.ContentSha256 }).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.ReportingPeriod });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquitySourceDocuments_Type",
+                    "\"DocType\" IN ('financial-statement','investor-presentation','disclosure','annual-report','other')");
+                t.HasCheckConstraint("CK_EquitySourceDocuments_Enums",
+                    "\"Consolidation\" IN ('consolidated','separate','unknown') AND \"AuditStatus\" IN ('audited','reviewed','unaudited','unknown')");
+                t.HasCheckConstraint("CK_EquitySourceDocuments_Provenance",
+                    "\"SourceUrl\" ~ '^https?://' AND \"ContentSha256\" ~ '^[0-9a-f]{64}$' AND NULLIF(BTRIM(\"StoragePath\"), '') IS NOT NULL AND NULLIF(BTRIM(\"Provider\"), '') IS NOT NULL AND \"ByteSize\" > 0 AND \"FetchedAtUtc\" >= \"FirstSeenAtUtc\"");
+                t.HasCheckConstraint("CK_EquitySourceDocuments_Period",
+                    "\"ReportingPeriod\" IS NULL OR \"ReportingPeriod\" ~ '^[0-9]{4}(Q[1-4]|H[12])?$'");
+            });
+        });
+
+        modelBuilder.Entity<EquityResearchNote>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.NoteId).HasMaxLength(200);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Mode).HasMaxLength(16);
+            e.Property(x => x.SnapshotId).HasMaxLength(200);
+            e.Property(x => x.SnapshotSha256).HasMaxLength(64);
+            e.Property(x => x.SkillVersion).HasMaxLength(80);
+            e.Property(x => x.MethodVersion).HasMaxLength(80);
+            e.Property(x => x.Direction).HasMaxLength(16);
+            e.Property(x => x.ActionView).HasMaxLength(16);
+            e.Property(x => x.ActionBasis).HasMaxLength(24);
+            e.Property(x => x.BodyJson).HasColumnType("jsonb");
+            e.HasIndex(x => x.NoteId).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.SignalBarOpenTimeMs });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityResearchNotes_Scope",
+                    "\"Symbol\" IN ('MBB','BID') AND \"Mode\" IN ('forward','retrospective') AND \"HorizonSessions\" > 0");
+                t.HasCheckConstraint("CK_EquityResearchNotes_Enums",
+                    "\"Direction\" IN ('up','down','sideways','no-view') AND \"ActionView\" IN ('buy-more','hold','reduce','sell','wait','none') AND \"ActionBasis\" IN ('position-aware','market-only','insufficient-input')");
+                t.HasCheckConstraint("CK_EquityResearchNotes_Provenance",
+                    "\"SnapshotSha256\" ~ '^[0-9a-f]{64}$' AND NULLIF(BTRIM(\"SnapshotId\"), '') IS NOT NULL AND NULLIF(BTRIM(\"SkillVersion\"), '') IS NOT NULL AND NULLIF(BTRIM(\"MethodVersion\"), '') IS NOT NULL");
+                t.HasCheckConstraint("CK_EquityResearchNotes_Chronology",
+                    "\"SignalBarOpenTimeMs\" < \"SignalBarCloseTimeMs\" AND (\"Mode\" <> 'forward' OR \"AvailableTimeMs\" >= \"SignalBarCloseTimeMs\")");
+                t.HasCheckConstraint("CK_EquityResearchNotes_ActionBasis",
+                    "\"ActionView\" = 'none' OR \"ActionBasis\" <> 'insufficient-input'");
+            });
+        });
+
+        modelBuilder.Entity<EquitySourceDocumentLocation>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.Provider).HasMaxLength(64);
+            e.Property(x => x.ListingTitle).HasMaxLength(500);
+            e.Property(x => x.HttpEtag).HasMaxLength(200);
+            e.Property(x => x.HttpLastModified).HasMaxLength(100);
+            e.HasIndex(x => new { x.DocumentId, x.SourceUrl }).IsUnique();
+            e.HasIndex(x => x.SourceUrl);
+            e.HasOne<EquitySourceDocument>().WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquitySourceDocumentLocations_Url",
+                    "\"SourceUrl\" ~ '^https?://' AND \"LastSeenAtUtc\" >= \"FirstSeenAtUtc\"");
+            });
+        });
+
+        modelBuilder.Entity<EquitySourceAttempt>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Source).HasMaxLength(64);
+            e.Property(x => x.TargetPeriod).HasMaxLength(16);
+            e.Property(x => x.DocType).HasMaxLength(32);
+            e.Property(x => x.Consolidation).HasMaxLength(16);
+            e.Property(x => x.Url).HasMaxLength(1000);
+            e.Property(x => x.Outcome).HasMaxLength(24);
+            e.Property(x => x.Detail).HasMaxLength(2000);
+            e.HasIndex(x => new { x.Symbol, x.TargetPeriod, x.AttemptedAtUtc });
+            e.HasIndex(x => x.RunId);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquitySourceAttempts_Outcome",
+                    "\"Outcome\" IN ('listed','not-listed','downloaded','unchanged','changed','http-error','rate-limited','timeout','parse-error','budget-exhausted','too-large')");
+                t.HasCheckConstraint("CK_EquitySourceAttempts_Scope",
+                    "\"Symbol\" IN ('MBB','BID')");
+            });
+        });
+
+        modelBuilder.Entity<EquityDocumentExtraction>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ExtractorVersion).HasMaxLength(80);
+            e.Property(x => x.Method).HasMaxLength(16);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.ArtifactPath).HasMaxLength(500);
+            e.Property(x => x.QualityJson).HasColumnType("jsonb");
+            e.Property(x => x.Error).HasMaxLength(2000);
+            e.HasIndex(x => new { x.DocumentId, x.ExtractorVersion }).IsUnique();
+            e.HasOne<EquitySourceDocument>().WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityDocumentExtractions_Enums",
+                    "\"Method\" IN ('text-layer','ocr','mixed') AND \"Status\" IN ('succeeded','partial','failed')");
+                t.HasCheckConstraint("CK_EquityDocumentExtractions_Pages",
+                    "\"PageCount\" >= 0 AND \"PagesOcr\" >= 0 AND \"PagesOcr\" <= \"PageCount\" AND \"FinishedAtUtc\" >= \"StartedAtUtc\"");
+            });
+        });
+
+        modelBuilder.Entity<EquityFinancialFact>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.FactKey).HasMaxLength(300);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.MetricCode).HasMaxLength(64);
+            e.Property(x => x.MetricDefinitionVersion).HasMaxLength(40);
+            e.Property(x => x.MetricGroup).HasMaxLength(32);
+            e.Property(x => x.Statement).HasMaxLength(24);
+            e.Property(x => x.PeriodLabel).HasMaxLength(16);
+            e.Property(x => x.PeriodType).HasMaxLength(16);
+            e.Property(x => x.Consolidation).HasMaxLength(16);
+            e.Property(x => x.Unit).HasMaxLength(16);
+            e.Property(x => x.RawLabel).HasMaxLength(500);
+            e.Property(x => x.RawValueText).HasMaxLength(100);
+            e.Property(x => x.RawUnitText).HasMaxLength(100);
+            e.Property(x => x.ColumnRole).HasMaxLength(32);
+            e.Property(x => x.Location).HasMaxLength(500);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.ValidationJson).HasColumnType("jsonb");
+            e.Property(x => x.DerivationJson).HasColumnType("jsonb");
+            e.HasIndex(x => x.FactKey).IsUnique();
+            e.HasIndex(x => new { x.Symbol, x.MetricCode, x.PeriodType, x.PeriodEnd });
+            e.HasIndex(x => x.DocumentId);
+            e.HasOne<EquitySourceDocument>().WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<EquityDocumentExtraction>().WithMany().HasForeignKey(x => x.ExtractionId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityFinancialFacts_Scope",
+                    "\"Symbol\" IN ('MBB','BID')");
+                t.HasCheckConstraint("CK_EquityFinancialFacts_Enums",
+                    "\"MetricGroup\" IN ('balance-sheet','income-statement','cash-flow','credit-quality','deposits-funding','capital','shares') AND \"Statement\" IN ('balance-sheet','income-statement','cash-flow','note','derived') AND \"PeriodType\" IN ('quarter','ytd','half-year','annual','point-in-time') AND \"Consolidation\" IN ('consolidated','separate') AND \"Unit\" IN ('VND','percent','shares','count','ratio') AND \"ColumnRole\" IN ('current','comparative','cumulative-current','cumulative-comparative','derived') AND \"Status\" IN ('extracted','validated','review-needed','quarantined')");
+                t.HasCheckConstraint("CK_EquityFinancialFacts_Period",
+                    "\"PeriodLabel\" ~ '^[0-9]{4}(Q[1-4]|H[12]|-9M|-6M|-3M)?$' AND (\"PeriodStart\" IS NULL OR \"PeriodStart\" <= \"PeriodEnd\") AND \"Scale\" > 0");
+                t.HasCheckConstraint("CK_EquityFinancialFacts_Provenance",
+                    "(\"IsDerived\" AND \"DerivationJson\" IS NOT NULL AND \"ExtractionId\" IS NULL AND \"ColumnRole\" = 'derived') OR (NOT \"IsDerived\" AND \"DerivationJson\" IS NULL AND \"ExtractionId\" IS NOT NULL AND \"PageNumber\" IS NOT NULL AND \"PageNumber\" > 0 AND NULLIF(BTRIM(\"RawValueText\"), '') IS NOT NULL AND \"ColumnRole\" <> 'derived')");
+            });
+        });
+
+        modelBuilder.Entity<EquityPipelineRun>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Symbol).HasMaxLength(32);
+            e.Property(x => x.Mode).HasMaxLength(16);
+            e.Property(x => x.Trigger).HasMaxLength(16);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.CountsJson).HasColumnType("jsonb");
+            e.Property(x => x.CheckpointJson).HasColumnType("jsonb");
+            e.Property(x => x.Error).HasMaxLength(2000);
+            e.Property(x => x.LogTail).HasMaxLength(8000);
+            e.HasIndex(x => new { x.Symbol, x.StartedAtUtc });
+            e.HasIndex(x => x.Symbol).IsUnique().HasFilter("\"Status\" = 'running'").HasDatabaseName("UX_EquityPipelineRuns_OneRunningPerSymbol");
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_EquityPipelineRuns_Enums",
+                    "\"Mode\" IN ('backfill','incremental') AND \"Trigger\" IN ('worker','admin','cli') AND \"Status\" IN ('running','succeeded','partial','failed','cancelled') AND \"Symbol\" IN ('MBB','BID')");
+                t.HasCheckConstraint("CK_EquityPipelineRuns_Chronology",
+                    "\"HeartbeatAtUtc\" >= \"StartedAtUtc\" AND (\"FinishedAtUtc\" IS NULL OR \"FinishedAtUtc\" >= \"StartedAtUtc\") AND ((\"Status\" = 'running') = (\"FinishedAtUtc\" IS NULL))");
             });
         });
 

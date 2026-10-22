@@ -25,6 +25,7 @@ public sealed class MbbDataQualityService
     private readonly MbbIngestionOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly InstrumentDescriptor _instrument;
+    private readonly InstrumentCatalog _catalog;
 
     public MbbDataQualityService(
         AppDbContext db,
@@ -36,14 +37,34 @@ public sealed class MbbDataQualityService
     {
         _db = db;
         _options = options ?? new MbbIngestionOptions();
-        _calendar = calendar ?? new VietnamMarketCalendar(
-            VietnamMarketCalendar.ParseNonTradingDates(_options.NonTradingDates),
+        _calendar = calendar ?? VietnamMarketCalendar.CreateDefault(
+            _options.NonTradingDates,
             TimeSpan.FromMinutes(_options.PublishGraceMinutes));
         _kbs = kbs;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _instrument = (catalog ?? InstrumentCatalog.Default).Get(_options.Symbol)
+        _catalog = catalog ?? InstrumentCatalog.Default;
+        _instrument = _catalog.Get(_options.Symbol)
             ?? throw new ArgumentException(
                 $"Symbol '{_options.Symbol}' is not a known instrument in the catalog.", nameof(options));
+    }
+
+    public InstrumentDescriptor Instrument => _instrument;
+
+    /// <summary>
+    /// Same report bound to another Ingestion-capable catalog symbol (EQX). MBB yields this
+    /// same instance, so the /api/mbb alias report is unchanged.
+    /// </summary>
+    public MbbDataQualityService ForSymbol(string symbol)
+    {
+        var instrument = _catalog.Get(symbol)
+            ?? throw new ArgumentException($"Unknown symbol '{InstrumentCatalog.Canonicalize(symbol)}'.", nameof(symbol));
+        if (!EquityScope.Has(instrument, EquityCapability.Ingestion))
+            throw new ArgumentException(
+                $"Symbol '{instrument.Symbol}' does not support the equity ingestion lane.", nameof(symbol));
+        if (string.Equals(instrument.Symbol, _instrument.Symbol, StringComparison.Ordinal))
+            return this;
+        return new MbbDataQualityService(_db, _options.ForSymbol(instrument.Symbol), _calendar, _kbs,
+            _timeProvider, _catalog);
     }
 
     private IReadOnlyList<string> EffectiveTimeframes() =>
@@ -71,6 +92,7 @@ public sealed class MbbDataQualityService
         var nowUtcMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
         var todayLocal = DateOnly.FromDateTime(VietnamMarketCalendar.ToLocal(nowUtcMs).DateTime);
         var blocks = new List<MbbTimeframeCoverage>();
+        var peers = await LoadPeerDailyPresenceAsync(cancellationToken);
 
         foreach (var tf in EffectiveTimeframes())
         {
@@ -88,6 +110,13 @@ public sealed class MbbDataQualityService
             var ranges = VietnamMarketCalendar.GroupMissingRanges(expected, missing)
                 .OrderByDescending(r => r.MissingBars)
                 .ToArray();
+            var classified = ClassifyMissingRanges(expected, missing, peers, _calendar);
+            var flags = new List<string>();
+            if (_calendar.IsBelowCoverage(BackfillStartLocal(tf))) flags.Add(VietnamMarketCalendar.BelowCoverageReason);
+            var coverageExpired = _calendar.IsBeyondCoverage(todayLocal);
+            if (coverageExpired) flags.Add(VietnamMarketCalendar.CoverageExpiredReason);
+            long CountClass(string c) => classified.Where(r => r.Classification == c).Sum(r => r.MissingBars);
+            var unverifiedDays = CountUnverifiedNonTradingDays(BackfillStartLocal(tf), todayLocal);
 
             var unexpected = new List<long>();
             var invalid = 0L;
@@ -113,9 +142,10 @@ public sealed class MbbDataQualityService
                         Math.Max(1, _options.PublishGraceMinutes)
                         + Math.Max(1, _options.CycleMinutes)).TotalMilliseconds
                 : (long?)null;
-            var isStale = lastExpected.HasValue
+            // Past the calendar coverage the expected bar is unknown: report stale (fail closed) with the reason.
+            var isStale = coverageExpired || (lastExpected.HasValue
                 && nowUtcMs > staleAfterMs!.Value
-                && (!lastStored.HasValue || lastStored.Value < lastExpected.Value);
+                && (!lastStored.HasValue || lastStored.Value < lastExpected.Value));
 
             blocks.Add(new MbbTimeframeCoverage(
                 tf,
@@ -133,7 +163,16 @@ public sealed class MbbDataQualityService
                 lastExpected.HasValue
                     ? VietnamMarketCalendar.ToLocal(lastExpected.Value).ToUniversalTime() : null,
                 ageSec,
-                isStale));
+                isStale,
+                CountClass(MbbGapClassifications.MarketWideMissing),
+                CountClass(MbbGapClassifications.SymbolMissing),
+                CountClass(MbbGapClassifications.NoPeerData),
+                classified.OrderByDescending(r => r.MissingBars).ThenBy(r => r.StartOpenTimeMs).Take(10).ToArray(),
+                unverifiedDays,
+                CountClass(MbbGapClassifications.BelowCalendarCoverage),
+                CountClass(MbbGapClassifications.CalendarCoverageExpired),
+                flags,
+                coverageExpired ? VietnamMarketCalendar.CoverageExpiredReason : null));
         }
 
         return new MbbCoverageReport(
@@ -145,14 +184,144 @@ public sealed class MbbDataQualityService
             _instrument.Timezone,
             _timeProvider.GetUtcNow().UtcDateTime,
             blocks,
-            BuildLimitations());
+            BuildLimitations(_instrument),
+            BuildCalendarInfo(peers.Symbols));
     }
 
-    private static string[] BuildLimitations() =>
+    private MbbCalendarInfo BuildCalendarInfo(IReadOnlyList<string> peerSymbols)
+    {
+        var source = _calendar.Source;
+        return source is null
+            ? new MbbCalendarInfo("explicit", null, null, null, 0, 0, [], peerSymbols)
+            : new MbbCalendarInfo(
+                "canonical-file",
+                source.CalendarVersion,
+                source.CoverageFrom.ToString("yyyy-MM-dd"),
+                source.CoverageTo.ToString("yyyy-MM-dd"),
+                source.VerifiedCount,
+                source.UnverifiedLegacyCount,
+                source.ConfigOverrideDates.Select(d => d.ToString("yyyy-MM-dd")).ToArray(),
+                peerSymbols);
+    }
+
+    private long CountUnverifiedNonTradingDays(DateOnly from, DateOnly to)
+    {
+        var source = _calendar.Source;
+        if (source is null) return 0;
+        return source.Days.Where(d => d.Verification != MarketCalendarVerification.Verified)
+            .Select(d => d.Date)
+            .Concat(source.ConfigOverrideDates)
+            .Count(d => d >= from && d <= to);
+    }
+
+    /// <summary>Daily-bar presence of the OTHER equity-lane instruments (incl. VNINDEX), by local date.</summary>
+    internal sealed record PeerDailyPresence(
+        IReadOnlyList<string> Symbols,
+        IReadOnlySet<DateOnly> TradedDates,
+        IReadOnlyList<(DateOnly First, DateOnly Last)> Coverage);
+
+    private async Task<PeerDailyPresence> LoadPeerDailyPresenceAsync(CancellationToken ct)
+    {
+        var symbols = _catalog.Instruments
+            .Where(i => EquityScope.Has(i, EquityCapability.Ingestion)
+                && !string.Equals(i.Symbol, _instrument.Symbol, StringComparison.Ordinal))
+            .Select(i => i.Symbol)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToArray();
+        var rows = await _db.InstrumentCandles.AsNoTracking()
+            .Where(c => symbols.Contains(c.Symbol) && c.Timeframe == EquityCandleTimeframes.Day)
+            .Select(c => new { c.Symbol, c.OpenTimeMs })
+            .ToListAsync(ct);
+        var traded = new HashSet<DateOnly>();
+        var coverage = new List<(DateOnly, DateOnly)>();
+        foreach (var group in rows.GroupBy(r => r.Symbol))
+        {
+            var dates = group.Select(r => DateOnly.FromDateTime(VietnamMarketCalendar.ToLocal(r.OpenTimeMs).DateTime)).ToArray();
+            traded.UnionWith(dates);
+            coverage.Add((dates.Min(), dates.Max()));
+        }
+        return new PeerDailyPresence(symbols, traded, coverage);
+    }
+
+    internal static string ClassifyMissingDate(DateOnly date, PeerDailyPresence peers, VietnamMarketCalendar? calendar = null)
+    {
+        if (calendar is not null && calendar.IsBelowCoverage(date)) return MbbGapClassifications.BelowCalendarCoverage;
+        if (calendar is not null && calendar.IsBeyondCoverage(date)) return MbbGapClassifications.CalendarCoverageExpired;
+        if (!peers.Coverage.Any(c => c.First <= date && c.Last >= date))
+            return MbbGapClassifications.NoPeerData;
+        return peers.TradedDates.Contains(date)
+            ? MbbGapClassifications.SymbolMissing
+            : MbbGapClassifications.MarketWideMissing;
+    }
+
+    /// <summary>
+    /// Contiguous missing ranges (on the expected-open sequence), split wherever the classification changes.
+    /// A market-wide-missing date is a suspected closure that the calendar does not know; it is reported,
+    /// never added to the calendar automatically.
+    /// </summary>
+    internal static IReadOnlyList<MbbClassifiedGapRange> ClassifyMissingRanges(
+        IReadOnlyList<long> expected, IReadOnlySet<long> missing, PeerDailyPresence peers,
+        VietnamMarketCalendar? calendar = null)
+    {
+        var result = new List<MbbClassifiedGapRange>();
+        long start = 0, end = 0, count = 0;
+        string? current = null;
+        var byDate = new Dictionary<DateOnly, string>();
+        foreach (var open in expected)
+        {
+            if (!missing.Contains(open))
+            {
+                if (count > 0) { result.Add(new MbbClassifiedGapRange(start, end, count, current!)); count = 0; }
+                continue;
+            }
+            var date = DateOnly.FromDateTime(VietnamMarketCalendar.ToLocal(open).DateTime);
+            if (!byDate.TryGetValue(date, out var cls))
+                byDate[date] = cls = ClassifyMissingDate(date, peers, calendar);
+            if (count > 0 && cls != current)
+            {
+                result.Add(new MbbClassifiedGapRange(start, end, count, current!));
+                count = 0;
+            }
+            if (count == 0) { start = open; current = cls; }
+            end = open;
+            count++;
+        }
+        if (count > 0) result.Add(new MbbClassifiedGapRange(start, end, count, current!));
+        return result;
+    }
+
+    private static string[] BuildLimitations(InstrumentDescriptor instrument) =>
+        string.Equals(instrument.Symbol, "MBB", StringComparison.Ordinal)
+            ? MbbLimitations()
+            : EquityLimitations(instrument);
+
+    /// <summary>Per-symbol caveats for the EQX instruments (W0 provider probe, 2026-10-16).</summary>
+    private static string[] EquityLimitations(InstrumentDescriptor instrument)
+    {
+        var list = new List<string>();
+        if (instrument.AssetClass == InstrumentAssetClasses.Index)
+        {
+            list.Add($"{instrument.Symbol} is an index quoted in {instrument.Currency}; it is never traded and carries no lot/fee/tax/band.");
+            list.Add("No cross-check provider: VCI and KBS index volume definitions differ (0/30 recent bars equal), so volume is never cross-checked.");
+            list.Add("VCI serves malformed OHLC rows around 2005; history is ingested from 2010-01-01 and invalid OHLC rows are rejected at write time.");
+        }
+        else
+        {
+            list.Add("VCI and KBS both back-adjust the WHOLE history at every ex-date (cash and stock dividends): stored levels reflect the latest adjustment basis, not as-of-time prices.");
+            list.Add("A price change on an already-stored finalized bar triggers a full-history refetch so the stored series never mixes two adjustment factors.");
+            list.Add("KBS daily history covers roughly the last ten years and is integer-rounded on a slightly different factor; cross-check diffs on old bars are expected.");
+        }
+        list.Add("Non-trading days come from the canonical HOSE calendar file (2020-2026; see GET /api/market-calendar/vn-hose for the official source per day). Older holidays surface as gaps in the expected-open count (honest, not hidden).");
+        list.Add("Missing expected bars are classified: market-wide-missing (every other scope instrument + VNINDEX also lacks the date — suspected closure, never auto-added to the calendar) vs symbol-missing (others traded — provider gap or suspension, no reason inferred).");
+        list.Add("Only finalized bars count as expected; a still-forming latest bar is never a gap.");
+        return list.ToArray();
+    }
+
+    private static string[] MbbLimitations() =>
     [
         "KBS history begins 2020-01-02 — cross-check overlap is limited to that window.",
         "KBS closes are integer-rounded VND on a different adjustment basis; >1 VND diffs are expected on most rows.",
-        "NonTradingDates config is best-effort: an unlisted holiday/suspension on a weekday surfaces as a pending gap (honest, fixable) rather than being hidden.",
+        "Non-trading days come from the canonical HOSE calendar file; an unlisted holiday/suspension on a weekday surfaces as a pending gap classified market-wide-missing or symbol-missing (honest, fixable) rather than being hidden.",
         "The VCI 1h bar at 2024-06-20 12:00 local is a known provider anomaly; it is stored but counted under UnexpectedSessionBars.",
         "Only finalized bars count as expected; a still-forming latest bar is never a gap.",
     ];
@@ -172,6 +341,9 @@ public sealed class MbbDataQualityService
             throw new ArgumentException(
                 $"timeframe '{timeframe}' is inactive for instrument '{_instrument.Symbol}'.",
                 nameof(timeframe));
+        if (string.IsNullOrWhiteSpace(_instrument.CrossCheckDataProvider))
+            throw new InvalidOperationException(
+                $"Symbol '{_instrument.Symbol}' declares no cross-check provider; cross-check is skipped by design.");
         if (_kbs is null)
             throw new InvalidOperationException("KBS cross-check client is not configured.");
 

@@ -7,10 +7,14 @@ public static class InstrumentAssetClasses
     public const string Crypto = "crypto";
     public const string Equity = "equity";
 
+    /// <summary>Market index (VNINDEX): quoted in index points, never traded, no lot/fee/tax.</summary>
+    public const string Index = "index";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         Crypto,
-        Equity
+        Equity,
+        Index
     };
 }
 
@@ -19,6 +23,10 @@ public static class InstrumentAssetClasses
 /// family shared by every instrument; the remaining flags are crypto-only features
 /// (news/sentiment/futures/liquidation/orderbook/execution/paper trading) that equity
 /// instruments such as MBB must never report as supported.
+/// Equity-lane flags (instrument-catalog-v2, additive):
+/// <see cref="Ingestion"/> = the InstrumentCandles ingestion lane exists for the symbol;
+/// <see cref="Decision"/> = position/decision/observation/base-rates/context/dossier lane.
+/// Context-only instruments (VCB, CTG, VNINDEX) are Ingestion without Decision.
 /// </summary>
 public sealed record InstrumentCapabilities(
     bool TechnicalAnalysis,
@@ -28,7 +36,9 @@ public sealed record InstrumentCapabilities(
     bool Liquidation,
     bool OrderBook,
     bool Execution,
-    bool PaperTrading);
+    bool PaperTrading,
+    bool Ingestion = false,
+    bool Decision = false);
 
 /// <summary>
 /// Shared instrument contract. <paramref name="Enabled"/> marks whether the instrument is

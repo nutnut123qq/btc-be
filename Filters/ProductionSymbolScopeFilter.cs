@@ -15,6 +15,10 @@ public sealed class ProductionSymbolScopeFilter(ProductionSymbolPolicy policy) :
 {
     public void OnActionExecuting(ActionExecutingContext context)
     {
+        // Equity-lane controllers resolve `symbol` themselves against catalog
+        // capabilities (EquityScope); the BTC enabled-traffic gate does not apply.
+        if (context.ActionDescriptor.EndpointMetadata.OfType<SkipProductionSymbolScopeAttribute>().Any()) return;
+
         foreach (var (name, value) in context.ActionArguments.ToArray())
         {
             if (value is string text && name.Equals("symbol", StringComparison.OrdinalIgnoreCase))
@@ -62,3 +66,11 @@ public sealed class ProductionSymbolScopeFilter(ProductionSymbolPolicy policy) :
         });
     }
 }
+
+/// <summary>
+/// Opts a controller/action out of <see cref="ProductionSymbolScopeFilter"/>. Only for
+/// lanes that validate the symbol against <see cref="InstrumentCatalog"/> capabilities
+/// themselves (the /api/equities lane); crypto endpoints must never carry it.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = false)]
+public sealed class SkipProductionSymbolScopeAttribute : Attribute;

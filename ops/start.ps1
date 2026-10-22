@@ -45,15 +45,36 @@ if ($llmProvider -eq "openrouter") {
     if ($env:OPENROUTER_BASE_URL) { $aiEnvironment["OPENROUTER_BASE_URL"] = $env:OPENROUTER_BASE_URL }
 }
 
+$backendEnvironment = @{
+    "ASPNETCORE_ENVIRONMENT" = "ProductionLike"
+    "ASPNETCORE_URLS" = "http://127.0.0.1:5197"
+    "ConnectionStrings__DefaultConnection" = Get-BackendConnectionString
+    "EvidenceCatalog__RootPath" = (Join-Path $script:AiDir "docs/research/evidence")
+    # Equity document pipeline paths follow the workspace layout (appsettings defaults are relative to the
+    # publish content root, which is not the repo).
+    "EquityDocuments__PythonPath" = $python
+    "EquityDocuments__PipelineScript" = (Join-Path $aiDir "equity_pipeline.py")
+    "EquityDocuments__RootPath" = (Join-Path $script:WorkspaceDir "data/equity-documents")
+    "EquityFacts__MetricCatalogPath" = (Join-Path $aiDir "equity_facts/metric_catalog.json")
+}
+# Host-only, non-secret switches (e.g. EquityIngestion__Enabled, EquityDocuments__PipelineEnabled) live in the
+# ignored .ops/backend-settings.json as a flat {"Section__Key": "value"} object; committed defaults stay off.
+$hostSettingsPath = Join-Path $script:RuntimeDir "backend-settings.json"
+if (Test-Path -LiteralPath $hostSettingsPath) {
+    $hostSettings = Get-Content -LiteralPath $hostSettingsPath -Raw | ConvertFrom-Json
+    foreach ($property in $hostSettings.PSObject.Properties) {
+        if ($property.Name -notmatch '^[A-Za-z][A-Za-z0-9_]*$' -or $property.Name -match '(?i)connectionstrings|password|apikey|secret|^aspnetcore_|^dotnet_') {
+            throw "Refusing host setting '$($property.Name)' from $hostSettingsPath (secrets belong in configure-secrets.ps1)."
+        }
+        $backendEnvironment[$property.Name] = [string]$property.Value
+    }
+    Write-Host "Applied $(@($hostSettings.PSObject.Properties).Count) host setting(s) from $hostSettingsPath"
+}
+
 $processes = @()
 try {
     $processes += Start-ManagedProcess "ai" $python @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000") $aiDir $aiEnvironment
-    $processes += Start-ManagedProcess "backend" "dotnet" @("Backend.dll") $backendPublish @{
-        "ASPNETCORE_ENVIRONMENT" = "ProductionLike"
-        "ASPNETCORE_URLS" = "http://127.0.0.1:5197"
-        "ConnectionStrings__DefaultConnection" = Get-BackendConnectionString
-        "EvidenceCatalog__RootPath" = (Join-Path $script:AiDir "docs/research/evidence")
-    }
+    $processes += Start-ManagedProcess "backend" "dotnet" @("Backend.dll") $backendPublish $backendEnvironment
     $processes += Start-ManagedProcess "frontend" (Join-Path $frontendDir "node_modules/.bin/next.cmd") @("start", "-H", "127.0.0.1", "-p", "3000") $frontendDir @{
         "NODE_ENV" = "production"
         "BACKEND_INTERNAL_URL" = "http://127.0.0.1:5197"

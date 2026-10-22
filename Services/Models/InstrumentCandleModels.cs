@@ -68,7 +68,22 @@ public sealed record MbbTimeframeSync(
     int GapRangesProcessed,
     int GapRangesRemaining,
     int FetchedRequests,
-    string? Error = null);
+    string? Error = null,
+    int RevisionRefetchRequests = 0,
+    string? RevisionRefetchStatus = null);
+
+/// <summary>
+/// Outcome of the full-history refetch an incremental sync runs when a stored finalized bar
+/// changed price (provider re-adjusted the whole history). Null = no revision detected.
+/// </summary>
+public static class RevisionRefetchStatuses
+{
+    /// <summary>Whole history refetched and rewritten in one save (single adjustment basis).</summary>
+    public const string Completed = "completed";
+
+    /// <summary>Page cap hit before covering history: nothing written, retried next cycle.</summary>
+    public const string Incomplete = "incomplete";
+}
 
 public sealed record MbbSyncReport(
     string Symbol,
@@ -100,7 +115,56 @@ public sealed record MbbTimeframeCoverage(
     long InvalidOhlcvRows,
     DateTimeOffset? LatestExpectedFinalizedOpenUtc,
     long? LatestBarAgeSeconds,
-    bool IsStale);
+    bool IsStale,
+    // EQX v2 A1 (additive): every missing expected bar classified against the other equity-lane
+    // instruments + VNINDEX on the same local date.
+    long MarketWideMissingBars = 0,
+    long SymbolMissingBars = 0,
+    long NoPeerDataMissingBars = 0,
+    IReadOnlyList<MbbClassifiedGapRange>? TopClassifiedGaps = null,
+    long UnverifiedNonTradingDaysInRange = 0,
+    // EQX v2 review #1 (additive): missing expected bars on dates the calendar does not cover are not real
+    // gaps (holidays there are unknown); CalendarFlags carries below-calendar-coverage / calendar-coverage-expired.
+    long BelowCalendarCoverageMissingBars = 0,
+    long CalendarCoverageExpiredMissingBars = 0,
+    IReadOnlyList<string>? CalendarFlags = null,
+    string? FreshnessReason = null);
+
+/// <summary>Gap classes for a missing expected open (EQX v2 A1).</summary>
+public static class MbbGapClassifications
+{
+    /// <summary>Every other scope instrument + VNINDEX also lacks a bar that date: suspected unverified closure (not auto-added to the calendar).</summary>
+    public const string MarketWideMissing = "market-wide-missing";
+
+    /// <summary>Another scope instrument has a bar that date: provider gap or symbol suspension (no reason is inferred).</summary>
+    public const string SymbolMissing = "symbol-missing";
+
+    /// <summary>No other scope instrument has stored history covering that date, so it cannot be classified.</summary>
+    public const string NoPeerData = "no-peer-data";
+
+    /// <summary>Date before the calendar coverage: holidays unknown, so this is NOT counted as a real gap.</summary>
+    public const string BelowCalendarCoverage = "below-calendar-coverage";
+
+    /// <summary>Date after the calendar coverage: holidays unknown (fail closed, not a real gap either).</summary>
+    public const string CalendarCoverageExpired = "calendar-coverage-expired";
+}
+
+public sealed record MbbClassifiedGapRange(
+    long StartOpenTimeMs,
+    long EndOpenTimeMs,
+    long MissingBars,
+    string Classification);
+
+/// <summary>Calendar provenance block of the coverage report (EQX v2 A1).</summary>
+public sealed record MbbCalendarInfo(
+    string Source,
+    string? CalendarVersion,
+    string? CoverageFromDate,
+    string? CoverageToDate,
+    int VerifiedDays,
+    int UnverifiedLegacyDays,
+    IReadOnlyList<string> ConfigOverrideDates,
+    IReadOnlyList<string> PeerSymbols);
 
 public sealed record MbbCoverageReport(
     string Symbol,
@@ -111,7 +175,8 @@ public sealed record MbbCoverageReport(
     string SourceTimezone,
     DateTime GeneratedAtUtc,
     IReadOnlyList<MbbTimeframeCoverage> Timeframes,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    MbbCalendarInfo? Calendar = null);
 
 public sealed record MbbCrossCheckMismatch(
     long OpenTimeMs,
@@ -145,6 +210,9 @@ public sealed class MbbObservationDto
 {
     public string DecisionId { get; set; } = string.Empty;
     public string RecorderVersion { get; set; } = string.Empty;
+
+    /// <summary>Instrument symbol (additive, EQX): MBB on /api/mbb, any Decision equity on /api/equities.</summary>
+    public string Symbol { get; set; } = string.Empty;
     public string Timeframe { get; set; } = string.Empty;
     public long SignalBarOpenTimeMs { get; set; }
     public long SignalBarCloseTimeMs { get; set; }

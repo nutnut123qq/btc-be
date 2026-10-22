@@ -1,0 +1,656 @@
+{
+  "schemaVersion": "vn-hose-calendar-v1",
+  "venue": "HOSE",
+  "calendarVersion": "vn-hose-2026-10-18",
+  "coverage": {
+    "fromDate": "2020-01-01",
+    "toDate": "2026-12-31"
+  },
+  "notes": [
+    "Chỉ 'verified' khi đã đọc văn bản gốc của HOSE (staticfile.hsx.vn). 2021–2023: tin HOSE tồn tại trên hsx.vn nhưng tệp đính kèm không còn được phục vụ ⇒ 'unverified-legacy'.",
+    "Ngày nghỉ cuối tuần và ngày làm bù thứ Bảy không liệt kê (thứ Bảy/Chủ nhật vốn không giao dịch).",
+    "Đã bỏ khỏi cấu hình cũ: 2021-12-31 và 2025-02-03 (đều có nến của cả 5 mã; 2025-02-03 trái Thông báo 2079/TB-SGDHCM)."
+  ],
+  "days": [
+    {
+      "date": "2020-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-01-23",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-01-24",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-01-27",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-01-28",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-01-29",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-04-02",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng và Quốc tế Lao động",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-05-01",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng và Quốc tế Lao động",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2020-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/71e2a457d65f49eda8a0fbdc0d5e1bd0/20191107_20191107%20-Thong%20bao%20lich%20nghi%20giao%20dich%20nam%202020.pdf",
+      "sourceTitle": "HOSE Thông báo 1339/TB-SGDHCM ngày 07/11/2019 về việc công bố lịch nghỉ giao dịch trong năm 2020",
+      "verification": "verified"
+    },
+    {
+      "date": "2021-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-02-10",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-02-11",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-02-12",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-02-15",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-02-16",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-04-21",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-04-30",
+      "kind": "market-holiday",
+      "reason": "Chiến thắng 30/4 và Quốc tế Lao động (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-05-03",
+      "kind": "market-holiday",
+      "reason": "Chiến thắng 30/4 và Quốc tế Lao động (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2021-09-03",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1621219",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2021 (tin hsx.vn id 1621219; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-01-03",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch nghỉ bù (1/1/2022 rơi thứ Bảy; báo chí vneconomy 23/12/2021 dẫn lịch HOSE; cả 5 mã đều không có nến) — chưa có văn bản gốc",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-01-31",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-02-01",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-02-02",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-02-03",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-02-04",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-04-11",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-05-02",
+      "kind": "market-holiday",
+      "reason": "Chiến thắng 30/4 và Quốc tế Lao động nghỉ bù (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-05-03",
+      "kind": "market-holiday",
+      "reason": "Chiến thắng 30/4 và Quốc tế Lao động nghỉ bù (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-09-01",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2022-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683104",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2022 (tin hsx.vn id 1683104; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-01-02",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch nghỉ bù (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-01-20",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-01-23",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-01-24",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-01-25",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-01-26",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-05-01",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ (29/4 thứ Bảy) + Chiến thắng 30/4 + Quốc tế Lao động, nghỉ bù (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-05-02",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ (29/4 thứ Bảy) + Chiến thắng 30/4 + Quốc tế Lao động, nghỉ bù (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-05-03",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ (29/4 thứ Bảy) + Chiến thắng 30/4 + Quốc tế Lao động, nghỉ bù (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-09-01",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2023-09-04",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (legacy config, chưa có văn bản gốc)",
+      "sourceUrl": "https://api.hsx.vn/n/api/v1/1/news/1683105",
+      "sourceTitle": "HOSE: Thông báo lịch nghỉ giao dịch trong năm 2023 (tin hsx.vn id 1683105; tệp đính kèm không còn được phục vụ — nội dung chưa đối chiếu)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2024-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-02-08",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-02-09",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-02-12",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-02-13",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-02-14",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-04-18",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-04-29",
+      "kind": "market-holiday",
+      "reason": "Hoán đổi nghỉ dịp 30/4–1/5 (làm bù thứ Bảy 04/05/2024 không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/059a7c136ce84b3ebd45cea2455a1c9c/20240419_19042024%20-%20cap%20nhat%20lich%20nghi%20giao%20dich%202024%20.pdf",
+      "sourceTitle": "HOSE Thông báo 805/TB-SGDHCM ngày 19/04/2024 về việc cập nhật lịch nghỉ lễ ngày Chiến thắng 30/4 và ngày Quốc tế Lao động 01/5 năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng và Quốc tế Lao động",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-05-01",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng và Quốc tế Lao động",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2024-09-03",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/News/fb93a0f3f0bb417b9ab4dfcc835bc3f8/20231207_Lich%20Nghi%20Giao%20Dich%202024.pdf",
+      "sourceTitle": "HOSE Thông báo 1943/TB-SGDHCM ngày 07/12/2023 về việc công bố lịch nghỉ giao dịch trong năm 2024",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-01-27",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-01-28",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-01-29",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-01-30",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-01-31",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-04-07",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng và Quốc tế Lao động (làm bù thứ Bảy 26/04/2025 không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-05-01",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng và Quốc tế Lao động (làm bù thứ Bảy 26/04/2025 không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-05-02",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng và Quốc tế Lao động (làm bù thứ Bảy 26/04/2025 không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-09-01",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2025-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/1737138/20241226_20242612_Thong%20bao%20ve%20lich%20nghi%202025.pdf",
+      "sourceTitle": "HOSE Thông báo 2079/TB-SGDHCM ngày 26/12/2024 về việc công bố lịch nghỉ giao dịch trong năm 2025",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-01-02",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch, bổ sung (hoán đổi sang thứ Bảy 10/01/2026, ngày làm bù không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2426350/20251225_Thong%20bao%20%20ve%20%20viec%20cap%20nhat%20lich%20nghi%20giao%20dich%20Tet%20Duong%20lich%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2410/TB-SGDHCM ngày 25/12/2025 về việc cập nhật lịch nghỉ giao dịch Tết Dương lịch năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-02-16",
+      "kind": "market-holiday",
+      "reason": "Tết Nguyên Đán",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-02-17",
+      "kind": "market-holiday",
+      "reason": "Tết Nguyên Đán",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-02-18",
+      "kind": "market-holiday",
+      "reason": "Tết Nguyên Đán",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-02-19",
+      "kind": "market-holiday",
+      "reason": "Tết Nguyên Đán",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-02-20",
+      "kind": "market-holiday",
+      "reason": "Tết Nguyên Đán",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-04-27",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương (nghỉ bù theo Luật Lao động)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-04-30",
+      "kind": "market-holiday",
+      "reason": "Giải phóng miền Nam 30/4 và Quốc tế Lao động 01/5",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-05-01",
+      "kind": "market-holiday",
+      "reason": "Giải phóng miền Nam 30/4 và Quốc tế Lao động 01/5",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-08-31",
+      "kind": "market-holiday",
+      "reason": "Lễ Quốc khánh 2/9 (hoán đổi 31/08 sang thứ Bảy 22/08/2026, ngày làm bù không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-09-01",
+      "kind": "market-holiday",
+      "reason": "Lễ Quốc khánh 2/9 (hoán đổi 31/08 sang thứ Bảy 22/08/2026, ngày làm bù không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    },
+    {
+      "date": "2026-09-02",
+      "kind": "market-holiday",
+      "reason": "Lễ Quốc khánh 2/9 (hoán đổi 31/08 sang thứ Bảy 22/08/2026, ngày làm bù không giao dịch)",
+      "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
+      "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
+      "verification": "verified"
+    }
+  ]
+}

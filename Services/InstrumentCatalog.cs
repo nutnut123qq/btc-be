@@ -10,7 +10,7 @@ namespace Backend.Services;
 /// </summary>
 public sealed class InstrumentCatalog
 {
-    public const string ContractVersion = "instrument-catalog-v1";
+    public const string ContractVersion = "instrument-catalog-v2";
 
     /// <summary>Shared instance for non-DI construction paths (tests, service defaults).</summary>
     public static readonly InstrumentCatalog Default = new();
@@ -41,30 +41,54 @@ public sealed class InstrumentCatalog
                 OrderBook: true,
                 Execution: true,
                 PaperTrading: true)),
+        Equity("MBB", "MBB (MB Bank)", ["1h", "1d"], decision: true),
+        Equity("BID", "BID (BIDV)", ["1d"], decision: true),
+        Equity("VCB", "VCB (Vietcombank)", ["1d"], decision: false),
+        Equity("CTG", "CTG (VietinBank)", ["1d"], decision: false),
         new(
-            Symbol: "MBB",
-            Label: "MBB (MB Bank)",
+            Symbol: "VNINDEX",
+            Label: "VN-Index",
             Venue: "HOSE",
-            AssetClass: InstrumentAssetClasses.Equity,
-            Currency: "VND",
+            AssetClass: InstrumentAssetClasses.Index,
+            // Quote unit, not a cash currency: the index is quoted in points.
+            Currency: "index-points",
             Timezone: "Asia/Ho_Chi_Minh",
             DataProvider: "VCI",
-            CrossCheckDataProvider: "KBS",
-            PriceBasis: "adjusted",
+            CrossCheckDataProvider: null,
+            PriceBasis: "raw",
             Aliases: Array.AsReadOnly(Array.Empty<string>()),
-            ActiveTimeframes: Array.AsReadOnly(new[] { "1h", "1d" }),
+            ActiveTimeframes: Array.AsReadOnly(new[] { "1d" }),
             DefaultTimeframe: "1d",
             Enabled: false,
             Capabilities: new(
-                TechnicalAnalysis: true,
-                News: false,
-                Sentiment: false,
-                Futures: false,
-                Liquidation: false,
-                OrderBook: false,
-                Execution: false,
-                PaperTrading: false)),
+                TechnicalAnalysis: false, News: false, Sentiment: false, Futures: false,
+                Liquidation: false, OrderBook: false, Execution: false, PaperTrading: false,
+                Ingestion: true, Decision: false)),
     });
+
+    /// <summary>
+    /// HOSE equity on the VCI adjusted series. Enabled stays false: equities never pass
+    /// the BTC/crypto production-traffic gate; the equity lane checks capabilities instead.
+    /// Decision instruments (MBB, BID) also carry TechnicalAnalysis; context-only peers do not.
+    /// </summary>
+    private static InstrumentDescriptor Equity(string symbol, string label, string[] timeframes, bool decision) => new(
+        Symbol: symbol,
+        Label: label,
+        Venue: "HOSE",
+        AssetClass: InstrumentAssetClasses.Equity,
+        Currency: "VND",
+        Timezone: "Asia/Ho_Chi_Minh",
+        DataProvider: "VCI",
+        CrossCheckDataProvider: "KBS",
+        PriceBasis: "adjusted",
+        Aliases: Array.AsReadOnly(Array.Empty<string>()),
+        ActiveTimeframes: Array.AsReadOnly(timeframes),
+        DefaultTimeframe: "1d",
+        Enabled: false,
+        Capabilities: new(
+            TechnicalAnalysis: decision, News: false, Sentiment: false, Futures: false,
+            Liquidation: false, OrderBook: false, Execution: false, PaperTrading: false,
+            Ingestion: true, Decision: decision));
 
     private static readonly IReadOnlySet<string> KnownSymbols =
         new HashSet<string>(Registry.Select(x => x.Symbol), StringComparer.Ordinal);

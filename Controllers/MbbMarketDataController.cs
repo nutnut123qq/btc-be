@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Filters;
 using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -20,6 +21,9 @@ namespace Backend.Controllers;
 ///
 /// Read-only actions carry no AdminGuard, matching the convention for market
 /// data GETs; mutations live on MbbAdminController.
+///
+/// EQX: fixed-MBB alias of /api/equities/{symbol}/* — same services, same DTO
+/// projections (observations gain the additive `symbol` field).
 /// </summary>
 [ApiController]
 [Route("api/mbb")]
@@ -93,7 +97,7 @@ public sealed class MbbMarketDataController : ControllerBase
             .Take(limit)
             .ToListAsync(cancellationToken);
         rows.Reverse(); // ascending open-time order, matching Binance klines
-        return Ok(rows.Select(ToDto).ToArray());
+        return Ok(rows.Select(EquityLaneHttp.ToCandleDto).ToArray());
     }
 
     /// <summary>
@@ -147,7 +151,9 @@ public sealed class MbbMarketDataController : ControllerBase
     /// provenance — the list projection is intentionally slim.
     /// </summary>
     [HttpGet("observations")]
+    [AdminGuard] // decisions are position-derived: the journal reveals holdings (EQX review #4)
     [ProducesResponseType(typeof(IReadOnlyList<MbbObservationDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorEnvelope), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<MbbObservationDto>>> GetObservations(
         [FromQuery] string? timeframe,
@@ -163,26 +169,7 @@ public sealed class MbbMarketDataController : ControllerBase
             .OrderByDescending(o => o.SignalBarOpenTimeMs)
             .Take(take)
             .ToListAsync(cancellationToken);
-        return Ok(rows.Select(o => new MbbObservationDto
-        {
-            DecisionId = o.DecisionId,
-            RecorderVersion = o.RecorderVersion,
-            Timeframe = o.Timeframe,
-            SignalBarOpenTimeMs = o.SignalBarOpenTimeMs,
-            SignalBarCloseTimeMs = o.SignalBarCloseTimeMs,
-            ObservedAtUtc = o.ObservedAtUtc,
-            Decision = o.Decision,
-            EvidenceStatus = o.EvidenceStatus,
-            PriceBasis = o.PriceBasis,
-            MarketCloseVnd = o.MarketCloseVnd,
-            FillPrice = o.FillPrice,
-            FillObservedAtUtc = o.FillObservedAtUtc,
-            FillSource = o.FillSource,
-            FillBarOpenTimeMs = o.FillBarOpenTimeMs,
-            OutcomeReturn = o.OutcomeReturn,
-            OutcomeObservedAtUtc = o.OutcomeObservedAtUtc,
-            OutcomeHorizon = o.OutcomeHorizon,
-        }).ToArray());
+        return Ok(rows.Select(EquityLaneHttp.ToObservationDto).ToArray());
     }
 
     /// <summary>
@@ -212,21 +199,4 @@ public sealed class MbbMarketDataController : ControllerBase
             Retryable = false,
             RequestId = HttpContext.TraceIdentifier,
         });
-
-    private static MbbCandleDto ToDto(InstrumentCandle c) => new()
-    {
-        OpenTimeMs = c.OpenTimeMs,
-        TimeIso = DateTimeOffset.FromUnixTimeMilliseconds(c.OpenTimeMs).UtcDateTime.ToString("O"),
-        Open = c.Open,
-        High = c.High,
-        Low = c.Low,
-        Close = c.Close,
-        Volume = c.Volume,
-        CloseTimeMs = c.CloseTimeMs,
-        // Equity providers do not publish these; null = absent, not zero.
-        QuoteVolume = null,
-        TradeCount = null,
-        TakerBuyVolume = null,
-        TakerBuyQuoteVolume = null,
-    };
 }

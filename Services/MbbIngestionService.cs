@@ -30,6 +30,7 @@ public sealed class MbbIngestionService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<MbbIngestionService> _logger;
     private readonly InstrumentDescriptor _instrument;
+    private readonly InstrumentCatalog _catalog;
 
     public MbbIngestionService(
         AppDbContext db,
@@ -43,17 +44,37 @@ public sealed class MbbIngestionService
         _db = db;
         _vci = vci;
         _options = options ?? new MbbIngestionOptions();
-        _calendar = calendar ?? new VietnamMarketCalendar(
-            VietnamMarketCalendar.ParseNonTradingDates(_options.NonTradingDates),
+        _calendar = calendar ?? VietnamMarketCalendar.CreateDefault(
+            _options.NonTradingDates,
             TimeSpan.FromMinutes(_options.PublishGraceMinutes));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MbbIngestionService>.Instance;
-        _instrument = (catalog ?? InstrumentCatalog.Default).Get(_options.Symbol)
+        _catalog = catalog ?? InstrumentCatalog.Default;
+        _instrument = _catalog.Get(_options.Symbol)
             ?? throw new ArgumentException(
                 $"Symbol '{_options.Symbol}' is not a known instrument in the catalog.", nameof(options));
     }
 
     public InstrumentDescriptor Instrument => _instrument;
+
+    /// <summary>
+    /// Same lane bound to another catalog symbol (EQX). The symbol must carry the
+    /// Ingestion capability; options are copied per symbol (daily backfill start from
+    /// <see cref="MbbIngestionOptions.DailyBackfillStartBySymbol"/>), timeframes stay
+    /// configured ∩ the instrument's ActiveTimeframes. MBB yields this same instance.
+    /// </summary>
+    public MbbIngestionService ForSymbol(string symbol)
+    {
+        var instrument = _catalog.Get(symbol)
+            ?? throw new ArgumentException($"Unknown symbol '{InstrumentCatalog.Canonicalize(symbol)}'.", nameof(symbol));
+        if (!EquityScope.Has(instrument, EquityCapability.Ingestion))
+            throw new ArgumentException(
+                $"Symbol '{instrument.Symbol}' does not support the equity ingestion lane.", nameof(symbol));
+        if (string.Equals(instrument.Symbol, _instrument.Symbol, StringComparison.Ordinal))
+            return this;
+        return new MbbIngestionService(_db, _vci, _options.ForSymbol(instrument.Symbol), _calendar,
+            _timeProvider, _logger, _catalog);
+    }
 
     /// <summary>Effective timeframes: configured set ∩ the instrument's declared active set.</summary>
     internal IReadOnlyList<string> EffectiveTimeframes() =>
@@ -105,6 +126,8 @@ public sealed class MbbIngestionService
             }
         }
 
+        // A timeframe can also report an Error without throwing (revision refetch incomplete).
+        failures = Math.Max(failures, results.Count(r => r.Error is not null));
         var status = failures == 0 ? MbbSyncStatuses.Succeeded
             : results.All(r => r.Error is not null) ? MbbSyncStatuses.Failed
             : MbbSyncStatuses.Partial;
@@ -122,14 +145,53 @@ public sealed class MbbIngestionService
         var rejected = 0;
         var requestsUsed = 0;
 
-        // 1. Latest bars — the same fetch also repairs recent provider revisions.
+        var revisionRequests = 0;
+        string? revisionStatus = null;
+        // Never store bars older than the declared history start (or older rows already
+        // stored by an explicit earlier backfill): e.g. VNINDEX's malformed 2005-era rows.
+        var floorMs = await HistoryFloorMsAsync(timeframe, cancellationToken);
+
+        // 1. Latest bars. A changed PRICE on an already-stored finalized bar means the
+        // provider re-based its adjusted history (ex-date): VCI/KBS rewrite the WHOLE series,
+        // so patching only the recent window would leave two adjustment factors in the DB.
+        // Revisions therefore trigger a full-history refetch that is written in one
+        // SaveChanges, or not at all (stored rows then stay consistently on the previous
+        // basis and the next cycle detects the revision again).
         if (requestBudget > 0)
         {
             var latest = await _vci.GetBarsAsync(_instrument.Symbol, timeframe, nowSec,
                 Math.Max(1, _options.LatestCountBack), cancellationToken);
             requestsUsed++;
             fetched += latest.Count;
-            var write = await UpsertBarsAsync(timeframe, latest, cancellationToken);
+
+            var revised = await CountPriceRevisionsAsync(timeframe, latest, cancellationToken);
+            IReadOnlyList<ProviderOhlcvBar> toWrite = latest;
+            if (revised > 0)
+            {
+                var refetch = await FetchFullHistoryAsync(timeframe, latest, cancellationToken);
+                revisionRequests = refetch.Requests;
+                fetched += refetch.FetchedBars;
+                if (!refetch.Complete)
+                {
+                    _logger.LogWarning(
+                        "{Symbol} {Timeframe}: {Revised} stored bars changed price but the full-history refetch " +
+                        "did not complete within {MaxPages} pages; nothing written to avoid mixing adjustment bases",
+                        _instrument.Symbol, timeframe, revised, _options.RevisionRefetchMaxPages);
+                    return new MbbTimeframeSync(timeframe, fetched, 0, 0, 0, 0, 0, 0, 0,
+                        requestsUsed + revisionRequests,
+                        $"revision-refetch-incomplete: {revised} stored bars changed price; full history not covered " +
+                        $"within {_options.RevisionRefetchMaxPages} pages - nothing written",
+                        revisionRequests, RevisionRefetchStatuses.Incomplete);
+                }
+                _logger.LogInformation(
+                    "{Symbol} {Timeframe}: {Revised} stored bars changed price (provider re-adjustment); " +
+                    "rewriting full history ({Bars} bars, {Requests} requests)",
+                    _instrument.Symbol, timeframe, revised, refetch.Bars.Count, refetch.Requests);
+                toWrite = refetch.Bars;
+                revisionStatus = RevisionRefetchStatuses.Completed;
+            }
+
+            var write = await UpsertBarsAsync(timeframe, toWrite, cancellationToken, floorMs);
             inserted += write.Inserted;
             updated += write.Updated;
             skippedForming += write.SkippedForming;
@@ -155,7 +217,7 @@ public sealed class MbbIngestionService
             var batch = await FetchRangeAsync(timeframe, range, cancellationToken);
             requestsUsed++;
             fetched += batch.Count;
-            var write = await UpsertBarsAsync(timeframe, batch, cancellationToken);
+            var write = await UpsertBarsAsync(timeframe, batch, cancellationToken, floorMs);
             inserted += write.Inserted;
             updated += write.Updated;
             skippedForming += write.SkippedForming;
@@ -165,7 +227,88 @@ public sealed class MbbIngestionService
 
         var remaining = Math.Max(0, fillableRanges.Length - processed);
         return new MbbTimeframeSync(timeframe, fetched, inserted, updated, skippedForming,
-            rejected, missing.Count, processed, remaining, requestsUsed);
+            rejected, missing.Count, processed, remaining, requestsUsed + revisionRequests,
+            null, revisionRequests, revisionStatus);
+    }
+
+    /// <summary>
+    /// Finalized, valid provider bars whose stored row exists with a different OHLC price.
+    /// Volume-only changes are not a re-basing signal and are patched in place.
+    /// </summary>
+    internal async Task<int> CountPriceRevisionsAsync(
+        string timeframe, IReadOnlyList<ProviderOhlcvBar> bars, CancellationToken cancellationToken)
+    {
+        if (bars.Count == 0) return 0;
+        var nowUtcMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var openTimes = bars.Select(b => b.OpenTimeMs).ToHashSet();
+        var stored = await _db.InstrumentCandles.AsNoTracking()
+            .Where(c => c.Symbol == _instrument.Symbol
+                && c.Timeframe == timeframe
+                && openTimes.Contains(c.OpenTimeMs))
+            .Select(c => new { c.OpenTimeMs, c.Open, c.High, c.Low, c.Close })
+            .ToDictionaryAsync(c => c.OpenTimeMs, cancellationToken);
+        var revised = 0;
+        foreach (var bar in bars)
+        {
+            if (!_calendar.IsFinalized(timeframe, bar.OpenTimeMs, nowUtcMs) || !IsValidOhlcv(bar)) continue;
+            if (stored.TryGetValue(bar.OpenTimeMs, out var row)
+                && (row.Open != bar.Open || row.High != bar.High || row.Low != bar.Low || row.Close != bar.Close))
+                revised++;
+        }
+        return revised;
+    }
+
+    /// <summary>Oldest open the lane keeps: min(declared history start, earliest stored row).</summary>
+    private async Task<long> HistoryFloorMsAsync(string timeframe, CancellationToken cancellationToken)
+    {
+        var earliestStored = await _db.InstrumentCandles.AsNoTracking()
+            .Where(c => c.Symbol == _instrument.Symbol && c.Timeframe == timeframe)
+            .MinAsync(c => (long?)c.OpenTimeMs, cancellationToken);
+        var startLocal = BackfillStartLocal(timeframe);
+        var startOpenMs = timeframe == EquityCandleTimeframes.Day
+            ? VietnamMarketCalendar.DailyOpenUtcMs(startLocal)
+            : VietnamMarketCalendar.HourlyOpensUtcMs(startLocal)[0];
+        return Math.Min(earliestStored ?? startOpenMs, startOpenMs);
+    }
+
+    internal sealed record FullHistoryFetch(
+        IReadOnlyList<ProviderOhlcvBar> Bars, int Requests, int FetchedBars, bool Complete);
+
+    /// <summary>
+    /// Pages backward from the latest batch until the earliest stored bar (or the backfill
+    /// start, whichever is older) is covered or the provider stops yielding, bounded by
+    /// <see cref="MbbIngestionOptions.RevisionRefetchMaxPages"/>. Pure fetch: writes nothing.
+    /// </summary>
+    private async Task<FullHistoryFetch> FetchFullHistoryAsync(
+        string timeframe, IReadOnlyList<ProviderOhlcvBar> latest, CancellationToken cancellationToken,
+        long? extraFloorMs = null)
+    {
+        if (latest.Count == 0) return new FullHistoryFetch([], 0, 0, false);
+        var floorMs = await HistoryFloorMsAsync(timeframe, cancellationToken);
+        if (extraFloorMs is { } extra) floorMs = Math.Min(floorMs, extra);
+
+        var byOpen = new SortedDictionary<long, ProviderOhlcvBar>();
+        foreach (var bar in latest) byOpen[bar.OpenTimeMs] = bar;
+        var requests = 0;
+        var fetchedBars = 0;
+        var pageSize = Math.Max(1, _options.BatchCountBack);
+        var maxPages = Math.Max(1, _options.RevisionRefetchMaxPages);
+        var cursorSec = (byOpen.First().Key / 1000) - 1;
+        while (byOpen.First().Key > floorMs)
+        {
+            if (requests >= maxPages)
+                return new FullHistoryFetch([], requests, fetchedBars, false);
+            if (requests > 0)
+                await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(0, _options.RequestDelayMs)), cancellationToken);
+            var page = await _vci.GetBarsAsync(_instrument.Symbol, timeframe, cursorSec, pageSize, cancellationToken);
+            requests++;
+            fetchedBars += page.Count;
+            if (page.Count == 0) break; // provider history exhausted - nothing older exists
+            foreach (var bar in page) byOpen.TryAdd(bar.OpenTimeMs, bar);
+            if (page.Count < pageSize) break;
+            cursorSec = (page.Min(b => b.OpenTimeMs) / 1000) - 1;
+        }
+        return new FullHistoryFetch(byOpen.Values.ToArray(), requests, fetchedBars, true);
     }
 
     /// <summary>
@@ -186,7 +329,7 @@ public sealed class MbbIngestionService
                 nameof(timeframe));
         if (!_options.Enabled)
             return new MbbTimeframeSync(timeframe, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                "MBB ingestion is disabled.");
+                $"{_instrument.Symbol} ingestion is disabled.");
 
         var from = fromLocal ?? BackfillStartLocal(timeframe);
         var nowUtcMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
@@ -197,9 +340,13 @@ public sealed class MbbIngestionService
             ? VietnamMarketCalendar.ToUtcMs(toLocal.Value, VietnamMarketCalendar.AfternoonCloseLocal) / 1000
             : nowUtcMs / 1000;
 
-        var fetched = 0; var inserted = 0; var updated = 0; var skipped = 0; var rejected = 0;
+        // Pages are buffered, never written one by one: a page on a NEW adjustment basis written
+        // next to stored rows on the OLD basis would mix two factors permanently (the next sync's
+        // latest window would already match and never detect it).
+        var fetched = 0;
         var requests = Math.Max(1, _options.MaxRequestsPerCycle);
         var cursorSec = toSec;
+        var pages = new SortedDictionary<long, ProviderOhlcvBar>();
         while (requests > 0 && !cancellationToken.IsCancellationRequested)
         {
             var batch = await _vci.GetBarsAsync(_instrument.Symbol, timeframe, cursorSec,
@@ -207,22 +354,68 @@ public sealed class MbbIngestionService
             requests--;
             if (batch.Count == 0) break;
             fetched += batch.Count;
-            var write = await UpsertBarsAsync(timeframe, batch, cancellationToken);
-            inserted += write.Inserted;
-            updated += write.Updated;
-            skipped += write.SkippedForming;
-            rejected += write.RejectedInvalid;
+            foreach (var bar in batch) pages.TryAdd(bar.OpenTimeMs, bar);
 
             var earliest = batch[0].OpenTimeMs;
             if (earliest <= fromOpenMs || batch.Count < _options.BatchCountBack) break;
             cursorSec = (earliest / 1000) - 1;
             await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(0, _options.RequestDelayMs)), cancellationToken);
         }
+        var used = _options.MaxRequestsPerCycle - requests;
 
+        // Revision detection over the fetched pages plus, when the range ends in the past, a probe
+        // of the latest bars (a disjoint older range cannot reveal a re-basing on its own).
+        IReadOnlyList<ProviderOhlcvBar> latest = toLocal.HasValue
+            ? await ProbeLatestAsync(timeframe, nowUtcMs, cancellationToken)
+            : pages.Values.TakeLast(Math.Max(1, _options.LatestCountBack)).ToArray();
+        if (toLocal.HasValue)
+        {
+            used++;
+            fetched += latest.Count;
+        }
+        var revised = await CountPriceRevisionsAsync(timeframe,
+            pages.Values.Concat(latest).DistinctBy(b => b.OpenTimeMs).ToArray(), cancellationToken);
+
+        IReadOnlyList<ProviderOhlcvBar> toWrite;
+        long writeFloorMs;
+        int revisionRequests = 0;
+        string? revisionStatus = null;
+        if (revised > 0)
+        {
+            // Re-based history: refetch the WHOLE series from now and write it in one save (or nothing).
+            var refetch = await FetchFullHistoryAsync(timeframe, latest, cancellationToken, extraFloorMs: fromOpenMs);
+            revisionRequests = refetch.Requests;
+            fetched += refetch.FetchedBars;
+            if (!refetch.Complete)
+            {
+                _logger.LogWarning(
+                    "{Symbol} {Timeframe} backfill: {Revised} stored bars changed price but the full-history refetch " +
+                    "did not complete within {MaxPages} pages; nothing written", _instrument.Symbol, timeframe, revised,
+                    _options.RevisionRefetchMaxPages);
+                return new MbbTimeframeSync(timeframe, fetched, 0, 0, 0, 0, 0, 0, 0, used + revisionRequests,
+                    $"revision-refetch-incomplete: {revised} stored bars changed price; full history not covered " +
+                    $"within {_options.RevisionRefetchMaxPages} pages - nothing written",
+                    revisionRequests, RevisionRefetchStatuses.Incomplete);
+            }
+            toWrite = refetch.Bars;
+            writeFloorMs = Math.Min(fromOpenMs, await HistoryFloorMsAsync(timeframe, cancellationToken));
+            revisionStatus = RevisionRefetchStatuses.Completed;
+        }
+        else
+        {
+            toWrite = pages.Values.ToArray();
+            // Pages overshoot `from`; bars before it are not part of the requested history.
+            writeFloorMs = fromOpenMs;
+        }
+
+        var write = await UpsertBarsAsync(timeframe, toWrite, cancellationToken, writeFloorMs);
         var missing = await FindMissingExpectedOpensAsync(timeframe, ExpectedOpens(timeframe), cancellationToken);
-        return new MbbTimeframeSync(timeframe, fetched, inserted, updated, skipped,
-            rejected, missing.Count, 0, 0, _options.MaxRequestsPerCycle - requests);
+        return new MbbTimeframeSync(timeframe, fetched, write.Inserted, write.Updated, write.SkippedForming,
+            write.RejectedInvalid, missing.Count, 0, 0, used + revisionRequests, null, revisionRequests, revisionStatus);
     }
+
+    private Task<IReadOnlyList<ProviderOhlcvBar>> ProbeLatestAsync(string timeframe, long nowUtcMs, CancellationToken ct) =>
+        _vci.GetBarsAsync(_instrument.Symbol, timeframe, nowUtcMs / 1000, Math.Max(1, _options.LatestCountBack), ct);
 
     /// <summary>
     /// Expected opens over the full instrument history window [backfill start, today],
@@ -288,9 +481,15 @@ public sealed class MbbIngestionService
     /// Every row carries VCI/adjusted/HOSE/Asia-Ho_Chi_Minh provenance from the catalog.
     /// </summary>
     internal async Task<UpsertResult> UpsertBarsAsync(
-        string timeframe, IReadOnlyList<ProviderOhlcvBar> bars, CancellationToken cancellationToken = default)
+        string timeframe, IReadOnlyList<ProviderOhlcvBar> bars, CancellationToken cancellationToken = default,
+        long? minOpenMs = null)
     {
         var result = new UpsertResult();
+        if (minOpenMs.HasValue && bars.Any(b => b.OpenTimeMs < minOpenMs.Value))
+        {
+            result.SkippedBeforeStart = bars.Count(b => b.OpenTimeMs < minOpenMs.Value);
+            bars = bars.Where(b => b.OpenTimeMs >= minOpenMs.Value).ToArray();
+        }
         if (bars.Count == 0) return result;
 
         var nowUtcMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
@@ -380,5 +579,6 @@ public sealed class MbbIngestionService
         public int Updated;
         public int SkippedForming;
         public int RejectedInvalid;
+        public int SkippedBeforeStart;
     }
 }

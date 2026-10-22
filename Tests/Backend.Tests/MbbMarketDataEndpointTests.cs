@@ -19,6 +19,7 @@ namespace Backend.Tests;
 /// (InMemory DB, hosted workers removed) for candles/data-quality/admin guard,
 /// plus direct-construction tests for the AI-proxied conditions endpoint.
 /// </summary>
+[Collection(EquityLaneLockCollection.Name)]
 public class MbbMarketDataEndpointTests : IClassFixture<TestWebApplicationFactory>
 {
     // Unique open-ms base per test keeps rows isolated inside the shared
