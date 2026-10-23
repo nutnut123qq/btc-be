@@ -9,8 +9,12 @@ param(
 . "$PSScriptRoot/common.ps1"
 if ($TimeLimitMinutes -ge $IntervalMinutes) { throw "TimeLimitMinutes must be shorter than IntervalMinutes so polls cannot overlap." }
 $entry = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "run-paper-observer.ps1"))
-foreach ($required in @($entry, (Join-Path $PSScriptRoot "run-ai-job.ps1"))) {
+foreach ($required in @($entry, (Join-Path $PSScriptRoot "observer-secret.ps1"))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Ops script not found: $required" }
+}
+$observerSecret = Join-Path $script:RuntimeDir "observer-db.secret"
+if ($Enable -and -not (Test-Path -LiteralPath $observerSecret -PathType Leaf)) {
+    throw "Observer secret missing ($observerSecret); run configure-observer-secret.ps1 first."
 }
 foreach ($required in @("paper_observer.py", "venv/Scripts/python.exe")) {
     if (-not (Test-Path -LiteralPath (Join-Path $script:AiDir $required))) { throw "AI dependency missing: $required" }
