@@ -9,6 +9,7 @@ $taskNames = @(
     "BTCServiceWatchdog",
     "BTCFuturesCollector",
     "BTCPaperTrader",
+    "BTCPaperObserver",
     "BTCTechnicalDescriptiveEvidence",
     "Bitcoin Analyst DB Backup",
     "Bitcoin Analyst DB Backup"

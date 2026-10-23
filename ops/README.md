@@ -28,6 +28,7 @@ pwsh ./ops/stop.ps1
 pwsh ./ops/watchdog.ps1
 pwsh ./ops/run-ai-job.ps1 -Job Futures
 pwsh ./ops/run-ai-job.ps1 -Job Paper
+pwsh ./ops/run-ai-job.ps1 -Job PaperObserver
 pwsh ./ops/run-ai-job.ps1 -Job EnsemblePaper
 pwsh ./ops/run-ai-job.ps1 -Job Liquidation
 pwsh ./ops/run-ai-job.ps1 -Job Sentiment
@@ -41,6 +42,8 @@ pwsh ./ops/run-ai-job.ps1 -Job Confluence
 `run-ai-job.ps1` is the only supported Scheduled Task entrypoint for derived data. `Paper` always invokes `paper_trader.py --mode forward-paper`; each poll writes one idempotent, timestamped decision/abstention and observed live quote for the latest finalized BTC 4h bar it sees. It does not backfill bars missed during downtime. The decision core is immutable; fill and outcome fields remain empty and may mature only once through separately observed events, so these rows are prospective forecast evidence rather than simulated trades or PnL. PostgreSQL rejects backdated recorder clocks and incoherent fill/outcome timestamps. Historical simulation is available only through an explicit interactive `paper_trader.py --mode replay` invocation, and every such row is persisted as replay with non-prospective provenance. Never schedule replay under the `Paper` job name. `EnsemblePaper` manages existing BTC positions through the admin-guarded backend; new Ensemble entries remain fail-closed until a real promotion gate exists. `Confluence` refreshes BTC only; `Liquidation` and `Sentiment` run their Python snapshot engines. Authentication, HTTP, or Python failures terminate with a non-zero exit code so Task Scheduler cannot report a false success.
 
 Schedule `Paper` every 15 minutes. The unique decision id makes repeated polls of the same finalized 4h bar no-ops, while the tighter cadence bounds normal forward quote latency well below the previous hourly schedule.
+
+`PaperObserver` runs `paper_observer.py --once`: for directional (`long`/`short`) forward-paper rows only, it writes a fill from a live Binance spot quote received within 15 minutes after the decision became available, and a gross 4h outcome (`OutcomeHorizon='4h-gross'`, costs not deducted) from a live quote within 15 minutes after fill+4h. Abstentions are never filled; missed windows stay empty forever (no Klines backfill); every write is a conditional, write-once UPDATE bounded by the database clock. It prints one JSON line per pass (errors as JSON with exit 1). Install it as its own task with `pwsh ./ops/install-paper-observer-task.ps1 -Enable` (`BTCPaperObserver`, every 5 minutes, `IgnoreNew`, 4-minute limit, same interactive deploy-user principal as the other tasks); disable it with `Disable-ScheduledTask BTCPaperObserver`. Disable it before `rotate-db-password.ps1`.
 
 `rotate-db-password.ps1` generates a new random PostgreSQL password, stores it only in the current deploy user's DPAPI-protected secret file, changes the configured PostgreSQL role, and verifies a fresh login. Stop the managed stack and disable application Scheduled Tasks before running it. The password is never printed or passed on a process command line.
 

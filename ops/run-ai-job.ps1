@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][ValidateSet("Futures", "Paper", "EnsemblePaper", "Liquidation", "Sentiment", "Confluence")][string]$Job)
+param([Parameter(Mandatory)][ValidateSet("Futures", "Paper", "PaperObserver", "EnsemblePaper", "Liquidation", "Sentiment", "Confluence")][string]$Job)
 . "$PSScriptRoot/common.ps1"
 Initialize-OpsDirectories
 Import-OpsSecrets
@@ -30,6 +30,7 @@ if (-not (Test-Path -LiteralPath $python)) { throw "AI virtualenv is missing." }
 $scriptName = switch ($Job) {
     "Futures" { "futures_collector.py" }
     "Paper" { "paper_trader.py" }
+    "PaperObserver" { "paper_observer.py" }
     "Liquidation" { "liquidation_engine.py" }
     "Sentiment" { "macro_sentiment.py" }
 }
@@ -42,6 +43,10 @@ elseif ($Job -eq "Paper") {
     # decision/abstention and live quote; it never invents a fill or outcome.
     # Historical replay must never run under the scheduled Paper job name.
     @($scriptPath, "--mode", "forward-paper")
+}
+elseif ($Job -eq "PaperObserver") {
+    # One bounded pass: live-quote fill/outcome for directional forward-paper rows only.
+    @($scriptPath, "--once")
 }
 else {
     @($scriptPath)
