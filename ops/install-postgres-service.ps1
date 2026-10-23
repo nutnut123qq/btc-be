@@ -29,7 +29,8 @@ if (-not $service) {
     & $pgCtl register -N $ServiceName -D $DataDirectory -S auto -w -t 120
     if ($LASTEXITCODE -ne 0) { throw "pg_ctl register failed ($LASTEXITCODE)." }
 }
-& sc.exe config $ServiceName obj= $account password= "" start= auto | Out-Null
+# Through cmd: Windows PowerShell 5.1 drops an empty "" argument, which would shift sc.exe's name=value pairs.
+& cmd.exe /c "sc.exe config $ServiceName obj= `"$account`" password= `"`" start= auto" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "sc config failed ($LASTEXITCODE)." }
 # Finite recovery: two restarts (1 min, 2 min), then stay stopped; counter resets after a day.
 & sc.exe failure $ServiceName reset= 86400 actions= restart/60000/restart/120000//0 | Out-Null
