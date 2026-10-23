@@ -8,32 +8,46 @@ param(
 
 . "$PSScriptRoot/common.ps1"
 if ($TimeLimitMinutes -ge $IntervalMinutes) { throw "TimeLimitMinutes must be shorter than IntervalMinutes so polls cannot overlap." }
-$jobScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "run-ai-job.ps1"))
-if (-not (Test-Path -LiteralPath $jobScript)) { throw "Job entrypoint not found: $jobScript" }
+$entry = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "run-paper-observer.ps1"))
+foreach ($required in @($entry, (Join-Path $PSScriptRoot "run-ai-job.ps1"))) {
+    if (-not (Test-Path -LiteralPath $required)) { throw "Ops script not found: $required" }
+}
 foreach ($required in @("paper_observer.py", "venv/Scripts/python.exe")) {
     if (-not (Test-Path -LiteralPath (Join-Path $script:AiDir $required))) { throw "AI dependency missing: $required" }
 }
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+if (-not ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Registering an S4U task requires an elevated session."
+}
 
-# Same action shape and principal model as the other application tasks: inbox PowerShell, interactive
-# logon of the deploy user (DPAPI secrets decrypt only for that user), no password on the command line.
+# S4U batch logon of the deploy user: runs whether or not anyone is logged on, stores no password, keeps the
+# DPAPI-protected ops secrets on their existing user scope. Limited token; no other task is touched.
 $powerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-$arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$jobScript`" -Job PaperObserver"
+$arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$entry`""
 $action = New-ScheduledTaskAction -Execute $powerShell -Argument $arguments -WorkingDirectory $script:BackendDir
+# One time trigger repeating forever; Task Scheduler keeps it across reboots and the next 5-minute run is the retry.
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes)
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes $TimeLimitMinutes) `
     -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-$principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType S4U -RunLevel Limited
 
 if ($PSCmdlet.ShouldProcess($TaskName, "install paper observer task")) {
-    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-        Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings | Out-Null
-    }
-    else {
-        Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
-            -Description "Forward-paper fill/outcome observer (paper_observer.py --once). Writes only live-quote fills/outcomes." | Out-Null
-    }
-    if ($Enable) { Enable-ScheduledTask -TaskName $TaskName | Out-Null }
-    else { Disable-ScheduledTask -TaskName $TaskName | Out-Null }
+    # -Force replaces an existing definition completely (principal included), so an upgrade cannot keep an old logon type.
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
+        -Description "Forward-paper fill/outcome observer (paper_observer.py --once). Writes only live-quote fills/outcomes." `
+        -Force -ErrorAction Stop | Out-Null
+    if ($Enable) { Enable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null }
+    else { Disable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null }
+
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    $problems = @()
+    if ($task.Principal.LogonType -ne "S4U") { $problems += "logon=$($task.Principal.LogonType)" }
+    if ($task.Principal.RunLevel -ne "Limited") { $problems += "runLevel=$($task.Principal.RunLevel)" }
+    if (@($task.Actions).Count -ne 1 -or $task.Actions[0].Arguments -ne $arguments) { $problems += "action" }
+    if (@($task.Triggers).Count -ne 1 -or $task.Triggers[0].Repetition.Interval -ne "PT$($IntervalMinutes)M") { $problems += "trigger" }
+    if ($task.Settings.MultipleInstances -ne "IgnoreNew" -or $task.Settings.ExecutionTimeLimit -ne "PT$($TimeLimitMinutes)M") { $problems += "settings" }
+    if ($Enable -and $task.State -eq "Disabled") { $problems += "state=Disabled" }
+    if ($problems) { throw "Task $TaskName does not match the intended definition: $($problems -join ', ')" }
 }
 
 $task = Get-ScheduledTask -TaskName $TaskName
