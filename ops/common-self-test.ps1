@@ -92,6 +92,15 @@ finally { Remove-Item -LiteralPath $profileRoot -Recurse -Force -ErrorAction Sil
 if ($null -eq (Get-ProcessStartUtcTicks $PID)) { throw "Process start time lookup failed." }
 if ($null -ne (Get-ProcessStartUtcTicks 999999)) { throw "Missing PID reported a start time." }
 Grant-OpsUserProcessAccess
+# Process tree: a managed root with a child is enumerated and stopped completely, and state is not trusted for reused PIDs.
+$treeRoot = Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList "/c", "ping -n 30 127.0.0.1 >nul" -WindowStyle Hidden -PassThru
+Start-Sleep -Seconds 1
+$treeRoot.Refresh()
+$treeEntry = [pscustomobject]@{ name = "self-test"; pid = $treeRoot.Id; startedAtUtcTicks = $treeRoot.StartTime.ToUniversalTime().Ticks }
+$treeIds = @(Get-ProcessTreeIds $treeRoot.Id)
+if ($treeIds.Count -lt 2 -or $treeIds[0] -ne $treeRoot.Id) { throw "Process tree enumeration missed the child." }
+Stop-ManagedProcessTree $treeEntry
+if (@($treeIds | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue }).Count -gt 0) { throw "Process tree was not fully stopped." }
 
 $python = Join-Path $script:AiDir "venv/Scripts/python.exe"
 $missingWorkspace = Join-Path ([IO.Path]::GetTempPath()) "btc-ops-$([Guid]::NewGuid().ToString('N'))"

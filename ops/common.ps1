@@ -227,18 +227,46 @@ function Start-ManagedProcess {
     }
 }
 
+# Root plus descendants, following ParentProcessId only to children created after their parent (a recycled parent
+# PID can never adopt an older process). Breadth-first, root first.
+function Get-ProcessTreeIds([int]$RootId) {
+    $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CreationDate)
+    $root = $all | Where-Object { $_.ProcessId -eq $RootId } | Select-Object -First 1
+    if ($null -eq $root) { return @() }
+    $ids = [Collections.Generic.List[int]]::new()
+    $queue = [Collections.Generic.Queue[object]]::new()
+    $queue.Enqueue($root)
+    while ($queue.Count -gt 0) {
+        $node = $queue.Dequeue()
+        $ids.Add([int]$node.ProcessId)
+        foreach ($child in @($all | Where-Object { $_.ParentProcessId -eq $node.ProcessId -and $_.ProcessId -ne $node.ProcessId -and $_.CreationDate -ge $node.CreationDate })) {
+            $queue.Enqueue($child)
+        }
+    }
+    return $ids.ToArray()
+}
+
 function Stop-ManagedProcessTree($Entry) {
     $process = Get-Process -Id $Entry.pid -ErrorAction SilentlyContinue
     if ($null -eq $process) { return }
     if (-not (Test-ManagedProcess $Entry)) { throw "Refusing to stop reused PID $($Entry.pid) for $($Entry.name)." }
-    & taskkill.exe /PID $Entry.pid /T /F | Out-Null
-    $taskkillExit = $LASTEXITCODE
-    if ($taskkillExit -ne 0) { throw "taskkill failed for $($Entry.name) process tree (exit $taskkillExit)." }
-    for ($attempt = 0; $attempt -lt 30 -and (Get-Process -Id $Entry.pid -ErrorAction SilentlyContinue); $attempt++) {
+    $tree = @(Get-ProcessTreeIds ([int]$Entry.pid))
+    $taskkill = Invoke-BoundedProcess (Join-Path $env:SystemRoot "System32\taskkill.exe") @("/PID", [string]$Entry.pid, "/T", "/F") 60
+    $taskkillExit = $taskkill.ExitCode
+    if ($taskkillExit -ne 0) {
+        # taskkill also asks for query rights, which the integrity policy withholds on a higher-integrity S4U process
+        # even when its DACL grants this user; TERMINATE alone is allowed. Kill the tree leaves-first instead.
+        $leavesFirst = @($tree); [Array]::Reverse($leavesFirst)
+        foreach ($id in $leavesFirst) {
+            try { [Diagnostics.Process]::GetProcessById($id).Kill() } catch { }
+        }
+    }
+    for ($attempt = 0; $attempt -lt 30 -and @($tree | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue }).Count -gt 0; $attempt++) {
         Start-Sleep -Milliseconds 100
     }
-    if (Get-Process -Id $Entry.pid -ErrorAction SilentlyContinue) {
-        throw "Could not stop $($Entry.name) process tree (taskkill exit $taskkillExit)."
+    $survivors = @($tree | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    if ($survivors.Count -gt 0) {
+        throw "Could not stop $($Entry.name) process tree (taskkill exit $taskkillExit; remaining PIDs: $($survivors -join ', '))."
     }
 }
 
