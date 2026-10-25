@@ -50,6 +50,12 @@ public sealed class EquitySessionPostProcessor : IEquitySessionPostProcessor
         {
             await Step(parts, "base-rates", async () =>
             {
+                // A worker restart re-runs the latest session; when the artifact already matches the stored bars (dataset
+                // fingerprint + latest finalized as-of) and method, a rebuild would reproduce it while hogging the AI
+                // service (≈30–100 s of CPU per symbol) right when the stack is cold. Any new bar or revision rebuilds.
+                var current = await _baseRates.EvaluateAsync(sym, ct);
+                if (current.Usable && current.Fresh && current.MethodVersion == EquityBaseRatesService.DefaultMethodVersion)
+                    return "up-to-date";
                 var r = await _baseRates.RebuildAsync(sym, ct);
                 return r.StatusCode == StatusCodes.Status200OK ? "rebuilt" : $"{r.Code}: {r.Message}";
             });

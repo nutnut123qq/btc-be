@@ -604,6 +604,33 @@ public class EquityResearchTests : IDisposable
         Assert.Null(await post.RunAsync(InstrumentCatalog.Default.Get("VCB")!, Wed, default)); // context-only: no-op
     }
 
+    [Fact]
+    public async Task PostProcessor_SkipsRebuildOnlyWhileArtifactMatchesStoredBars()
+    {
+        EquitySessionPostProcessor.ResetContextSyncMemory();
+        var db = NewDb(nameof(PostProcessor_SkipsRebuildOnlyWhileArtifactMatchesStoredBars));
+        var tp = new TestTimeProvider(Now);
+        var rows = await SeedBarsAsync(db, "BID", 30, new DateOnly(2026, 10, 14));
+        WriteArtifact("BID", Artifact("BID", rows).ToJsonString());
+        var handler = new StubHandler(_ => Json(System.Net.HttpStatusCode.OK, "{\"status\":\"built\",\"symbol\":\"BID\"}"));
+        var baseRates = new EquityBaseRatesService(db, _root, 4096, Cal, new StubFactory(handler), tp);
+        var post = new EquitySessionPostProcessor(baseRates, new EquityForecastJournalService(db, baseRates, Cal, tp),
+            new EquityContextCollector(db, new FakeSource(VciFixture, KbsFixture), tp),
+            Microsoft.Extensions.Options.Options.Create(new Backend.Options.EquityIngestionOptions()));
+        var bid = InstrumentCatalog.Default.Get("BID")!;
+
+        Assert.Contains("base-rates up-to-date", await post.RunAsync(bid, Wed, default));
+        Assert.Empty(handler.Requests);
+
+        // A revised stored bar breaks the fingerprint: the next run rebuilds.
+        var bar = await db.InstrumentCandles.OrderByDescending(c => c.OpenTimeMs).FirstAsync(c => c.Symbol == "BID");
+        bar.Close += 1;
+        bar.UpdatedAtUtc = bar.UpdatedAtUtc.AddSeconds(1);
+        await db.SaveChangesAsync();
+        Assert.Contains("base-rates rebuilt", await post.RunAsync(bid, Wed, default));
+        Assert.Equal("POST /api/equity-base-rates/build?symbol=BID", handler.Requests.Single());
+    }
+
     // --- context collector (recorded-shape fixtures, no network) -------------------------
 
     private const string VciFixture = """
