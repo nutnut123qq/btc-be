@@ -1,7 +1,12 @@
-param([switch]$SkipBuild)
+param([switch]$SkipBuild, [switch]$RequireHostProfile)
 . "$PSScriptRoot/common.ps1"
 Initialize-OpsDirectories
 Import-OpsSecrets
+
+# Unattended starts (watchdog/autostart task) pass -RequireHostProfile so a missing or partial host profile can never
+# fall back to "all workers on". Committed defaults are unchanged for interactive starts.
+$hostSettingsPath = Join-Path $script:RuntimeDir "backend-settings.json"
+if ($RequireHostProfile) { Assert-HostProfile $hostSettingsPath }
 
 if ([string]::IsNullOrWhiteSpace($env:AdminApiKey)) {
     throw "AdminApiKey is required. Run ops/configure-secrets.ps1 first."
@@ -16,6 +21,16 @@ $postgres = Assert-NativePg17
 Write-Host $postgres.detail
 if (-not $postgres.ready) {
     throw "Native PostgreSQL 17 is not ready. Start it separately; this script never starts a database or Docker."
+}
+
+# ProductionLike never migrates: a schema behind the code crashes hosted services on start and a watchdog would
+# restart it forever. Refuse to start until ops/migrate.ps1 has run.
+$codeMigration = @(Get-ChildItem -LiteralPath (Join-Path $script:BackendDir "Migrations") -Filter "*.cs" |
+    Select-String -Pattern '\[Migration\("([^"]+)"\)\]' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object)[-1]
+$dbMigration = Invoke-BoundedProcess (Resolve-PgTool "psql") (@(Get-PgConnectionArgs) + @("--no-psqlrc", "--tuples-only", "--no-align",
+    "--command", 'SELECT max("MigrationId") FROM "__EFMigrationsHistory"')) 15
+if ($dbMigration.ExitCode -ne 0 -or $dbMigration.Output.Trim() -ne $codeMigration) {
+    throw "Database schema head '$($dbMigration.Output.Trim())' does not match code '$codeMigration'. Run ops/migrate.ps1 first; not starting."
 }
 
 $backendPublish = Join-Path $script:PublishDir "backend"
@@ -59,7 +74,6 @@ $backendEnvironment = @{
 }
 # Host-only, non-secret switches (e.g. EquityIngestion__Enabled, EquityDocuments__PipelineEnabled) live in the
 # ignored .ops/backend-settings.json as a flat {"Section__Key": "value"} object; committed defaults stay off.
-$hostSettingsPath = Join-Path $script:RuntimeDir "backend-settings.json"
 if (Test-Path -LiteralPath $hostSettingsPath) {
     $hostSettings = Get-Content -LiteralPath $hostSettingsPath -Raw | ConvertFrom-Json
     foreach ($property in $hostSettings.PSObject.Properties) {

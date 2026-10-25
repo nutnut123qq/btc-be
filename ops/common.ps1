@@ -17,6 +17,10 @@ $script:LogsDir = Join-Path $script:RuntimeDir "logs"
 $script:PublishDir = Join-Path $script:RuntimeDir "publish"
 $script:StatePath = Join-Path $script:RuntimeDir "processes.json"
 $script:SecretsPath = Join-Path $script:RuntimeDir "secrets.clixml"
+# Machine-scope subset for unattended (S4U) tasks, which cannot unlock the deploy user's DPAPI key. See
+# configure-machine-secrets.ps1. The file ACL (SYSTEM, Administrators, deploy user read) is the boundary.
+$script:MachineSecretsPath = Join-Path $script:RuntimeDir "machine-secrets.bin"
+$script:MachineSecretNames = @("PGPASSWORD", "DB_PASS", "AdminApiKey", "PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "LLM_PROVIDER")
 
 function Initialize-OpsDirectories {
     New-Item -ItemType Directory -Force -Path $script:RuntimeDir, $script:LogsDir, $script:PublishDir | Out-Null
@@ -29,9 +33,35 @@ function Set-OpsSecretsFileAcl([string]$Path) {
     if ($LASTEXITCODE -ne 0) { throw "Could not restrict the protected secret file ACL." }
 }
 
+function Get-OpsMachineSecretEntropy { return [Text.Encoding]::UTF8.GetBytes("btc-ops-machine-secrets/v1") }
+
+function Read-OpsMachineSecrets([string]$Path = $script:MachineSecretsPath) {
+    Add-Type -AssemblyName System.Security
+    try {
+        $bytes = [Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($Path), (Get-OpsMachineSecretEntropy),
+            [Security.Cryptography.DataProtectionScope]::LocalMachine)
+        $values = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
+    }
+    catch { throw "Machine-scope ops secret could not be decrypted or parsed ($($_.Exception.GetType().Name))." }
+    if ($values.schema -ne "btc-ops-machine-secrets/v1") { throw "Machine-scope ops secret has an unexpected format." }
+    return $values
+}
+
 function Import-OpsSecrets {
     if (-not (Test-Path -LiteralPath $script:SecretsPath)) { return }
-    $secrets = Import-Clixml -LiteralPath $script:SecretsPath
+    try { $secrets = Import-Clixml -LiteralPath $script:SecretsPath }
+    catch {
+        # User-scope DPAPI is unavailable in a non-interactive S4U logon; fall back to the machine-scope subset only.
+        if (-not (Test-Path -LiteralPath $script:MachineSecretsPath -PathType Leaf)) { throw }
+        $machine = Read-OpsMachineSecrets
+        foreach ($name in $script:MachineSecretNames) {
+            $property = $machine.PSObject.Properties[$name]
+            if (-not [Environment]::GetEnvironmentVariable($name, "Process") -and $property -and $property.Value) {
+                [Environment]::SetEnvironmentVariable($name, [string]$property.Value, "Process")
+            }
+        }
+        return
+    }
     foreach ($name in @("PGPASSWORD", "DB_PASS", "AdminApiKey", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "Ingress__SharedSecret")) {
         $property = $secrets.PSObject.Properties[$name]
         if (-not [Environment]::GetEnvironmentVariable($name, "Process") -and $property) {
@@ -338,6 +368,22 @@ function Get-BackendConnectionString {
     $user = if ($env:PGUSER) { $env:PGUSER } else { "postgres" }
     if ($port -notmatch '^\d{1,5}$') { throw "Invalid PGPORT." }
     return "Host=$(ConvertTo-NpgsqlValue $hostName);Port=$port;Database=$(ConvertTo-NpgsqlValue $env:PGDATABASE);Username=$(ConvertTo-NpgsqlValue $user);Password=$(ConvertTo-NpgsqlValue $env:PGPASSWORD);Pooling=true;Maximum Pool Size=100;Minimum Pool Size=10;Connection Lifetime=300;Timeout=15;Command Timeout=30;"
+}
+
+# The host profile (.ops/backend-settings.json) must decide every worker that defaults to on (RSS, paid embeddings,
+# dataset builders, alerts, testnet stream, document pipeline) explicitly, so an unattended start fails closed
+# instead of inheriting the all-on committed defaults.
+function Assert-HostProfile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Host profile missing: $Path. Refusing unattended start." }
+    try { $settings = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json } catch { throw "Host profile is not valid JSON: $Path" }
+    $required = @("BackgroundWorkers__Enabled")
+    if ([string]$settings.PSObject.Properties["BackgroundWorkers__Enabled"].Value -eq "true") {
+        $required += @("KlinesIngestionWorker", "IndexingBackgroundWorker", "CausalSmartMoneyRebuildWorker", "RssIngestionService",
+            "EmbeddingBackfillWorker", "MlDatasetBuilder", "WindowDatasetBuilder") | ForEach-Object { "BackgroundWorkers__$($_)__Enabled" }
+        $required += @("Alerts__WorkerEnabled", "BinanceTestnet__StreamEnabled", "EquityDocuments__PipelineEnabled")
+    }
+    $bad = @($required | Where-Object { $p = $settings.PSObject.Properties[$_]; -not $p -or @("true", "false") -notcontains [string]$p.Value })
+    if ($bad.Count -gt 0) { throw "Host profile $Path must set true/false explicitly for: $($bad -join ', '). Refusing unattended start." }
 }
 
 function Assert-SafeDataDirectory([string]$Path) {

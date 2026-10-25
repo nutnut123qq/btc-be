@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDirectory = "",
-    [ValidateRange(2, 30)][int]$RetentionCount = 2,
+    [ValidateRange(0, 30)][int]$RetentionCount = 2,  # 0 = keep every set (no rotation)
     [ValidateRange(1, 1024)][int]$MinimumFreeGiB = 15,
     [ValidateRange(60, 86400)][int]$MaximumRuntimeSeconds = 14400,
     [switch]$SkipModels,

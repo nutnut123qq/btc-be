@@ -1,3 +1,6 @@
+# -RequireHostProfile (set by the unattended task) is passed to start.ps1 so a restart fails closed without a valid
+# host profile instead of starting every default-on worker.
+param([switch]$RequireHostProfile)
 . "$PSScriptRoot/common.ps1"
 Initialize-OpsDirectories
 Import-OpsSecrets
@@ -89,7 +92,7 @@ try {
     # Clear any non-zero native exit code before invoking start.ps1 so a
     # successful PowerShell script is not mistaken for a failed restart.
     $global:LASTEXITCODE = 0
-    & "$PSScriptRoot/start.ps1" -SkipBuild *>> $logPath
+    & "$PSScriptRoot/start.ps1" -SkipBuild -RequireHostProfile:$RequireHostProfile *>> $logPath
     if ($LASTEXITCODE -ne 0) { throw "Production-like restart failed." }
 }
 finally {

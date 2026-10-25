@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "../.ops/backups"),
-    [ValidateRange(2, 30)][int]$RetentionCount = 2,
+    [ValidateRange(0, 30)][int]$RetentionCount = 2,  # 0 = keep every set (no rotation)
     [ValidateRange(1, 1024)][int]$MinimumFreeGiB = 15,
     [ValidateRange(1, 1024)][int]$MinimumBackupReserveGiB = 6,
     [ValidateRange(1.0, 5.0)][double]$ReserveMultiplier = 1.5,
@@ -115,6 +115,11 @@ try {
     }
 
     $completeSets = @(Get-CompleteBackupSets $output)
+    if ($RetentionCount -eq 0) {
+        Write-Host "Guarded backup complete: $($newSet.Dump)"
+        Write-Host "Retention disabled (RetentionCount=0): no backup set was deleted; $($completeSets.Count) complete set(s) on disk."
+        return
+    }
     if ($completeSets.Count -lt $RetentionCount) {
         throw "Only $($completeSets.Count) complete backup set(s) exist; at least $RetentionCount are required before rotation. No files were deleted."
     }

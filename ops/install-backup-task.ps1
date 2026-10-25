@@ -2,7 +2,7 @@
 param(
     [string]$TaskName = "Bitcoin Analyst DB Backup",
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "../.ops/backups"),
-    [ValidateRange(2, 30)][int]$RetentionCount = 2,
+    [ValidateRange(0, 30)][int]$RetentionCount = 2,  # 0 = keep every set (no rotation)
     [ValidateRange(1, 1024)][int]$MinimumFreeGiB = 15,
     [datetime]$DailyAt = "02:00",
     [switch]$Enable
