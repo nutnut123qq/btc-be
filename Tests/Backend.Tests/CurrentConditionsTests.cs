@@ -66,6 +66,35 @@ public sealed class CurrentConditionsTests
     }
 
     [Fact]
+    public async Task GetCurrentConditions_StartsCatalogLoadWhileAiIsStillComputing()
+    {
+        // The fake AI answers only after the catalog load has begun: a sequential AI-then-catalog flow times out here.
+        var catalogStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var catalog = new SignallingCatalog(FullCatalog("1h"), catalogStarted);
+        var (status, body, error) = await Invoke(AiPayload("1h", DefaultConditions), catalog, async _ =>
+        {
+            await catalogStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            return Json200(AiPayload("1h", DefaultConditions));
+        });
+
+        Assert.Equal(200, status);
+        Assert.Null(error);
+        Assert.True(body!.RootElement.GetProperty("conditions")[0].GetProperty("evidence")
+            .GetProperty("1").GetProperty("forwardReturn").GetProperty("tested").GetBoolean());
+    }
+
+    private sealed class SignallingCatalog(IResearchEvidenceCatalog inner, TaskCompletionSource started) : IResearchEvidenceCatalog
+    {
+        public ResearchEvidenceCatalogResponse GetCatalog()
+        {
+            started.TrySetResult();
+            return inner.GetCatalog();
+        }
+
+        public ResearchEvidenceDetailDto? GetDetail(string id) => inner.GetDetail(id);
+    }
+
+    [Fact]
     public async Task GetCurrentConditions_MissingHypothesis_ReturnsUntestedCell()
     {
         var (_, body, _) = await Invoke(AiPayload("1h", DefaultConditions), FullCatalog("1h"));
