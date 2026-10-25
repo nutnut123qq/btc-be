@@ -1,8 +1,10 @@
 using Backend.Controllers;
 using Backend.Data;
+using Backend.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Backend.Tests;
@@ -225,5 +227,32 @@ public class HealthControllerTests
         var body = Assert.IsType<WorkerHealthResponse>(ok.Value);
 
         Assert.Equal("stale", body.Workers.Single(w => w.Name == "EmbeddingBackfillWorker").Status);
+    }
+
+    [Fact]
+    public async Task Workers_ReportsConfigDisabledWorkerAsDisabledNotStale()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+        var old = DateTime.UtcNow.AddDays(-2);
+        db.WorkerHeartbeats.AddRange(
+            new WorkerHeartbeat { WorkerName = "RssIngestionService", Status = "Succeeded", LastStartedAtUtc = old, LastSucceededAtUtc = old, UpdatedAtUtc = old },
+            new WorkerHeartbeat { WorkerName = "KlinesIngestionWorker", Status = "Succeeded", LastStartedAtUtc = old, LastSucceededAtUtc = old, UpdatedAtUtc = old });
+        await db.SaveChangesAsync();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["BackgroundWorkers:RssIngestionService:Enabled"] = "false" })
+            .Build();
+
+        var controller = new HealthController(db, NullLogger<HealthController>.Instance, configuration: configuration);
+        var ok = Assert.IsType<OkObjectResult>((await controller.Workers(default)).Result);
+        var body = Assert.IsType<WorkerHealthResponse>(ok.Value);
+
+        var rss = body.Workers.Single(w => w.Name == "RssIngestionService");
+        Assert.Equal("disabled", rss.Status);
+        Assert.Equal(old, rss.LastSucceededAtUtc);
+        Assert.Equal("stale", body.Workers.Single(w => w.Name == "KlinesIngestionWorker").Status);
+        Assert.True(BackgroundWorkerSwitch.IsEnabled(configuration, "KlinesIngestionWorker"));
     }
 }

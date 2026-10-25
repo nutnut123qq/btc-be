@@ -9,7 +9,7 @@ namespace Backend.Controllers;
 
 [ApiController]
 [Route("api/health")]
-public class HealthController(AppDbContext db, ILogger<HealthController> logger, ProductionTimeframePolicy? timeframePolicy = null) : ControllerBase
+public class HealthController(AppDbContext db, ILogger<HealthController> logger, ProductionTimeframePolicy? timeframePolicy = null, IConfiguration? configuration = null) : ControllerBase
 {
     private readonly ProductionTimeframePolicy _timeframePolicy = timeframePolicy ?? new ProductionTimeframePolicy();
     // MaxAge is compared against the newest candle OPEN time, which is already
@@ -85,6 +85,13 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger,
             var workers = ExpectedWorkers.Select(expected =>
             {
                 var row = rows.FirstOrDefault(x => x.WorkerName == expected.Name);
+                // Opted out by configuration: not registered, so an old heartbeat must not read as stale/failed.
+                if (configuration is not null && !BackgroundWorkerSwitch.IsEnabled(configuration, expected.Name))
+                    return new WorkerHealth(expected.Name, "disabled", row?.LastStartedAtUtc, row?.LastSucceededAtUtc,
+                        row?.LastFailedAtUtc, null, (long)expected.MaxAge.TotalSeconds, row?.LastDurationMs,
+                        BackgroundWorkerSwitch.GateEnabled(configuration)
+                            ? $"Disabled by configuration (BackgroundWorkers:{expected.Name}:Enabled=false)."
+                            : "Disabled by configuration (BackgroundWorkers:Enabled=false).");
                 if (row is null)
                     return new WorkerHealth(expected.Name, "never", null, null, null, null,
                         (long)expected.MaxAge.TotalSeconds, null, "No heartbeat has been recorded.");

@@ -279,29 +279,7 @@ builder.Services.AddSingleton<IBinanceUserDataStreamService>(sp => sp.GetRequire
 builder.Services.AddScoped<FullReindexService>();
 builder.Services.AddScoped<MlDatasetRebuildService>();
 
-// Maintenance/smoke-test mode can start the API without mutating background jobs.
-if (builder.Configuration.GetValue("BackgroundWorkers:Enabled", true))
-{
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<BinanceUserDataStreamService>());
-    builder.Services.AddHostedService<KlinesIngestionWorker>();
-    builder.Services.AddHostedService<IndexingBackgroundWorker>();
-    builder.Services.AddHostedService<CausalSmartMoneyRebuildWorker>();
-    builder.Services.AddHostedService<RssIngestionService>();
-    builder.Services.AddHostedService<PriceAlertWorker>();
-    builder.Services.AddHostedService<EmbeddingBackfillWorker>();
-    builder.Services.AddHostedService<MlDatasetBuilder>();
-    builder.Services.AddHostedService<WindowDatasetBuilder>();
-    // Exits immediately unless EquityIngestion:Enabled=true (not enabled in any appsettings).
-    builder.Services.AddHostedService<EquityIngestionWorker>();
-    // Exits immediately unless EquityDocuments:PipelineEnabled=true (not enabled in any appsettings).
-    builder.Services.AddHostedService<EquityDocumentPipelineWorker>();
-}
-else if (builder.Configuration.GetValue("EquityDocuments:WorkerStandalone", false))
-{
-    // Explicit opt-in to run ONLY the document worker (local/ops verification) without starting every other
-    // background job above; it still exits immediately unless EquityDocuments:PipelineEnabled=true.
-    builder.Services.AddHostedService<EquityDocumentPipelineWorker>();
-}
+builder.Services.AddBackgroundWorkers(builder.Configuration);
 
 // CORS: Next (3000), Flutter web (port ngẫu nhiên ví dụ 58340), Swagger — cùng máy thì origin hay đổi port.
 // Tránh chỉ WithOrigins("http://localhost:3000"): Production mặc định sẽ chặn Flutter web.
