@@ -142,13 +142,55 @@ function Save-ProcessState([array]$Processes) {
     ConvertTo-Json -InputObject @($Processes) -Depth 4 | Set-Content -LiteralPath $script:StatePath -Encoding utf8
 }
 
+function Get-ProcessStartUtcTicks([int]$Id) {
+    $process = Get-Process -Id $Id -ErrorAction SilentlyContinue
+    if ($null -eq $process) { return $null }
+    try { if ($process.StartTime) { return $process.StartTime.ToUniversalTime().Ticks } } catch { }
+    # A process of another logon session (the S4U watchdog's stack seen from an interactive session) cannot be
+    # opened for its start time; CIM still reports the creation time, so the stack is not mistaken for stopped.
+    $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$Id" -ErrorAction SilentlyContinue
+    if ($cim -and $cim.CreationDate) { return $cim.CreationDate.ToUniversalTime().Ticks }
+    return $null
+}
+
 function Test-ManagedProcess($Entry) {
-    $process = Get-Process -Id $Entry.pid -ErrorAction SilentlyContinue
-    if ($null -eq $process) { return $false }
-    try {
-        return [Math]::Abs($process.StartTime.ToUniversalTime().Ticks - [long]$Entry.startedAtUtcTicks) -lt [TimeSpan]::FromSeconds(5).Ticks
+    $ticks = Get-ProcessStartUtcTicks ([int]$Entry.pid)
+    if ($null -eq $ticks) { return $false }
+    return [Math]::Abs($ticks - [long]$Entry.startedAtUtcTicks) -lt [TimeSpan]::FromSeconds(5).Ticks
+}
+
+# An S4U logon gives new processes a default DACL that only that logon session and SYSTEM can open, so neither the
+# interactive user nor the next watchdog run (a different S4U logon) could query or stop the stack. Before starting
+# children, replace this process token's default DACL with user + SYSTEM + Administrators; children inherit it.
+function Grant-OpsUserProcessAccess {
+    if (-not ("OpsTokenDacl" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public static class OpsTokenDacl {
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string sddl, uint revision, out IntPtr descriptor, out uint size);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetSecurityDescriptorDacl(IntPtr descriptor, out bool present, out IntPtr dacl, out bool defaulted);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool SetTokenInformation(IntPtr token, int infoClass, ref IntPtr info, uint length);
+    public static void Apply(string sddl) {
+        IntPtr token, descriptor, dacl; uint size; bool present, defaulted;
+        if (!OpenProcessToken(GetCurrentProcess(), 0x0080 /* TOKEN_ADJUST_DEFAULT */, out token)) throw new System.ComponentModel.Win32Exception();
+        try {
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptor(sddl, 1, out descriptor, out size)) throw new System.ComponentModel.Win32Exception();
+            try {
+                if (!GetSecurityDescriptorDacl(descriptor, out present, out dacl, out defaulted) || !present) throw new System.ComponentModel.Win32Exception();
+                if (!SetTokenInformation(token, 6 /* TokenDefaultDacl */, ref dacl, (uint)IntPtr.Size)) throw new System.ComponentModel.Win32Exception();
+            } finally { LocalFree(descriptor); }
+        } finally { CloseHandle(token); }
     }
-    catch { return $false }
+}
+"@
+    }
+    $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    [OpsTokenDacl]::Apply("D:(A;;GA;;;$userSid)(A;;GA;;;SY)(A;;GA;;;BA)")
 }
 
 function Start-ManagedProcess {

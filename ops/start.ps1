@@ -85,6 +85,7 @@ if (Test-Path -LiteralPath $hostSettingsPath) {
     Write-Host "Applied $(@($hostSettings.PSObject.Properties).Count) host setting(s) from $hostSettingsPath"
 }
 
+Grant-OpsUserProcessAccess
 $processes = @()
 try {
     $processes += Start-ManagedProcess "ai" $python @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000") $aiDir $aiEnvironment

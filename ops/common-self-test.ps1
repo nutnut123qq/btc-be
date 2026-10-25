@@ -89,6 +89,10 @@ try {
 }
 finally { Remove-Item -LiteralPath $profileRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
+if ($null -eq (Get-ProcessStartUtcTicks $PID)) { throw "Process start time lookup failed." }
+if ($null -ne (Get-ProcessStartUtcTicks 999999)) { throw "Missing PID reported a start time." }
+Grant-OpsUserProcessAccess
+
 $python = Join-Path $script:AiDir "venv/Scripts/python.exe"
 $missingWorkspace = Join-Path ([IO.Path]::GetTempPath()) "btc-ops-$([Guid]::NewGuid().ToString('N'))"
 $fallback = Resolve-OpsComponentDirectory $missingWorkspace "frontend" "btc-fe"
