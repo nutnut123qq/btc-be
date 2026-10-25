@@ -62,7 +62,11 @@ try {
         if ($result.Error) { $result.Error.TrimEnd() | Add-Content -LiteralPath $logPath -Encoding utf8 }
         $exitCode = [int]$result.ExitCode
         $succeeded = $exitCode -eq 0
-        $failureType = if ($succeeded) { $null } else { "guarded_backup_failed" }
+        # The guard refuses before writing anything when the backup volume lacks headroom: report that as a skip, not a
+        # generic failure (still non-zero, so the scheduler never shows a skipped night as success).
+        $failureType = if ($succeeded) { $null }
+            elseif ("$($result.Output)`n$($result.Error)" -match 'BACKUP_SKIPPED_INSUFFICIENT_SPACE') { "skipped_insufficient_space" }
+            else { "guarded_backup_failed" }
     }
     catch {
         $_.Exception.Message | Add-Content -LiteralPath $logPath -Encoding utf8

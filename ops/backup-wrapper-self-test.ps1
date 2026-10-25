@@ -63,6 +63,17 @@ exit 7
         throw "Failure status is invalid."
     }
 
+    @'
+param([string]$OutputDirectory,[int]$RetentionCount,[int]$MinimumFreeGiB,[switch]$SkipModels)
+Write-Output "BACKUP_SKIPPED_INSUFFICIENT_SPACE"
+Write-Error "Insufficient backup headroom. Need free space to remain at least 15 GiB after reserving 6.00 GiB; current free is 20.00 GiB."
+exit 1
+'@ | Set-Content -LiteralPath $fakeGuard -Encoding utf8
+    $result = Invoke-BoundedProcess $inboxPowerShell $arguments 90
+    if ($result.ExitCode -ne 1) { throw "Skipped run must stay non-zero." }
+    $run = Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json
+    if ($run.succeeded -or $run.failureType -ne "skipped_insufficient_space") { throw "Insufficient-space skip was not classified." }
+
     Write-Host "Backup scheduler wrapper self-test passed."
 }
 finally {

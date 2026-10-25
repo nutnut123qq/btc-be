@@ -84,6 +84,7 @@ try {
     Write-Host ("Guarded backup preflight: free={0:N2} GiB reserve={1:N2} GiB floor={2} GiB completeSets={3}" -f `
         ($freeBefore / 1GB), ($reserveBytes / 1GB), $MinimumFreeGiB, $beforeSets.Count)
     if ($freeBefore - $reserveBytes -lt $minimumFreeBytes) {
+        Write-Host "BACKUP_SKIPPED_INSUFFICIENT_SPACE"
         throw ("Insufficient backup headroom. Need free space to remain at least {0} GiB after reserving {1:N2} GiB; current free is {2:N2} GiB." -f `
             $MinimumFreeGiB, ($reserveBytes / 1GB), ($freeBefore / 1GB))
     }
