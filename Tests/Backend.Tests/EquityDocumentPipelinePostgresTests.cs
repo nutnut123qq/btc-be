@@ -15,7 +15,7 @@ namespace Backend.Tests;
 [Collection(PostgresTestDbCollection.Name)]
 public class EquityDocumentPipelinePostgresTests
 {
-    private static string? ConnectionString() => Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
+    private static string? ConnectionString() => PostgresTestDb.ConnectionString();
 
     private static AppDbContext NewDb(string cs) => new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(cs).Options);
 

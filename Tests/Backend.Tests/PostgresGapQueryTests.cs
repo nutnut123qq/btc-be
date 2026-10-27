@@ -29,7 +29,7 @@ public class PostgresGapQueryTests
     [Fact]
     public async Task LagQuery_ExecutesOnPostgresWithoutMaterializingKlines()
     {
-        var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
+        var connectionString = PostgresTestDb.ConnectionString();
         if (string.IsNullOrWhiteSpace(connectionString))
             return;
 
@@ -61,6 +61,7 @@ public class PostgresGapQueryTests
     [Fact]
     public async Task Readiness_UnreachablePostgresReturnsWithinShortTimeout()
     {
+        // Not guarded: a read-only CanConnect probe meant for an unreachable server (CI: Database=unreachable, port 1).
         var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES_TIMEOUT");
         if (string.IsNullOrWhiteSpace(connectionString))
             return;
@@ -80,6 +81,7 @@ public class PostgresGapQueryTests
     [Fact]
     public async Task DataAudit_ColdCompletesWithinPerformanceBudget()
     {
+        // Not guarded: needs production-like BTCUSDT data, and DataAuditService only runs SELECTs.
         var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES_PERFORMANCE");
         if (string.IsNullOrWhiteSpace(connectionString))
             return;
@@ -145,7 +147,7 @@ public class PostgresGapQueryTests
     [Fact]
     public async Task DataAudit_UnbootstrappedSymbolUsesTruthfulLiveFallback()
     {
-        var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
+        var connectionString = PostgresTestDb.ConnectionString();
         if (string.IsNullOrWhiteSpace(connectionString))
             return;
 
@@ -175,7 +177,7 @@ public class PostgresGapQueryTests
     [Fact]
     public async Task DataAudit_PartialSymbolLedgerDoesNotMarkEmptyTimeframeReconciled()
     {
-        var connectionString = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
+        var connectionString = PostgresTestDb.ConnectionString();
         if (string.IsNullOrWhiteSpace(connectionString))
             return;
 

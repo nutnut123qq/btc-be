@@ -28,7 +28,7 @@ public class EquityJournalPostgresTests
     private static readonly long WindowEndMs = new DateTimeOffset(2005, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
     private const string NotePrefix = "session/BID/v2a-pg-test/";
 
-    private static string? ConnectionString() => Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
+    private static string? ConnectionString() => PostgresTestDb.ConnectionString();
 
     private static AppDbContext NewDb(string cs) =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(cs).Options);

@@ -13,7 +13,7 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          # Name must contain "btc_eqx_test": EquityResearchSnapshotTests refuses to write to any other database.
+          # Must be btc_eqx_test: tests that connect through BTC_TEST_POSTGRES refuse other database names (PostgresTestDbGuardTests.cs).
           POSTGRES_DB: btc_eqx_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

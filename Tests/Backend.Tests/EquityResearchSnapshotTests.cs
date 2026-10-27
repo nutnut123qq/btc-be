@@ -1038,9 +1038,7 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
     [Fact]
     public async Task Postgres_SnapshotInRepeatableRead_AndForwardNoteSatisfiesConstraints()
     {
-        var cs = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
-        if (string.IsNullOrWhiteSpace(cs)) return;
-        Assert.Contains("btc_eqx_test", cs, StringComparison.OrdinalIgnoreCase);
+        if (PostgresTestDb.ConnectionString() is not { } cs) return;
         var windowEnd = new DateTimeOffset(2005, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
         AppDbContext Pg() => new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(cs).Options);
         async Task Cleanup()
@@ -1116,9 +1114,7 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
 
     private async Task WithFreshPostgresDbAsync(Func<Func<AppDbContext>, Task> body)
     {
-        var cs = Environment.GetEnvironmentVariable("BTC_TEST_POSTGRES");
-        if (string.IsNullOrWhiteSpace(cs)) return;
-        Assert.Contains("btc_eqx_test", cs, StringComparison.OrdinalIgnoreCase);
+        if (PostgresTestDb.ConnectionString() is not { } cs) return;
         var name = $"btc_eqx_test_snapfix_{Guid.NewGuid():N}";
         var server = new NpgsqlConnectionStringBuilder(cs) { Pooling = false }.ConnectionString;
         var fixture = new NpgsqlConnectionStringBuilder(cs) { Database = name, CommandTimeout = 300 }.ConnectionString;
