@@ -4,9 +4,12 @@ using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -582,6 +585,102 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
 
         contract.Failure = null;
         Assert.Equal(3, service.GetCatalog().Items.Count);
+    }
+
+    [Fact]
+    public async Task Warmup_VerifiesOnceAfterHostStart_WithoutARequest()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var service = CreateService(technicalContract: contract);
+        var log = new WarmupLog();
+        using var host = WarmupHost(log, services => services.AddSingleton<IResearchEvidenceCatalog>(service));
+        contract.Hold();
+
+        // Start completes while the verification is held: it runs in the background and never delays startup.
+        // Started off-thread so a StartAsync that blocks synchronously still trips the timeout.
+        await Task.Run(() => host.StartAsync()).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(contract.Entered.Wait(TimeSpan.FromSeconds(10)));
+        Assert.Equal(1, contract.Verifications);
+
+        // The first request is served the warmed snapshot: no second verification.
+        contract.Release();
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+        Assert.Equal(1, contract.Verifications);
+        WaitForLog(log, LogLevel.Information);
+        Assert.DoesNotContain(log.Entries, x => x.Level >= LogLevel.Warning);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Warmup_VerificationFailure_OnlyLogs_AndTheNextRequestStillFails()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract { Failure = new ApplicationException("verifier crashed") };
+        var service = CreateService(technicalContract: contract);
+        var log = new WarmupLog();
+        using var host = WarmupHost(log, services => services.AddSingleton<IResearchEvidenceCatalog>(service));
+
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsType<ApplicationException>(WaitForLog(log, LogLevel.Error).Exception);
+        Assert.False(host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.IsCancellationRequested);
+
+        // Nothing was cached: the request verifies synchronously and gets the failure, as without the warmup.
+        Assert.Throws<ApplicationException>(() => service.GetCatalog());
+        Assert.Equal(2, contract.Verifications);
+        contract.Failure = null;
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Warmup_MissingRootConfiguration_OnlyLogs_AndRequestsStillFail()
+    {
+        var log = new WarmupLog();
+        // Registered as in Program.cs, with the root path unset.
+        using var host = WarmupHost(log, services =>
+        {
+            services.Configure<EvidenceCatalogOptions>(o => o.RootPath = " ");
+            services.AddSingleton(TimeProvider.System);
+            services.AddSingleton<IResearchEvidenceCatalog, ResearchEvidenceCatalog>();
+        });
+
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsType<InvalidOperationException>(WaitForLog(log, LogLevel.Error).Exception);
+        Assert.False(host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.IsCancellationRequested);
+        Assert.Throws<InvalidOperationException>(() => host.Services.GetRequiredService<IResearchEvidenceCatalog>());
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Warmup_MissingRootDirectory_DoesNotPinAnEmptyCatalog()
+    {
+        var service = CreateService();
+        var log = new WarmupLog();
+        using var host = WarmupHost(log, services => services.AddSingleton<IResearchEvidenceCatalog>(service));
+
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        WaitForLog(log, LogLevel.Information);
+        Assert.False(Directory.Exists(_root));
+
+        // Publishing evidence moves the fingerprint, so the request verifies instead of serving the warmed empty catalog.
+        WriteEmbeddedReport("ml-v2", tamperAfterHash: false);
+        Assert.Single(service.GetCatalog().Items);
+        await host.StopAsync();
+    }
+
+    private static IHost WarmupHost(WarmupLog log, Action<IServiceCollection> configure) =>
+        new HostBuilder().ConfigureServices(services =>
+        {
+            configure(services);
+            services.AddSingleton<ILogger<ResearchEvidenceCatalogWarmup>>(log);
+            services.AddHostedService<ResearchEvidenceCatalogWarmup>();
+        }).Build();
+
+    private static (LogLevel Level, Exception? Exception) WaitForLog(WarmupLog log, LogLevel level)
+    {
+        Assert.True(SpinWait.SpinUntil(() => log.Entries.Any(x => x.Level == level), TimeSpan.FromSeconds(10)));
+        return log.Entries.First(x => x.Level == level);
     }
 
     private static ResearchEvidenceCatalogResponse WaitForCatalog(
@@ -1353,6 +1452,15 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         public bool IsEnabled(LogLevel logLevel) => true;
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter) => Console.WriteLine(formatter(state, exception));
+    }
+
+    private sealed class WarmupLog : ILogger<ResearchEvidenceCatalogWarmup>
+    {
+        public ConcurrentQueue<(LogLevel Level, Exception? Exception)> Entries { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Enqueue((logLevel, exception));
     }
 
     private sealed class FakeEnvironment : IWebHostEnvironment

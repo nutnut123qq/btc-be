@@ -16,7 +16,8 @@ public class BackgroundWorkerRegistrationTests
     private static readonly Type[] SwitchableWorkers =
     [
         typeof(KlinesIngestionWorker), typeof(IndexingBackgroundWorker), typeof(CausalSmartMoneyRebuildWorker),
-        typeof(RssIngestionService), typeof(EmbeddingBackfillWorker), typeof(MlDatasetBuilder), typeof(WindowDatasetBuilder)
+        typeof(RssIngestionService), typeof(EmbeddingBackfillWorker), typeof(MlDatasetBuilder), typeof(WindowDatasetBuilder),
+        typeof(ResearchEvidenceCatalogWarmup)
     ];
 
     private static IConfiguration Config(params (string Key, string Value)[] values) =>
@@ -46,6 +47,17 @@ public class BackgroundWorkerRegistrationTests
             Assert.Single(hosted, t => t == worker);
         // The Binance user-data stream is registered through a factory (no ImplementationType).
         Assert.Single(hosted, t => t is null);
+        Assert.Equal(12, hosted.Count);
+    }
+
+    [Fact]
+    public void GateOnEvidenceWarmupFalse_DropsOnlyTheWarmup()
+    {
+        var hosted = HostedTypes(Config(("BackgroundWorkers:ResearchEvidenceCatalogWarmup:Enabled", "false")));
+
+        Assert.DoesNotContain(typeof(ResearchEvidenceCatalogWarmup), hosted);
+        foreach (var worker in SwitchableWorkers.Except([typeof(ResearchEvidenceCatalogWarmup)]))
+            Assert.Single(hosted, t => t == worker);
         Assert.Equal(11, hosted.Count);
     }
 
@@ -59,7 +71,7 @@ public class BackgroundWorkerRegistrationTests
         Assert.DoesNotContain(typeof(EmbeddingBackfillWorker), hosted);
         foreach (var worker in SwitchableWorkers.Except([typeof(RssIngestionService), typeof(EmbeddingBackfillWorker)]))
             Assert.Single(hosted, t => t == worker);
-        Assert.Equal(9, hosted.Count);
+        Assert.Equal(10, hosted.Count);
     }
 
     [Fact]
