@@ -14,7 +14,10 @@ internal static class ResearchRecordClassifier
             return (ValidityStatuses.Invalid, "Trade count does not match the stored trade ledger.");
         if (run.TotalTrades < 5 && Math.Abs(run.TotalReturnPct) > 100)
             return (ValidityStatuses.Invalid, "Implausible return with fewer than five trades.");
-        if (!double.IsFinite(run.TotalReturnPct) || !double.IsFinite(run.FinalEquity))
+        // NaN makes every Math.Abs(...) > tol below false, so it must be rejected before the ledger checks.
+        if (!AllFinite(run.TotalReturnPct, run.FinalEquity, run.WinRate, run.BuyHoldReturnPct, run.MaxDrawdownPct,
+                run.SharpeRatio, run.SortinoRatio, run.ProfitFactor, run.FeeBps, run.SlippageBps)
+            || run.Trades.Any(trade => !AllFinite(trade.GrossReturn, trade.NetReturn, trade.PnlPct, trade.Confidence, trade.TargetReturn ?? 0)))
             return (ValidityStatuses.Invalid, "Backtest contains a non-finite accounting value.");
         if (run.Trades.Any(trade => Math.Abs(trade.PnlPct - trade.NetReturn * 100) > 0.01))
             return (ValidityStatuses.Invalid, "TRADE_LEDGER_INCONSISTENT: PnL percent does not match net return.");
@@ -66,11 +69,8 @@ internal static class ResearchRecordClassifier
             return (ValidityStatuses.Invalid, "FINAL_DIRECTION: Direction must be Bullish, Bearish, or Sideways.");
         if (prediction.EvaluationStatus is not ("T" or "F" or "N"))
             return (ValidityStatuses.Invalid, "EVALUATION_STATUS: Status must be T, F, or N.");
-        var hasCompleteEvaluation = prediction.ActualPrice24h is > 0
-            && prediction.ActualReturnPct.HasValue
-            && prediction.EvaluatedAtMs.HasValue;
         if ((prediction.EvaluationStatus == "N" && (prediction.ActualPrice24h.HasValue || prediction.ActualReturnPct.HasValue || prediction.EvaluatedAtMs.HasValue))
-            || (prediction.EvaluationStatus is "T" or "F" && !hasCompleteEvaluation))
+            || (prediction.EvaluationStatus is "T" or "F" && !HasCompleteEvaluation(prediction)))
             return (ValidityStatuses.Invalid, "EVALUATION_FIELDS: Evaluation fields do not match evaluation status.");
         var probabilities = new[] { prediction.ProbUp, prediction.ProbDown, prediction.ProbSideways };
         if (probabilities.Any(value => !double.IsFinite(value) || value is < 0 or > 1)
@@ -102,7 +102,7 @@ internal static class ResearchRecordClassifier
         var evaluationValid = item.EvaluationStatus switch
         {
             "N" => !item.ActualPrice24h.HasValue && !item.ActualReturnPct.HasValue && !item.EvaluatedAtMs.HasValue,
-            "T" or "F" => item.ActualPrice24h is > 0 && item.ActualReturnPct.HasValue && item.EvaluatedAtMs.HasValue,
+            "T" or "F" => HasCompleteEvaluation(item),
             _ => false
         };
         return item.EntryPrice > 0
@@ -112,6 +112,14 @@ internal static class ResearchRecordClassifier
             && probabilities.All(value => double.IsFinite(value) && value is >= 0 and <= 1)
             && Math.Abs(probabilities.Sum() - 1) <= 0.0015;
     }
+
+    // `is > 0` alone lets +Infinity through and HasValue lets NaN through.
+    private static bool HasCompleteEvaluation(EnsemblePredictionRecord item) =>
+        item.ActualPrice24h is { } price && double.IsFinite(price) && price > 0
+        && item.ActualReturnPct is { } actualReturn && double.IsFinite(actualReturn)
+        && item.EvaluatedAtMs.HasValue;
+
+    private static bool AllFinite(params double[] values) => values.All(double.IsFinite);
 
     private static bool IsUnversioned(string? version) =>
         string.IsNullOrWhiteSpace(version)
