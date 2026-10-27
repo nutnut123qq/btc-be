@@ -32,4 +32,8 @@ public sealed record PaperObservationListResponse(
     [property: Required] string Symbol,
     [property: Required] bool Available,
     string? Reason,
-    [property: Required] IReadOnlyList<PaperObservationDto> Items);
+    [property: Required] IReadOnlyList<PaperObservationDto> Items,
+    // Journal-wide counts for the symbol, independent of `take` (Items is only the latest page).
+    [property: Required] long Total,
+    [property: Required] long FilledTotal,
+    [property: Required] long OutcomeTotal);

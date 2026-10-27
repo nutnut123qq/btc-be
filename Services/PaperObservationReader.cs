@@ -25,7 +25,7 @@ public sealed class PaperObservationReader(AppDbContext db, ProductionSymbolPoli
         try
         {
             if (!await TableExistsAsync(connection, cancellationToken))
-                return new(symbol, false, "Forward observation recorder has not initialized its append-only table.", []);
+                return new(symbol, false, "Forward observation recorder has not initialized its append-only table.", [], 0, 0, 0);
 
             await using var command = connection.CreateCommand();
             command.CommandText = """
@@ -34,7 +34,8 @@ public sealed class PaperObservationReader(AppDbContext db, ProductionSymbolPoli
                        "ModelVersion", "Decision", "Confidence", "AbstentionReason",
                        "QuoteSource", "QuotePrice", "QuoteReceivedAtUtc", "QuoteReceivedTimeMs",
                        "ConfigProvenanceJson"::text, "EvidenceProvenanceJson"::text,
-                       "FillPrice", "FillObservedAtUtc", "OutcomeReturn", "OutcomeObservedAtUtc", "OutcomeHorizon"
+                       "FillPrice", "FillObservedAtUtc", "OutcomeReturn", "OutcomeObservedAtUtc", "OutcomeHorizon",
+                       COUNT(*) OVER (), COUNT("FillPrice") OVER (), COUNT("OutcomeReturn") OVER ()
                 FROM "PaperObservations"
                 WHERE "Symbol" = @symbol
                 ORDER BY "SignalBarCloseTimeMs" DESC
@@ -43,6 +44,8 @@ public sealed class PaperObservationReader(AppDbContext db, ProductionSymbolPoli
             AddParameter(command, "symbol", symbol);
             AddParameter(command, "take", Math.Clamp(take, 1, 200));
             var items = new List<PaperObservationDto>();
+            // Window counts run before LIMIT in the same snapshot as the page, so totals are never below Items.
+            long total = 0, filledTotal = 0, outcomeTotal = 0;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -54,8 +57,9 @@ public sealed class PaperObservationReader(AppDbContext db, ProductionSymbolPoli
                     GetNullableDateTime(reader, 15), GetNullableInt64(reader, 16), reader.GetString(17), reader.GetString(18),
                     GetNullableDecimal(reader, 19), GetNullableDateTime(reader, 20), GetNullableDouble(reader, 21),
                     GetNullableDateTime(reader, 22), GetNullableString(reader, 23)));
+                (total, filledTotal, outcomeTotal) = (reader.GetInt64(24), reader.GetInt64(25), reader.GetInt64(26));
             }
-            return new(symbol, true, null, items);
+            return new(symbol, true, null, items, total, filledTotal, outcomeTotal);
         }
         finally
         {

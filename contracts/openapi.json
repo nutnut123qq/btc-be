@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-10-equity-lane-v1"
+    "version": "2026-10-forward-journal-totals-v1"
   },
   "paths": {
     "/api/ai-chat/capabilities": {
@@ -18395,8 +18395,11 @@
       "PaperObservationListResponse": {
         "required": [
           "available",
+          "filledTotal",
           "items",
-          "symbol"
+          "outcomeTotal",
+          "symbol",
+          "total"
         ],
         "type": "object",
         "properties": {
@@ -18416,6 +18419,18 @@
             "items": {
               "$ref": "#/components/schemas/PaperObservationDto"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "filledTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outcomeTotal": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "additionalProperties": false
