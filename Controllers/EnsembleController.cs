@@ -31,6 +31,7 @@ public class EnsembleController : ControllerBase
     public async Task<IActionResult> GetEnsembleHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int limit = 100, [FromQuery] bool includeLegacy = false, CancellationToken ct = default)
     {
         timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        limit = Math.Clamp(limit, 1, 200);
         var result = await _ensembleService.GetEnsembleHistoryAsync(symbol, timeframe, limit, includeLegacy, ct);
         return Ok(result.Select(MapToDto));
     }

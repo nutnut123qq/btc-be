@@ -51,6 +51,7 @@ public class RegimeController : ControllerBase
     public async Task<IActionResult> GetHistory([FromQuery] string symbol = "BTCUSDT", [FromQuery] string timeframe = "4h", [FromQuery] int limit = 100, CancellationToken ct = default)
     {
         timeframe = ProductionTimeframePolicy.Canonicalize(timeframe);
+        limit = Math.Clamp(limit, 1, 200);
         var cacheKey = $"regime:history:{symbol.ToUpperInvariant()}:{timeframe}:{limit}";
         if (_cache.TryGetValue(cacheKey, out List<MarketRegime>? cached) && cached != null)
         {

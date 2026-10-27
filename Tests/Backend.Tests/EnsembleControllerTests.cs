@@ -1,9 +1,29 @@
 using Backend.Controllers;
+using Backend.Data;
+using Backend.Services;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Tests;
 
 public class EnsembleControllerTests
 {
+    [Fact]
+    public async Task GetEnsembleHistory_LimitIsClamped()
+    {
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        for (var i = 0; i < 205; i++)
+            db.EnsemblePredictionRecords.Add(new EnsemblePredictionRecord { Symbol = "BTCUSDT", Timeframe = "4h", TimeMs = 1_000_000 + i });
+        await db.SaveChangesAsync();
+        var controller = new EnsembleController(new EnsembleService(db, new FakeBinanceKlinesService()));
+
+        Assert.Equal(200, ItemCount(await controller.GetEnsembleHistory("BTCUSDT", "4h", limit: 500)));
+        Assert.Equal(2, ItemCount(await controller.GetEnsembleHistory("BTCUSDT", "4h", limit: 2)));
+        Assert.Equal(1, ItemCount(await controller.GetEnsembleHistory("BTCUSDT", "4h", limit: 0)));
+        Assert.Equal(1, ItemCount(await controller.GetEnsembleHistory("BTCUSDT", "4h", limit: -5)));
+    }
+
     [Fact]
     public void ParseLayers_AcceptsLegacyArray()
     {
@@ -29,4 +49,7 @@ public class EnsembleControllerTests
     {
         Assert.Empty(EnsembleController.ParseLayers("not-json"));
     }
+
+    private static int ItemCount(IActionResult result) =>
+        Assert.IsAssignableFrom<IEnumerable<object>>(Assert.IsType<OkObjectResult>(result).Value).Count();
 }
