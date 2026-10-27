@@ -9,7 +9,8 @@ param(
     [string]$PaperTask = "BTCPaperTrader",
     [string]$BackupTask = "Bitcoin Analyst DB Backup",
     [string]$BackupDailyAt = "02:00",
-    [ValidateRange(1, 1024)][int]$BackupMinimumFreeGiB = 15
+    [ValidateRange(1, 1024)][int]$BackupMinimumFreeGiB = 15,
+    [ValidateRange(0, 30)][int]$BackupRetentionCount = 1  # 0 = keep every set; N = delete older sets once the new one verifies
 )
 . "$PSScriptRoot/common.ps1"
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -58,8 +59,8 @@ if ($PSCmdlet.ShouldProcess("$WatchdogTask, $PaperTask, $BackupTask", "register 
         -Trigger $every15 `
         -Settings (New-ScheduledTaskSettingsSet @commonSettings -ExecutionTimeLimit (New-TimeSpan -Minutes 14)) `
         -Description "Forward-paper recorder (paper_trader.py --mode forward-paper); idempotent per finalized 4h bar." | Out-Null
-    # Daily guarded backup, catch-up after a missed run (StartWhenAvailable), no rotation (RetentionCount 0).
-    & "$PSScriptRoot/install-backup-task.ps1" -TaskName $BackupTask -OutputDirectory (Join-Path $script:RuntimeDir "backups") -RetentionCount 0 -MinimumFreeGiB $BackupMinimumFreeGiB -DailyAt $BackupDailyAt -Enable
+    # Daily guarded backup, catch-up after a missed run (StartWhenAvailable), keeps the newest $BackupRetentionCount verified set(s).
+    & "$PSScriptRoot/install-backup-task.ps1" -TaskName $BackupTask -OutputDirectory (Join-Path $script:RuntimeDir "backups") -RetentionCount $BackupRetentionCount -MinimumFreeGiB $BackupMinimumFreeGiB -DailyAt $BackupDailyAt -Enable
     Set-ScheduledTask -TaskName $BackupTask -Principal $principal -ErrorAction Stop | Out-Null
     Enable-ScheduledTask -TaskName $WatchdogTask | Out-Null
     Enable-ScheduledTask -TaskName $PaperTask | Out-Null
@@ -68,5 +69,5 @@ if ($PSCmdlet.ShouldProcess("$WatchdogTask, $PaperTask, $BackupTask", "register 
 Assert-Task $WatchdogTask $watchdogArgs
 Assert-Task $PaperTask $paperArgs
 $backup = Get-ScheduledTask -TaskName $BackupTask
-if ($backup.Principal.LogonType -ne $logonType -or $backup.Actions[0].Arguments -notmatch '-RetentionCount 0 ') { throw "Backup task does not match the intended definition." }
+if ($backup.Principal.LogonType -ne $logonType -or $backup.Actions[0].Arguments -notmatch "-RetentionCount $BackupRetentionCount ") { throw "Backup task does not match the intended definition." }
 Write-Host "$BackupTask : $($backup.Principal.UserId) $logonType, $($backup.State), $($backup.Actions[0].Arguments)"
