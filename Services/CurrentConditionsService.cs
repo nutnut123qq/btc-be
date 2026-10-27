@@ -98,7 +98,10 @@ public sealed class CurrentConditionsService
 
     private async Task<CurrentConditionsResult> FetchAndBuildAsync(string symbol, string timeframe, CancellationToken cancellationToken)
     {
-        // A cold or TTL-expired catalog re-hashes every evidence artifact (~24 s locally, longer right after a restart).
+        // A cold catalog, or one not refreshed within the verification interval (only a request in the second half of
+        // the interval starts a background refresh), re-hashes every evidence artifact synchronously (~4 s idle,
+        // ~24 s measured under load, longer right after a restart); a catalog in its refresh-ahead window is served
+        // at once while it re-verifies in the background.
         // Start it now so it overlaps the AI call instead of adding to it; LoadEvidence later gets the same verified,
         // cached catalog (or its own fail-closed error). Not tied to the request token: a finished load is reused.
         _ = Task.Run(() =>

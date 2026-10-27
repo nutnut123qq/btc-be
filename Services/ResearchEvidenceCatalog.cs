@@ -44,6 +44,7 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
     private string? _cacheFingerprint;
     private LoadResult? _cachedLoad;
     private DateTimeOffset _cacheVerifiedAtUtc;
+    private bool _revalidating;
 
     public ResearchEvidenceCatalog(
         IHostEnvironment environment,
@@ -242,10 +243,22 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         var now = _timeProvider.GetUtcNow();
         lock (_cacheLock)
         {
+            var age = now - _cacheVerifiedAtUtc;
             if (_cachedLoad is not null
                 && string.Equals(fingerprint, _cacheFingerprint, StringComparison.Ordinal)
-                && now - _cacheVerifiedAtUtc < _verificationInterval)
+                && age < _verificationInterval)
+            {
+                // Refresh ahead: from half the interval on, re-verify once in the
+                // background so a catalog in steady use is replaced before it expires.
+                // A snapshot is never served at or past the interval.
+                if (age >= _verificationInterval / 2 && !_revalidating)
+                {
+                    _revalidating = true;
+                    var basis = _cachedLoad;
+                    _ = Task.Run(() => Revalidate(basis, now));
+                }
                 return _cachedLoad;
+            }
             var load = LoadVerifiedArtifactsUncached();
             _cachedLoad = load;
             _cacheFingerprint = fingerprint;
@@ -254,10 +267,38 @@ public sealed partial class ResearchEvidenceCatalog : IResearchEvidenceCatalog
         }
     }
 
+    private void Revalidate(LoadResult basis, DateTimeOffset startedAtUtc)
+    {
+        LoadResult? load = null;
+        try
+        {
+            load = LoadVerifiedArtifactsUncached();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Background research evidence re-verification failed; the next request verifies synchronously.");
+        }
+        finally
+        {
+            lock (_cacheLock)
+            {
+                // Skip if a request already installed a newer, synchronously verified
+                // snapshot. A failed run drops the snapshot instead of extending it.
+                if (ReferenceEquals(_cachedLoad, basis))
+                {
+                    _cachedLoad = load;
+                    _cacheVerifiedAtUtc = startedAtUtc;
+                }
+                _revalidating = false;
+            }
+        }
+    }
+
     // Cheap identity of the on-disk artifact set: file inventory (name, size,
     // mtime) plus the content hash of the atomic latest-success pointer. Any
     // publish, retention delete or ordinary tamper changes it and forces a full
-    // re-verification; mtime-preserving tamper is still caught by the TTL.
+    // re-verification; mtime-preserving tamper is caught by the interval, since
+    // no snapshot older than it is ever served.
     private string ComputeArtifactsFingerprint()
     {
         var builder = new StringBuilder(256);

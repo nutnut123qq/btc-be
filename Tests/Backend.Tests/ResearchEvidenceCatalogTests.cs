@@ -445,8 +445,11 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         Assert.IsType<NotFoundResult>(controller.GetDetail("missing").Result);
     }
 
-    [Fact]
-    public void Catalog_CachesUntilInterval_ThenReverifies()
+    [Theory]
+    [InlineData(60)]
+    [InlineData(61)]
+    [InlineData(3600)]
+    public void Catalog_CachesUntilInterval_ThenReverifies(int idleSeconds)
     {
         var time = new MutableTimeProvider(FixedNow);
         var service = CreateService(time, cacheSeconds: 60);
@@ -462,7 +465,9 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         File.SetLastWriteTimeUtc(path, mtime);
         Assert.Single(service.GetCatalog().Items);
 
-        time.Advance(TimeSpan.FromSeconds(61));
+        // At or past the interval, however long the idle gap, the request itself
+        // re-verifies synchronously: no snapshot that old is ever served.
+        time.Advance(TimeSpan.FromSeconds(idleSeconds));
         var catalog = service.GetCatalog();
         Assert.Empty(catalog.Items);
         Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
@@ -480,9 +485,123 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         Assert.Empty(catalog.Items);
     }
 
+    [Fact]
+    public void Catalog_VerifiesSynchronously_WhenFingerprintChangesInsideInterval()
+    {
+        var time = new MutableTimeProvider(FixedNow);
+        var service = CreateService(time, cacheSeconds: 60);
+        var id = WriteEmbeddedReport("ml-v2", tamperAfterHash: false);
+        var path = Path.Combine(_root, "ml-v2", $"{id}.report.json");
+        var mtime = File.GetLastWriteTimeUtc(path);
+        Assert.Single(service.GetCatalog().Items);
+
+        time.Advance(TimeSpan.FromSeconds(45));
+        WriteEmbeddedReport("ml-v2", tamperAfterHash: true);
+        File.SetLastWriteTimeUtc(path, mtime.AddSeconds(1));
+
+        // Inside the refresh-ahead window a moved fingerprint still verifies synchronously.
+        var catalog = service.GetCatalog();
+        Assert.Empty(catalog.Items);
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+    }
+
+    [Fact]
+    public async Task Catalog_RefreshAhead_ServesAtOnce_StartsOneReverification_AndReplacesCache()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var time = new MutableTimeProvider(FixedNow);
+        var service = CreateService(time, cacheSeconds: 60, contract);
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+        Assert.Equal(1, contract.Verifications);
+
+        // Same-size, mtime-preserving ledger tamper: the fingerprint does not move.
+        var ledger = Directory.EnumerateFiles(Path.Combine(_root, "technical-descriptive"), "*.ledger.jsonl").First();
+        var ledgerMtime = File.GetLastWriteTimeUtc(ledger);
+        File.WriteAllText(ledger, File.ReadAllText(ledger).Replace("\"one\"", "\"uno\""), new UTF8Encoding(false));
+        File.SetLastWriteTimeUtc(ledger, ledgerMtime);
+
+        // Before half the interval: plain cache hit, no re-verification.
+        contract.Hold();
+        time.Advance(TimeSpan.FromSeconds(29));
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+        Assert.False(contract.Entered.Wait(TimeSpan.FromMilliseconds(200)));
+        Assert.Equal(1, contract.Verifications);
+
+        // In [interval/2, interval): served at once while exactly one background run starts.
+        time.Advance(TimeSpan.FromSeconds(16));
+        // Times out (fails) if any request waits for the held re-verification.
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => service.GetCatalog())))
+            .WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.All(results, x => Assert.Equal(3, x.Items.Count));
+        Assert.True(contract.Entered.Wait(TimeSpan.FromSeconds(10)));
+        Assert.Equal(2, contract.Verifications);
+
+        // The finished run replaces the cache (content and age).
+        contract.Release();
+        var catalog = WaitForCatalog(service, x => x.Items.Count == 0);
+        Assert.Empty(catalog.Items);
+        Assert.Equal(1, catalog.Integrity.RejectedArtifactCount);
+        time.Advance(TimeSpan.FromSeconds(29));
+        Assert.Empty(service.GetCatalog().Items);
+        Assert.Equal(2, contract.Verifications);
+    }
+
+    [Fact]
+    public void Catalog_VerifiesEveryRequest_WhenIntervalIsZero()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var service = CreateService(cacheSeconds: 0, technicalContract: contract);
+
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(3, service.GetCatalog().Items.Count);
+        Assert.Equal(3, contract.Verifications);
+    }
+
+    [Fact]
+    public void Catalog_FailedBackgroundReverification_IsSurfacedByTheNextRequest()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var time = new MutableTimeProvider(FixedNow);
+        var service = CreateService(time, cacheSeconds: 60, contract);
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+
+        contract.Failure = new ApplicationException("verifier crashed");
+        time.Advance(TimeSpan.FromSeconds(45));
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+
+        // The failed run drops the snapshot instead of extending it, so a later
+        // request verifies synchronously and the failure reaches the caller.
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            try { service.GetCatalog(); return false; }
+            catch (ApplicationException) { return true; }
+        }, TimeSpan.FromSeconds(10)));
+
+        contract.Failure = null;
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+    }
+
+    private static ResearchEvidenceCatalogResponse WaitForCatalog(
+        ResearchEvidenceCatalog service,
+        Func<ResearchEvidenceCatalogResponse, bool> done)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (true)
+        {
+            var catalog = service.GetCatalog();
+            if (done(catalog) || DateTime.UtcNow > deadline)
+                return catalog;
+            Thread.Sleep(10);
+        }
+    }
+
     private ResearchEvidenceCatalog CreateService(
         TimeProvider? timeProvider = null,
-        int cacheSeconds = 300) => new(
+        int cacheSeconds = 300,
+        ITechnicalModuleContractProvider? technicalContract = null) => new(
         new FakeEnvironment { ContentRootPath = _root },
         Microsoft.Extensions.Options.Options.Create(new EvidenceCatalogOptions
         {
@@ -491,7 +610,8 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             CacheVerificationSeconds = cacheSeconds
         }),
         timeProvider ?? new FixedTimeProvider(FixedNow),
-        new TestLogger());
+        new TestLogger(),
+        technicalContract);
 
     private string WriteEmbeddedReport(
         string directory,
@@ -1192,6 +1312,39 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         private DateTimeOffset _now = now;
         public override DateTimeOffset GetUtcNow() => _now;
         public void Advance(TimeSpan delta) => _now += delta;
+    }
+
+    // Read exactly once per atomic-run verification, so it counts verifications and
+    // can hold or fail one mid-flight.
+    private sealed class GatedContract : ITechnicalModuleContractProvider
+    {
+        private readonly ManualResetEventSlim _open = new(true);
+        private int _verifications;
+        public ManualResetEventSlim Entered { get; } = new(false);
+        public int Verifications => Volatile.Read(ref _verifications);
+        public volatile Exception? Failure;
+        public void Hold()
+        {
+            Entered.Reset();
+            _open.Reset();
+        }
+        public void Release() => _open.Set();
+
+        public string Sha256
+        {
+            get
+            {
+                Interlocked.Increment(ref _verifications);
+                Entered.Set();
+                _open.Wait(TimeSpan.FromSeconds(30));
+                return Failure is { } failure ? throw failure : new string('a', 64);
+            }
+        }
+
+        public string ContractVersion => "test";
+        public string RawFileSha256 => new('b', 64);
+        public string CanonicalJson => "{}";
+        public string GetCalculationVersion(string moduleKey) => "test";
     }
 
     private sealed class TestLogger : ILogger<ResearchEvidenceCatalog>
