@@ -722,12 +722,16 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             time.Advance(delay);
             WaitForVerifications(service, contract, ++verifications);
         }
-        time.Advance(requestAt - time.GetUtcNow());
+        var snapshotAge = requestAt - time.GetUtcNow();
+        time.Advance(snapshotAge);
 
         // A synchronous verification would run on this thread; served snapshots are always younger than the TTL.
         var before = GatedContract.VerificationsOnThisThread;
         Assert.Equal(3, service.GetCatalog().Items.Count);
         Assert.Equal(before, GatedContract.VerificationsOnThisThread);
+        // A snapshot TTL/2 or older (359 s: 179 s) makes the request start one background re-verification itself;
+        // wait for it, or Dispose deletes evidence files it still holds open (IOException on Windows).
+        WaitForVerifications(service, contract, snapshotAge >= TimeSpan.FromSeconds(150) ? verifications + 1 : verifications);
         await host.StopAsync();
     }
 
