@@ -111,6 +111,9 @@ public class MbbSignalObservationTests
         // EQX: new rows use the multi-symbol id + recorder v2 (legacy mbb-observe rows untouched).
         Assert.Equal($"equity-observe/MBB/1d/{signal}", row.DecisionId);
         Assert.Equal("equity-observe-v2", row.RecorderVersion);
+        // Rules changed in MBBSIZE-1/MBBSTALE-1: new rows must not share the v1 label.
+        Assert.Equal("declared-rules-v2", MbbDecisionService.RulesVersion);
+        Assert.Equal(MbbDecisionService.RulesVersion, row.RulesVersion);
         Assert.Equal("wait", row.Decision); // no position seeded → wait/no-position
         Assert.Null(row.FillPrice);
         Assert.False(string.IsNullOrWhiteSpace(row.DecisionPayloadJson));

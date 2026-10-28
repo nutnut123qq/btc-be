@@ -47,6 +47,17 @@ public sealed class MbbDecisionService
     /// </summary>
     public const string SupportedSymbol = "MBB";
 
+    /// <summary>
+    /// Version of the declared decision rules, stamped on every journal row
+    /// (<c>MbbSignalObservation.RulesVersion</c>). Bump it whenever a rule, threshold,
+    /// sizing or blocking behaviour changes, so rows decided under different rules stay
+    /// separable. v1 = every row recorded before these changes. v2: stop/reduce levels
+    /// rounded up onto the HOSE tick grid and buy-more sized at the next session ceiling
+    /// (272ec30, MBBSIZE-1); a stale 1d close turns sell/reduce/conditional-sell/buy-more
+    /// into wait (ad30023, MBBSTALE-1).
+    /// </summary>
+    public const string RulesVersion = "declared-rules-v2";
+
     // Declared rule parameters (contract constants, not data-tuned):
     private const decimal StopLossFraction = 0.08m;   // hard stop at -8% vs avg cost
     private const decimal ReduceLossFraction = 0.04m; // de-risk threshold at -4% vs avg cost

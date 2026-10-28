@@ -180,7 +180,7 @@ public sealed class MbbSignalObservationService
             ObservedAtUtc = nowUtc,
             AvailableTimeMs = nowMs,
             Decision = decision.Action,
-            RulesVersion = "declared-rules-v1",
+            RulesVersion = MbbDecisionService.RulesVersion,
             EvidenceStatus = decision.EvidenceStatus,
             PriceBasis = decision.PriceBasis,
             MarketCloseVnd = decision.Market.LastDailyCloseVnd,
