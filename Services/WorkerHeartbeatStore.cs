@@ -108,16 +108,7 @@ internal static class WorkerHeartbeatStore
         row.Status = "Failed";
         row.LastFailedAtUtc = completedAt;
         row.LastDurationMs = Math.Max(0, (long)(completedAt - startedAtUtc).TotalMilliseconds);
-        var root = exception.GetBaseException();
-        var message = ReferenceEquals(root, exception)
-            ? exception.Message
-            : $"{exception.Message} | {root.GetType().Name}: {root.Message}";
-        var detail = string.Join(" ", message
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        var error = string.IsNullOrWhiteSpace(detail)
-            ? exception.GetType().Name
-            : $"{exception.GetType().Name}: {detail}";
-        row.LastError = error[..Math.Min(error.Length, 1000)];
+        row.LastError = FormatError(exception, 1000);
         // A crashed cycle produced no reliable counters; clear them rather than show stale numbers.
         row.LastCycleAttempted = null;
         row.LastCycleSucceeded = null;
@@ -127,5 +118,23 @@ internal static class WorkerHeartbeatStore
         row.LastCycleDetail = null;
         row.UpdatedAtUtc = completedAt;
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// One-line "Type: message" (plus " | RootType: root message" when wrapped), cut at maxLength.
+    /// Uses Message only, never ToString(), so no stack trace reaches the heartbeat row.
+    /// </summary>
+    public static string FormatError(Exception exception, int maxLength)
+    {
+        var root = exception.GetBaseException();
+        var message = ReferenceEquals(root, exception)
+            ? exception.Message
+            : $"{exception.Message} | {root.GetType().Name}: {root.Message}";
+        var detail = string.Join(" ", message
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var error = string.IsNullOrWhiteSpace(detail)
+            ? exception.GetType().Name
+            : $"{exception.GetType().Name}: {detail}";
+        return error[..Math.Min(error.Length, maxLength)];
     }
 }

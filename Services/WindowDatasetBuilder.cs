@@ -41,13 +41,7 @@ public class WindowDatasetBuilder : BackgroundService
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Window dataset build cycle failed");
-                try
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    await WorkerHeartbeatStore.MarkFailedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(WindowDatasetBuilder), startedAtUtc, DateTime.UtcNow, ex, stoppingToken);
-                }
-                catch (Exception heartbeatException) { _logger.LogWarning(heartbeatException, "Could not persist failed window dataset heartbeat"); }
+                await RecordCycleFailureAsync(startedAtUtc, ex, stoppingToken);
             }
 
             try
@@ -59,6 +53,17 @@ public class WindowDatasetBuilder : BackgroundService
                 break;
             }
         }
+    }
+
+    internal async Task RecordCycleFailureAsync(DateTime startedAtUtc, Exception ex, CancellationToken stoppingToken)
+    {
+        _logger.LogError(ex, "Window dataset build cycle failed");
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            await WorkerHeartbeatStore.MarkFailedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), nameof(WindowDatasetBuilder), startedAtUtc, DateTime.UtcNow, ex, stoppingToken);
+        }
+        catch (Exception heartbeatException) { _logger.LogWarning(heartbeatException, "Could not persist failed window dataset heartbeat"); }
     }
 
     internal async Task<WorkerCycleReport> RunCycleAsync(CancellationToken cancellationToken)
@@ -94,7 +99,8 @@ public class WindowDatasetBuilder : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    failedPairs.Add($"{symbol}/{timeframe}");
+                    // Reason capped at 300 so all 3 production pairs keep their name + reason inside the 1000-char detail.
+                    failedPairs.Add($"{symbol}/{timeframe} ({WorkerHeartbeatStore.FormatError(ex, 300)})");
                     _logger.LogWarning(ex,
                         "Failed to build window dataset for {Symbol} {Timeframe}",
                         symbol, timeframe);
