@@ -155,6 +155,39 @@ public class MbbPositionDecisionTests
         Assert.Equal(VnBandStates.OpenAboveCeiling, reason);
     }
 
+    // --- MBBSIZE-1: HOSE tick grid ---------------------------------------------
+
+    [Theory]
+    [InlineData(9_990, 10)]
+    [InlineData(10_000, 50)]
+    [InlineData(49_950, 50)]
+    [InlineData(50_000, 100)]
+    public void HoseTickSize_TierEdges(int price, int tick) =>
+        Assert.Equal((decimal)tick, VietnamExecutionRules.HoseTickSize(price));
+
+    [Fact]
+    public void RoundToTick_Direction_AndTierEdges()
+    {
+        Assert.Equal(9_990m, VietnamExecutionRules.RoundDownToTick(9_999m));
+        Assert.Equal(10_000m, VietnamExecutionRules.RoundUpToTick(9_995m));   // up across the 10,000 edge
+        Assert.Equal(10_000m, VietnamExecutionRules.RoundDownToTick(10_049m));
+        Assert.Equal(50_000m, VietnamExecutionRules.RoundUpToTick(49_951m));  // up across the 50,000 edge
+        Assert.Equal(50_000m, VietnamExecutionRules.RoundDownToTick(50_099m));
+        Assert.Equal(19_650m, VietnamExecutionRules.RoundUpToTick(19_650m));  // on-grid prices unchanged
+        Assert.Equal(19_650m, VietnamExecutionRules.RoundDownToTick(19_650m));
+    }
+
+    [Fact]
+    public void BandBounds_OnTickGrid_CeilingDown_FloorUp()
+    {
+        // Real MBB reference 19,650: × 1.07 = 21,025.5 → ceiling 21,000; × 0.93 = 18,274.5 → floor 18,300.
+        Assert.Equal((18_300m, 21_000m), VietnamExecutionRules.BandBounds(19_650m));
+        Assert.Equal(VnBandStates.OpenAboveCeiling, VietnamExecutionRules.ClassifyBand(21_025.5m, 19_650m));
+        Assert.Equal(VnBandStates.OpenBelowFloor, VietnamExecutionRules.ClassifyBand(18_274.5m, 19_650m));
+        // Tier edge: 9,400 × 1.07 = 10,058 (tick 50) → 10,050; × 0.93 = 8,742 (tick 10) → 8,750.
+        Assert.Equal((8_750m, 10_050m), VietnamExecutionRules.BandBounds(9_400m));
+    }
+
     [Fact]
     public void SettlementDate_T2_SkipsWeekendAndConfiguredHoliday()
     {
@@ -487,7 +520,7 @@ public class MbbPositionDecisionTests
     {
         await using var db = NewDb(nameof(Decide_TriggerBeyondPriceBand_GetsNonFillRisk));
         await SeedLotAsync(db, 200, 19_000m, TodayLocal().AddDays(-14));
-        // prev close 20,000 -> floor 18,600. avgCost 19,000 -> reduce lvl 18,240 < floor.
+        // prev close 20,000 -> floor 18,600. avgCost 19,000 -> reduce lvl 18,240 -> tick 18,250 < floor.
         // last 19,900 > reduce lvl (not hit) and < sma50 20,500, rsi 40 -> conditional-sell.
         await SeedDailyAsync(db, [20_000m, 19_900m], sma50: 20_500m, rsi14: 40);
         var svc = NewService(db);
@@ -496,9 +529,45 @@ public class MbbPositionDecisionTests
 
         Assert.Equal(MbbDecisionActions.ConditionalSell, d.Action);
         var reduceTrigger = d.Triggers[0];
-        Assert.Equal(18_240m, reduceTrigger.PriceLevelVnd);
+        Assert.Equal(18_250m, reduceTrigger.PriceLevelVnd);
         Assert.False(reduceTrigger.WithinPriceBand);
         Assert.Contains("non-fill risk", reduceTrigger.NonFillRisk);
+    }
+
+    [Fact]
+    public async Task Decide_StopAndReduceLevels_OnTickGrid_RoundedUp_NeverLooser()
+    {
+        await using var db = NewDb(nameof(Decide_StopAndReduceLevels_OnTickGrid_RoundedUp_NeverLooser));
+        // avgCost 21,370: raw reduce 20,515.2 -> 20,550; raw stop 19,660.4 -> 19,700 (tick 50 here).
+        await SeedLotAsync(db, 200, 21_370m, TodayLocal().AddDays(-14));
+        // bearish (20,600 < SMA50 21,000, RSI 40) and above both levels -> conditional-sell with both triggers.
+        await SeedDailyAsync(db, [20_700m, 20_600m], sma50: 21_000m, rsi14: 40);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.ConditionalSell, d.Action);
+        var reduce = Assert.Single(d.Triggers, t => t.Name == "reduce-below-cost").PriceLevelVnd!.Value;
+        var stop = Assert.Single(d.Triggers, t => t.Name == "stop-loss").PriceLevelVnd!.Value;
+        Assert.Equal((20_550m, 19_700m), (reduce, stop));
+        foreach (var (level, raw) in new[] { (reduce, 21_370m * 0.96m), (stop, 21_370m * 0.92m) })
+        {
+            Assert.Equal(0m, level % 50m);                       // placeable on the HOSE grid
+            Assert.True(level >= raw && level - raw < 50m);      // at most one tick tighter, never a deeper loss
+        }
+    }
+
+    [Fact]
+    public async Task Decide_CloseAtRoundedStopLevel_FiresTheStop()
+    {
+        await using var db = NewDb(nameof(Decide_CloseAtRoundedStopLevel_FiresTheStop));
+        // avgCost 21,370 -> emitted stop 19,700 (raw 19,660.4): a 1d close AT the emitted level is a hit.
+        await SeedLotAsync(db, 200, 21_370m, TodayLocal().AddDays(-14));
+        await SeedDailyAsync(db, [20_000m, 19_700m], sma50: 21_000m, rsi14: 40);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Contains("stop-loss-hit", d.Reasons);
+        Assert.Equal(MbbDecisionActions.Sell, d.Action);
     }
 
     [Fact]
@@ -514,11 +583,31 @@ public class MbbPositionDecisionTests
         var d = await svc.DecideAsync();
 
         Assert.Equal(MbbDecisionActions.BuyMore, d.Action);
-        // per-share 20,030 -> floor(5,000,000/20,030)=249 -> 200 shares
+        // next-session ceiling 21,400; per-share 21,432.1 -> floor(5,000,000/21,432.1)=233 -> 200 shares
         Assert.NotNull(d.BuyMore);
         Assert.Equal(200, d.BuyMore!.MaxBuyableShares);
         Assert.Equal(2, d.BuyMore.MaxBuyableLots);
-        Assert.Equal(4_006_000m, d.BuyMore.EstimatedCostVnd); // incl. 0.15% fee
+        Assert.Equal(4_286_420m, d.BuyMore.EstimatedCostVnd); // at the ceiling, incl. 0.15% fee
+    }
+
+    [Fact]
+    public async Task Decide_Bullish_BudgetFitsNLotsAtClose_NotAtCeiling_ProposesOneLotLess()
+    {
+        await using var db = NewDb(nameof(Decide_Bullish_BudgetFitsNLotsAtClose_NotAtCeiling_ProposesOneLotLess));
+        await SeedLotAsync(db, 200, 18_000m, TodayLocal().AddDays(-14));
+        // Exactly 3 lots at the last close: 300 × 19,650 × 1.0015 = 5,903,842.5.
+        await SeedCashAsync(db, 5_903_842.5m);
+        await SeedDailyAsync(db, [19_550m, 19_650m], sma50: 19_000m, rsi14: 60);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(MbbDecisionActions.BuyMore, d.Action);
+        Assert.Equal(VietnamExecutionRules.QuoteBuy(300, 19_650m).TotalCostVnd, d.Cash!.SpendableVnd);
+        // Next-session ceiling 21,000: 3 lots would cost 6,309,450 > budget ⇒ 2 lots.
+        Assert.Equal((200, 2), (d.BuyMore!.MaxBuyableShares, d.BuyMore.MaxBuyableLots));
+        Assert.Equal(4_206_300m, d.BuyMore.EstimatedCostVnd); // 200 × 21,000 × 1.0015: cost if the open is at the ceiling
+        Assert.True(d.BuyMore.EstimatedCostVnd <= d.Cash.SpendableVnd);
+        Assert.Contains("buy-sized-at-next-session-ceiling", d.Reasons);
     }
 
     [Fact]
@@ -526,7 +615,7 @@ public class MbbPositionDecisionTests
     {
         await using var db = NewDb(nameof(Decide_Bullish_CashBelowOneLot_HoldsInstead));
         await SeedLotAsync(db, 200, 18_000m, TodayLocal().AddDays(-14));
-        await SeedCashAsync(db, 1_000_000m); // < one lot (needs ~2,003,000)
+        await SeedCashAsync(db, 1_000_000m); // < one lot (needs ~2,143,210 at the 21,400 ceiling)
         await SeedDailyAsync(db, [19_700m, 20_000m], sma50: 19_000m, rsi14: 60);
         var svc = NewService(db);
 
@@ -747,7 +836,7 @@ public class MbbPositionDecisionTests
         var d = await NewService(db).DecideAsync();
 
         Assert.Equal(MbbDecisionActions.BuyMore, d.Action);
-        Assert.Equal(200, d.BuyMore!.MaxBuyableShares); // 4,100,000 / 20,030 = 204 -> 2 lots
+        Assert.Equal(100, d.BuyMore!.MaxBuyableShares); // 4,100,000 / 21,432.1 (ceiling 21,400) = 191 -> 1 lot
         Assert.Equal(4_100_000m, d.Cash!.SpendableVnd);
     }
 

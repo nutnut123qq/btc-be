@@ -44,7 +44,8 @@ public sealed record VnSellQuote(int Shares, decimal Price, decimal GrossVnd, de
 /// <summary>
 /// C# mirror of ai/vn_execution_model.py — HOSE execution semantics for MBB:
 /// lot 100, ±7% price band around the previous session close (breach = reject,
-/// never clamp), sell tax 0.1% of gross, broker fee default 0.15% per side,
+/// never clamp; band edges on the HOSE tick grid here — the Python band_bounds is not
+/// tick-rounded yet), sell tax 0.1% of gross, broker fee default 0.15% per side,
 /// T+2 trading-day settlement for shares and cash, no shorting.
 ///
 /// Fills happen at the next expected session open per VietnamMarketCalendar
@@ -64,12 +65,37 @@ public static class VietnamExecutionRules
 
     public static readonly VnEquityCostSpec DefaultCosts = new();
 
-    /// <summary>(floor, ceiling) of the HOSE ±7% band around the reference (prev session) close.</summary>
+    /// <summary>
+    /// HOSE order-matching tick (đơn vị yết giá) for stocks / closed-end funds: price &lt; 10,000 → 10;
+    /// 10,000–49,950 → 50; ≥ 50,000 → 100 VND (HOSE trading rules, as summarised by MBS
+    /// "Quy định giao dịch chứng khoán cơ sở HSX", 2023 §8 — secondary source). ETF/CW use 10, not modelled.
+    /// </summary>
+    public static decimal HoseTickSize(decimal price) => price < 10_000m ? 10m : price < 50_000m ? 50m : 100m;
+
+    /// <summary>Largest valid HOSE price at or below <paramref name="price"/>.</summary>
+    public static decimal RoundDownToTick(decimal price)
+    {
+        var tick = HoseTickSize(price);
+        return Math.Floor(price / tick) * tick;
+    }
+
+    /// <summary>Smallest valid HOSE price at or above <paramref name="price"/> (tier edges 10,000/50,000 are valid in both tiers).</summary>
+    public static decimal RoundUpToTick(decimal price)
+    {
+        var tick = HoseTickSize(price);
+        return Math.Ceiling(price / tick) * tick;
+    }
+
+    /// <summary>
+    /// (floor, ceiling) of the HOSE ±7% band around the reference (prev session) close, on the tick grid:
+    /// ceiling rounded down, floor rounded up, so both stay inside ±7%.
+    /// shortcut: no "band collapses onto the reference ⇒ ±1 tick" rule (only refs below ~150 VND); add it if such an instrument gets the Decision capability.
+    /// </summary>
     public static (decimal Floor, decimal Ceiling) BandBounds(
         decimal referenceClose, decimal bandFraction = DefaultPriceBandFraction)
     {
         if (referenceClose <= 0) throw new ArgumentException("referenceClose must be positive.", nameof(referenceClose));
-        return (referenceClose * (1m - bandFraction), referenceClose * (1m + bandFraction));
+        return (RoundUpToTick(referenceClose * (1m - bandFraction)), RoundDownToTick(referenceClose * (1m + bandFraction)));
     }
 
     /// <summary>Classify a candidate execution price against the band. Breach = reject.</summary>

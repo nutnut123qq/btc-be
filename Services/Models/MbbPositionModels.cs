@@ -213,7 +213,11 @@ public sealed record MbbCashContext(
     [property: Required] string CashSource,
     decimal? SpendableVnd);
 
-/// <summary>Buy capacity under HOSE lot/fee rules, populated on buy-more.</summary>
+/// <summary>
+/// Buy capacity under HOSE lot/fee rules, populated on buy-more. Since MBBSIZE-1 (reason
+/// buy-sized-at-next-session-ceiling) shares and EstimatedCostVnd are priced at the next session's
+/// ceiling, so EstimatedCostVnd is an upper bound, not an estimate at the last close.
+/// </summary>
 public sealed record MbbBuyMoreCapacity(
     [property: Required] int MaxBuyableShares,
     [property: Required] int MaxBuyableLots,

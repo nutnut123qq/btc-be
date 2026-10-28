@@ -21,7 +21,10 @@ namespace Backend.Services;
 ///   and RSI below midline) but no stop/reduce trigger has been touched; the
 ///   trigger levels are emitted for the user to arm manually.
 /// - "buy-more" only when trend is constructive and cash covers at least one
-///   whole lot including the buy fee — never more than cash allows.
+///   whole lot including the buy fee at the NEXT session's ceiling price (the
+///   worst possible open) — never more than the budget allows even then.
+/// - Stop-loss / reduce levels sit on the HOSE tick grid, rounded up (never a
+///   deeper loss than declared).
 /// - "wait"/"hold" are first-class outcomes with reasons; nothing forces a
 ///   BUY/SELL. Missing candles or artifacts -> "wait" + "insufficient-data".
 ///
@@ -148,6 +151,8 @@ public sealed class MbbDecisionService
     public const string ReasonCashUnknown = "cash-unknown";
     public const string ReasonBuyBudgetUndeclared = "buy-budget-undeclared";
     public const string ReasonBudgetExceedsCash = "budget-exceeds-cash";
+    /// <summary>Buy quantity/cost priced at the next session's ceiling (reference = latest 1d close): cost is an upper bound.</summary>
+    public const string ReasonBuySizedAtNextCeiling = "buy-sized-at-next-session-ceiling";
     public const string SharedPoolNote =
         "Cash is ONE shared pool for every equity symbol (EquityCashAccounts 'default'); availableCashVnd mirrors that pool and is not per-symbol. Per-symbol buying power is buyBudgetVnd.";
     public const string LegacyCashWriteNote =
@@ -446,8 +451,9 @@ public sealed class MbbDecisionService
         var bullish = market.Trend == TrendUp
                       && lastIndicator.Rsi14 is >= RsiMid and < RsiOverbought;
 
-        var stopLossPrice = costComparable && avgCost is > 0 ? avgCost.Value * (1m - StopLossFraction) : (decimal?)null;
-        var reducePrice = costComparable && avgCost is > 0 ? avgCost.Value * (1m - ReduceLossFraction) : (decimal?)null;
+        // Levels on the HOSE tick grid, rounded UP: an order can be placed there and the declared loss is never exceeded.
+        var stopLossPrice = costComparable && avgCost is > 0 ? VietnamExecutionRules.RoundUpToTick(avgCost.Value * (1m - StopLossFraction)) : (decimal?)null;
+        var reducePrice = costComparable && avgCost is > 0 ? VietnamExecutionRules.RoundUpToTick(avgCost.Value * (1m - ReduceLossFraction)) : (decimal?)null;
         var stopHit = stopLossPrice is not null && lastPrice <= stopLossPrice;
         var reduceHit = reducePrice is not null && lastPrice <= reducePrice;
 
@@ -528,13 +534,17 @@ public sealed class MbbDecisionService
             if (cash.BuyBudgetVnd is null) blockers.Add(ReasonBuyBudgetUndeclared);
             if (cash.SharedCashVnd is { } pool && cash.TotalDeclaredBudgetsVnd > pool) blockers.Add(ReasonBudgetExceedsCash);
             reasons.AddRange(blockers);
+            // The order fills at the next session open, which can be anywhere up to that session's ceiling:
+            // size at the ceiling so the cost stays within the budget even at the worst open.
+            var (_, nextCeiling) = VietnamExecutionRules.BandBounds(lastPrice, _costs.PriceBandFraction);
             var maxShares = blockers.Count == 0 && cash.SpendableVnd is { } spendable
-                ? VietnamExecutionRules.BuySharesForBudget(spendable, lastPrice, _costs)
+                ? VietnamExecutionRules.BuySharesForBudget(spendable, nextCeiling, _costs)
                 : 0;
+            if (blockers.Count == 0) reasons.Add(ReasonBuySizedAtNextCeiling);
             if (blockers.Count == 0 && maxShares >= _costs.LotSize)
             {
                 reasons.Add("trend-constructive");
-                var quote = VietnamExecutionRules.QuoteBuy(maxShares, lastPrice, _costs);
+                var quote = VietnamExecutionRules.QuoteBuy(maxShares, nextCeiling, _costs);
                 var capacity = new MbbBuyMoreCapacity(
                     maxShares, maxShares / _costs.LotSize, quote.TotalCostVnd);
                 return Decide(symbol, MbbDecisionActions.BuyMore, reasons, triggers,
