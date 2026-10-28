@@ -341,6 +341,63 @@ public class DatasetBuilderHeartbeatTests
         }
     }
 
+    // PANELCLAMP-1: heartbeat cuts land on UTF-16 indexes; a surrogate pair straddling the limit must not
+    // leave its high half behind (strict UTF-8 rejects it), and BMP-only text is cut exactly as before.
+    [Fact]
+    public async Task HeartbeatCuts_NeverEndOnHalfASurrogatePair()
+    {
+        const string pair = "\U0001F600"; // one code point = two UTF-16 units
+        const string prefix = "InvalidOperationException: ";
+        var strictUtf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+        void AssertCleanCut(string? cut, int max)
+        {
+            Assert.NotNull(cut);
+            Assert.True(cut!.Length <= max);
+            Assert.False(char.IsHighSurrogate(cut[^1]));
+            strictUtf8.GetBytes(cut);
+        }
+
+        foreach (var max in new[] { 300, 1000 })
+        {
+            var room = max - prefix.Length;
+            // Pair straddles the limit: its high half goes too. Pair ends exactly at the limit: kept whole.
+            var straddle = WorkerHeartbeatStore.FormatError(new InvalidOperationException(new string('x', room - 1) + pair + "tail"), max);
+            Assert.Equal(prefix + new string('x', room - 1), straddle);
+            AssertCleanCut(straddle, max);
+            var fits = WorkerHeartbeatStore.FormatError(new InvalidOperationException(new string('x', room - 2) + pair + "tail"), max);
+            Assert.Equal(prefix + new string('x', room - 2) + pair, fits);
+            AssertCleanCut(fits, max);
+            Assert.Equal(prefix + new string('x', room),
+                WorkerHeartbeatStore.FormatError(new InvalidOperationException(new string('x', 5000)), max));
+        }
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+        var now = DateTime.UtcNow;
+
+        await WorkerHeartbeatStore.MarkFailedAsync(db, "pin", now, now,
+            new InvalidOperationException(new string('x', 1000 - prefix.Length - 1) + pair), default);
+        var crashed = await db.WorkerHeartbeats.SingleAsync();
+        Assert.Equal(prefix + new string('x', 1000 - prefix.Length - 1), crashed.LastError);
+        AssertCleanCut(crashed.LastError, 1000);
+
+        foreach (var outcome in new[] { WorkerCycleOutcome.Partial, WorkerCycleOutcome.Failed })
+        {
+            await WorkerHeartbeatStore.MarkCompletedAsync(db, "pin", now, now,
+                new WorkerCycleReport(outcome, Detail: new string('y', 999) + pair + "tail"), default);
+            var row = await db.WorkerHeartbeats.SingleAsync();
+            Assert.Equal(new string('y', 999), row.LastCycleDetail);
+            AssertCleanCut(row.LastCycleDetail, 1000);
+            Assert.Equal(outcome == WorkerCycleOutcome.Failed ? row.LastCycleDetail : null, row.LastError);
+
+            await WorkerHeartbeatStore.MarkCompletedAsync(db, "pin", now, now,
+                new WorkerCycleReport(outcome, Detail: new string('y', 1500)), default);
+            Assert.Equal(new string('y', 1000), (await db.WorkerHeartbeats.SingleAsync()).LastCycleDetail);
+        }
+    }
+
     private static ServiceProvider BuildMlServices(StubMlDatasetService stub)
     {
         var opts = new DbContextOptionsBuilder<AppDbContext>()

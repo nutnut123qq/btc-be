@@ -72,7 +72,7 @@ internal static class WorkerHeartbeatStore
         row.LastCycleSkipped = report.Skipped;
         row.LastCycleRemaining = report.Remaining;
         var detail = report.Detail;
-        row.LastCycleDetail = string.IsNullOrWhiteSpace(detail) ? null : detail[..Math.Min(detail.Length, 1000)];
+        row.LastCycleDetail = string.IsNullOrWhiteSpace(detail) ? null : Truncate(detail, 1000);
 
         if (report.Outcome == WorkerCycleOutcome.Failed)
         {
@@ -135,6 +135,17 @@ internal static class WorkerHeartbeatStore
         var error = string.IsNullOrWhiteSpace(detail)
             ? exception.GetType().Name
             : $"{exception.GetType().Name}: {detail}";
-        return error[..Math.Min(error.Length, maxLength)];
+        return Truncate(error, maxLength);
+    }
+
+    /// <summary>
+    /// Cuts at maxLength UTF-16 units, one unit shorter when the cut would keep only the high half
+    /// of a surrogate pair (a lone half is not valid UTF-8). BMP-only text is cut exactly as before.
+    /// </summary>
+    internal static string Truncate(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+            return value;
+        return value[..(maxLength > 0 && char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength)];
     }
 }
