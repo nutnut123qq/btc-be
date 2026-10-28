@@ -5,11 +5,13 @@ using Backend.Services.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -669,10 +671,172 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         await host.StopAsync();
     }
 
+    [Theory]
+    [InlineData(300, 180)]
+    [InlineData(100, 60)]
+    [InlineData(86_400, 51_840)]
+    [InlineData(40, 30)] // floored, still inside [TTL/2, TTL)
+    public async Task Warmup_KeepsReverifyingWithoutRequests_OncePerPeriodInsideTheRefreshAheadWindow(
+        int ttlSeconds, int periodSeconds)
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var time = new ManualTimeProvider(FixedNow);
+        var service = CreateService(time, ttlSeconds, contract);
+        using var host = LoopHost(new WarmupLog(), time, ttlSeconds, service);
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        for (var cycle = 1; cycle <= 3; cycle++)
+        {
+            var delay = time.WaitForTimer();
+            Assert.Equal(TimeSpan.FromSeconds(periodSeconds), delay);
+            Assert.True(delay >= TimeSpan.FromSeconds(ttlSeconds) / 2 && delay < TimeSpan.FromSeconds(ttlSeconds));
+            time.Advance(delay);
+            // Each cycle starts exactly one background re-verification; no request was made.
+            WaitForVerifications(service, contract, cycle + 1);
+        }
+        await host.StopAsync();
+    }
+
+    [Theory]
+    [InlineData(181)] // just after the first cycle
+    [InlineData(299)]
+    [InlineData(301)] // past the startup snapshot's own expiry
+    [InlineData(359)] // just before the second cycle
+    [InlineData(720)] // the stack is up ~12 min after a reboot before /nghien-cuu is opened
+    [InlineData(3_617)]
+    public async Task Warmup_RequestAtAnyTimeAfterTheFirstCycle_IsServedWithoutVerifyingSynchronously(int requestAtSeconds)
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var time = new ManualTimeProvider(FixedNow);
+        var service = CreateService(time, 300, contract);
+        using var host = LoopHost(new WarmupLog(), time, 300, service);
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Idle until the request: only the warm-up touches the catalog.
+        var requestAt = FixedNow.AddSeconds(requestAtSeconds);
+        var verifications = 1;
+        for (var delay = time.WaitForTimer(); time.GetUtcNow() + delay <= requestAt; delay = time.WaitForTimer())
+        {
+            time.Advance(delay);
+            WaitForVerifications(service, contract, ++verifications);
+        }
+        time.Advance(requestAt - time.GetUtcNow());
+
+        // A synchronous verification would run on this thread; served snapshots are always younger than the TTL.
+        var before = GatedContract.VerificationsOnThisThread;
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+        Assert.Equal(before, GatedContract.VerificationsOnThisThread);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Warmup_WithCacheDisabled_VerifiesOnlyOnce()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var time = new ManualTimeProvider(FixedNow);
+        var service = CreateService(time, cacheSeconds: 0, contract);
+        var log = new WarmupLog();
+        using var host = LoopHost(log, time, 0, service);
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        WaitForLog(log, LogLevel.Information);
+        Assert.False(SpinWait.SpinUntil(() => time.PendingTimers > 0, TimeSpan.FromMilliseconds(500)));
+        time.Advance(TimeSpan.FromDays(2));
+        Assert.Equal(1, contract.Verifications);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Warmup_FailedVerification_IsLogged_AndTheNextCycleStillRuns()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract { Failure = new ApplicationException("verifier crashed") };
+        var time = new ManualTimeProvider(FixedNow);
+        var service = CreateService(time, 300, contract);
+        var log = new WarmupLog();
+        using var host = LoopHost(log, time, 300, service);
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Startup failed and cached nothing, so the cycle verifies synchronously and fails again.
+        time.Advance(time.WaitForTimer());
+        var delay = time.WaitForTimer();
+        Assert.Equal(2, contract.Verifications);
+        Assert.Equal(2, log.Entries.Count(x => x.Level == LogLevel.Error && x.Exception is ApplicationException));
+
+        contract.Failure = null;
+        time.Advance(delay);
+        time.WaitForTimer();
+        Assert.Equal(3, contract.Verifications);
+        Assert.False(host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.IsCancellationRequested);
+        var before = GatedContract.VerificationsOnThisThread;
+        Assert.Equal(3, service.GetCatalog().Items.Count);
+        Assert.Equal(before, GatedContract.VerificationsOnThisThread);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Warmup_Stop_EndsTheLoop()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var time = new ManualTimeProvider(FixedNow);
+        var service = CreateService(time, 300, contract);
+        using var host = LoopHost(new WarmupLog(), time, 300, service);
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        time.WaitForTimer();
+
+        await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, time.PendingTimers);
+        time.Advance(TimeSpan.FromDays(1));
+        Assert.Equal(1, contract.Verifications);
+    }
+
+    [Fact]
+    public async Task Warmup_StopDuringAVerification_ReturnsAtOnce_AndTheLoopDoesNotRearm()
+    {
+        WriteAtomicTechnicalRun();
+        var contract = new GatedContract();
+        var time = new ManualTimeProvider(FixedNow);
+        var service = CreateService(time, 300, contract);
+        var log = new WarmupLog();
+        using var host = LoopHost(log, time, 300, service);
+        contract.Hold();
+        await Task.Run(() => host.StartAsync()).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(contract.Entered.Wait(TimeSpan.FromSeconds(10)));
+
+        // Times out (fails) if StopAsync waits for the held verification.
+        await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        contract.Release();
+        WaitForLog(log, LogLevel.Information);
+        Assert.False(SpinWait.SpinUntil(() => time.PendingTimers > 0, TimeSpan.FromMilliseconds(500)));
+        Assert.Equal(1, contract.Verifications);
+    }
+
+    private static IHost LoopHost(WarmupLog log, ManualTimeProvider time, int ttlSeconds, ResearchEvidenceCatalog service) =>
+        WarmupHost(log, services =>
+        {
+            services.AddSingleton<IResearchEvidenceCatalog>(service);
+            services.AddSingleton<TimeProvider>(time);
+            services.Configure<EvidenceCatalogOptions>(o => o.CacheVerificationSeconds = ttlSeconds);
+        });
+
+    // Compressed time would outrun a background re-verification: wait until it has also installed its snapshot.
+    private static void WaitForVerifications(ResearchEvidenceCatalog service, GatedContract contract, int count)
+    {
+        var revalidating = typeof(ResearchEvidenceCatalog).GetField("_revalidating", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.True(SpinWait.SpinUntil(
+            () => contract.Verifications == count && !(bool)revalidating.GetValue(service)!, TimeSpan.FromSeconds(10)),
+            $"expected {count} verifications, saw {contract.Verifications}");
+    }
+
     private static IHost WarmupHost(WarmupLog log, Action<IServiceCollection> configure) =>
         new HostBuilder().ConfigureServices(services =>
         {
             configure(services);
+            services.TryAddSingleton(TimeProvider.System);
             services.AddSingleton<ILogger<ResearchEvidenceCatalogWarmup>>(log);
             services.AddHostedService<ResearchEvidenceCatalogWarmup>();
         }).Build();
@@ -1417,8 +1581,11 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
     // can hold or fail one mid-flight.
     private sealed class GatedContract : ITechnicalModuleContractProvider
     {
+        [ThreadStatic] private static int t_verifications;
         private readonly ManualResetEventSlim _open = new(true);
         private int _verifications;
+        // A synchronous verification runs on the requesting thread; background ones never do.
+        public static int VerificationsOnThisThread => t_verifications;
         public ManualResetEventSlim Entered { get; } = new(false);
         public int Verifications => Volatile.Read(ref _verifications);
         public volatile Exception? Failure;
@@ -1434,6 +1601,7 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
             get
             {
                 Interlocked.Increment(ref _verifications);
+                t_verifications++;
                 Entered.Set();
                 _open.Wait(TimeSpan.FromSeconds(30));
                 return Failure is { } failure ? throw failure : new string('a', 64);
@@ -1444,6 +1612,73 @@ public sealed class ResearchEvidenceCatalogTests : IDisposable
         public string RawFileSha256 => new('b', 64);
         public string CanonicalJson => "{}";
         public string GetCalculationVersion(string moduleKey) => "test";
+    }
+
+    // Frozen until Advance; a one-shot timer (all Task.Delay needs) fires once time reaches its due time.
+    private sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private readonly object _gate = new();
+        private readonly List<ManualTimer> _timers = [];
+        private DateTimeOffset _now = start;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_gate) return _now;
+        }
+
+        public int PendingTimers
+        {
+            get { lock (_gate) return _timers.Count; }
+        }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new ManualTimer(this, callback, state);
+            lock (_gate)
+            {
+                timer.Due = _now + dueTime;
+                _timers.Add(timer);
+            }
+            return timer;
+        }
+
+        // Waits until the warm-up loop has armed its next delay and returns that delay.
+        public TimeSpan WaitForTimer()
+        {
+            Assert.True(SpinWait.SpinUntil(() => PendingTimers == 1, TimeSpan.FromSeconds(10)), "no delay armed");
+            lock (_gate) return _timers[0].Due - _now;
+        }
+
+        public void Advance(TimeSpan delta)
+        {
+            ManualTimer[] due;
+            lock (_gate)
+            {
+                _now += delta;
+                due = _timers.Where(x => x.Due <= _now).ToArray();
+                _timers.RemoveAll(x => x.Due <= _now);
+            }
+            foreach (var timer in due)
+                timer.Fire();
+        }
+
+        private void Remove(ManualTimer timer)
+        {
+            lock (_gate) _timers.Remove(timer);
+        }
+
+        private sealed class ManualTimer(ManualTimeProvider owner, TimerCallback callback, object? state) : ITimer
+        {
+            public DateTimeOffset Due;
+            public void Fire() => callback(state);
+            public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
+            public void Dispose() => owner.Remove(this);
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
     private sealed class TestLogger : ILogger<ResearchEvidenceCatalog>

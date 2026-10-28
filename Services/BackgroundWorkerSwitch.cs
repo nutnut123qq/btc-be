@@ -27,7 +27,7 @@ public static class BackgroundWorkerSwitch
             AddIfEnabled<EmbeddingBackfillWorker>(services, configuration);
             AddIfEnabled<MlDatasetBuilder>(services, configuration);
             AddIfEnabled<WindowDatasetBuilder>(services, configuration);
-            // Read-only: verifies the evidence catalog once after start (maintenance/contract modes skip it via the gate).
+            // Read-only: keeps the evidence catalog verified from start on (maintenance/contract modes skip it via the gate).
             AddIfEnabled<ResearchEvidenceCatalogWarmup>(services, configuration);
             // Exits immediately unless EquityIngestion:Enabled=true (not enabled in any appsettings).
             services.AddHostedService<EquityIngestionWorker>();
