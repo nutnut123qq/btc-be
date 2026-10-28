@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Backend.Data;
+using Backend.Filters;
 using Backend.Services;
 using Backend.Services.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -75,10 +76,15 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger,
         return await GetFreshnessAsync(symbol.Trim().ToUpperInvariant(), cancellationToken);
     }
 
+    // Worker-written detail (LastCycleDetail/LastError) is free text that can carry exception messages
+    // with host:port or DB user/table names; this endpoint is public, so only an admin-key caller sees it.
+    public const string HiddenWorkerDetail = "Chi tiết từ worker chỉ hiện với admin key.";
+
     [HttpGet("workers")]
     public async Task<ActionResult<WorkerHealthResponse>> Workers(CancellationToken cancellationToken)
     {
         var checkedAtUtc = DateTimeOffset.UtcNow;
+        var showWorkerDetail = AdminGuardAttribute.HasValidAdminKey(configuration, Request);
         try
         {
             var rows = await db.WorkerHeartbeats.AsNoTracking().ToListAsync(cancellationToken);
@@ -115,6 +121,7 @@ public class HealthController(AppDbContext db, ILogger<HealthController> logger,
                         _ => "healthy"
                     };
                 var message = row.LastCycleDetail ?? (failed ? row.LastError : null);
+                if (message is not null && !showWorkerDetail) message = HiddenWorkerDetail;
                 return new WorkerHealth(row.WorkerName, status, row.LastStartedAtUtc, row.LastSucceededAtUtc,
                     row.LastFailedAtUtc, ageSeconds, (long)expected.MaxAge.TotalSeconds, row.LastDurationMs,
                     message, row.LastCycleAttempted, row.LastCycleSucceeded, row.LastCycleFailed,

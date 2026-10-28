@@ -1,6 +1,7 @@
 using Backend.Controllers;
 using Backend.Data;
 using Backend.Services;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -181,10 +182,9 @@ public class HealthControllerTests
                 LastError = "DbUpdateException: boom"
             });
         await db.SaveChangesAsync();
-        var controller = new HealthController(db, NullLogger<HealthController>.Instance);
 
-        var ok = Assert.IsType<OkObjectResult>((await controller.Workers(default)).Result);
-        var body = Assert.IsType<WorkerHealthResponse>(ok.Value);
+        // Worker-written messages are only verbatim for an admin-key caller (see the next test).
+        var body = (await GetWorkersAsync(db, AdminConfig(), AdminKey)).Body;
 
         var disabled = body.Workers.Single(w => w.Name == "EmbeddingBackfillWorker");
         Assert.Equal("disabled", disabled.Status);
@@ -205,6 +205,78 @@ public class HealthControllerTests
         var failedWorker = body.Workers.Single(w => w.Name == "CausalSmartMoneyRebuildWorker");
         Assert.Equal("failed", failedWorker.Status);
         Assert.Contains("boom", failedWorker.Message);
+    }
+
+    [Fact]
+    public async Task Workers_ShowsWorkerWrittenDetailOnlyToValidAdminKey()
+    {
+        const string leakyError = "NpgsqlException: Failed to connect to 10.0.0.5:5432 | SocketException: Host=10.0.0.5;Username=btc_admin";
+        const string leakyDetail = "failed: BTCUSDT/1h (PostgresException: 42P01: relation \"MlFeatureStores_tmp\" does not exist)";
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+        var now = DateTime.UtcNow;
+        db.WorkerHeartbeats.AddRange(
+            new WorkerHeartbeat
+            {
+                WorkerName = "CausalSmartMoneyRebuildWorker", Status = "Failed",
+                LastStartedAtUtc = now, LastFailedAtUtc = now, UpdatedAtUtc = now, LastError = leakyError
+            },
+            new WorkerHeartbeat
+            {
+                WorkerName = "MlDatasetBuilder", Status = "Partial",
+                LastStartedAtUtc = now, LastSucceededAtUtc = now, UpdatedAtUtc = now,
+                LastCycleAttempted = 3, LastCycleSucceeded = 2, LastCycleFailed = 1,
+                LastCycleSkipped = 0, LastCycleRemaining = 0, LastCycleDetail = leakyDetail
+            },
+            new WorkerHeartbeat
+            {
+                WorkerName = "KlinesIngestionWorker", Status = "Succeeded",
+                LastStartedAtUtc = now, LastSucceededAtUtc = now, UpdatedAtUtc = now
+            },
+            new WorkerHeartbeat
+            {
+                WorkerName = "RssIngestionService", Status = "Failed",
+                LastStartedAtUtc = now, LastFailedAtUtc = now, UpdatedAtUtc = now, LastError = leakyError
+            });
+        await db.SaveChangesAsync();
+        const string configDisabled = "Disabled by configuration (BackgroundWorkers:RssIngestionService:Enabled=false).";
+        var configuration = AdminConfig(("BackgroundWorkers:RssIngestionService:Enabled", "false"));
+
+        var admin = await GetWorkersAsync(db, configuration, AdminKey);
+        Assert.Equal(leakyError, Worker(admin.Body, "CausalSmartMoneyRebuildWorker").Message);
+        Assert.Equal(leakyDetail, Worker(admin.Body, "MlDatasetBuilder").Message);
+        Assert.Null(Worker(admin.Body, "KlinesIngestionWorker").Message);
+        Assert.Equal(configDisabled, Worker(admin.Body, "RssIngestionService").Message);
+        Assert.Equal("No heartbeat has been recorded.", Worker(admin.Body, "IndexingBackgroundWorker").Message);
+
+        // No key, wrong key, empty key; then a server without AdminApiKey (an empty header must not match it).
+        var notConfigured = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AdminApiKey"] = "", ["BackgroundWorkers:RssIngestionService:Enabled"] = "false" })
+            .Build();
+        foreach (var (config, header) in new (IConfiguration, string?)[]
+                 {
+                     (configuration, null), (configuration, "wrong-secret"), (configuration, ""),
+                     (notConfigured, ""), (notConfigured, AdminKey)
+                 })
+        {
+            var anonymous = await GetWorkersAsync(db, config, header);
+
+            Assert.DoesNotContain("10.0.0.5:5432", anonymous.Json);
+            Assert.DoesNotContain("Host=10.0.0.5", anonymous.Json);
+            Assert.DoesNotContain("btc_admin", anonymous.Json);
+            Assert.DoesNotContain("MlFeatureStores_tmp", anonymous.Json);
+            Assert.DoesNotContain("Npgsql", anonymous.Json);
+            Assert.Equal(HealthController.HiddenWorkerDetail, Worker(anonymous.Body, "CausalSmartMoneyRebuildWorker").Message);
+            Assert.Equal(HealthController.HiddenWorkerDetail, Worker(anonymous.Body, "MlDatasetBuilder").Message);
+            Assert.Null(Worker(anonymous.Body, "KlinesIngestionWorker").Message);
+            Assert.Equal(configDisabled, Worker(anonymous.Body, "RssIngestionService").Message);
+            Assert.Equal("No heartbeat has been recorded.", Worker(anonymous.Body, "IndexingBackgroundWorker").Message);
+            // Status, timestamps and counters are the same as the admin view; only the message differs.
+            Assert.Equal(admin.Body.Workers.Select(w => w with { Message = null, AgeSeconds = null }),
+                anonymous.Body.Workers.Select(w => w with { Message = null, AgeSeconds = null }));
+        }
     }
 
     [Fact]
@@ -254,5 +326,30 @@ public class HealthControllerTests
         Assert.Equal(old, rss.LastSucceededAtUtc);
         Assert.Equal("stale", body.Workers.Single(w => w.Name == "KlinesIngestionWorker").Status);
         Assert.True(BackgroundWorkerSwitch.IsEnabled(configuration, "KlinesIngestionWorker"));
+    }
+
+    private const string AdminKey = "server-secret";
+
+    private static IConfiguration AdminConfig(params (string Key, string Value)[] extra) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(extra.Select(x => new KeyValuePair<string, string?>(x.Key, x.Value))
+                .Append(new KeyValuePair<string, string?>("AdminApiKey", AdminKey)))
+            .Build();
+
+    private static WorkerHealth Worker(WorkerHealthResponse body, string name) => body.Workers.Single(w => w.Name == name);
+
+    // Goes through a real HttpContext so the X-Admin-Key header path is exercised; a wrong key must still be 200.
+    private static async Task<(WorkerHealthResponse Body, string Json)> GetWorkersAsync(AppDbContext db, IConfiguration configuration, string? adminKeyHeader)
+    {
+        var controller = new HealthController(db, NullLogger<HealthController>.Instance, configuration: configuration)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+        if (adminKeyHeader is not null) controller.Request.Headers["X-Admin-Key"] = adminKeyHeader;
+
+        var ok = Assert.IsType<OkObjectResult>((await controller.Workers(default)).Result);
+        Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
+        var body = Assert.IsType<WorkerHealthResponse>(ok.Value);
+        return (body, JsonSerializer.Serialize(body, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
 }
