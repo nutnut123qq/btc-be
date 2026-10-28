@@ -46,17 +46,17 @@ public class MbbPositionDecisionTests
     };
 
     /// <summary>
-    /// Seed the last <paramref name="count"/> trading-day 1d candles ending today
+    /// Seed the last <paramref name="count"/> trading-day 1d candles ending today (or <paramref name="lastDay"/>)
     /// plus an indicator row on the last bar. closes[i] = close of bar i
     /// (last = current price, second-to-last = band reference).
     /// </summary>
     private static async Task SeedDailyAsync(
         AppDbContext db, IReadOnlyList<decimal> closes,
         decimal? sma50 = null, double? rsi14 = null, double? atr14 = 500,
-        decimal? ema50 = null)
+        decimal? ema50 = null, DateOnly? lastDay = null)
     {
         var cal = new VietnamMarketCalendar();
-        var today = TodayLocal();
+        var today = lastDay ?? TodayLocal();
         var dates = cal.EnumerateTradingDates(today.AddDays(-90), today)
             .TakeLast(closes.Count).ToArray();
         for (var i = 0; i < dates.Length; i++)
@@ -637,6 +637,97 @@ public class MbbPositionDecisionTests
 
         Assert.Equal(MbbDecisionActions.Wait, d.Action);
         Assert.Contains("no-position", d.Reasons);
+    }
+
+    // --- MBBSTALE-1: a stale 1d bar never yields a trading action ---------------------
+
+    /// <summary>The fixtures of the existing branch tests; <paramref name="staleDaily"/> ends the 1d bars 20 days ago.</summary>
+    private static async Task SeedScenarioAsync(AppDbContext db, string scenario, bool staleDaily)
+    {
+        var acquired = TodayLocal().AddDays(-14);
+        DateOnly? lastDay = staleDaily ? TodayLocal().AddDays(-20) : null;
+        switch (scenario)
+        {
+            case "stop-sell":           // stop 23,000 hit, fully settled, in band
+                await SeedLotAsync(db, 200, 25_000m, acquired);
+                await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38, lastDay: lastDay);
+                break;
+            case "stop-partial-reduce": // stop hit, half settled
+                await SeedLotAsync(db, 100, 25_000m, acquired);
+                await SeedLotAsync(db, 100, 25_000m, TodayLocal());
+                await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38, lastDay: lastDay);
+                break;
+            case "bearish-reduce":      // reduce 24,000 hit, stop not
+                await SeedLotAsync(db, 200, 25_000m, acquired);
+                await SeedDailyAsync(db, [23_900m, 23_500m], sma50: 24_500m, rsi14: 40, lastDay: lastDay);
+                break;
+            case "conditional-sell":    // bearish, no level hit
+                await SeedLotAsync(db, 200, 25_000m, acquired);
+                await SeedDailyAsync(db, [24_700m, 24_500m], sma50: 25_000m, rsi14: 40, lastDay: lastDay);
+                break;
+            case "buy-more":            // bullish, budget covers 2 lots at the ceiling
+                await SeedLotAsync(db, 200, 18_000m, acquired);
+                await SeedCashAsync(db, 5_000_000m);
+                await SeedDailyAsync(db, [19_700m, 20_000m], sma50: 19_000m, rsi14: 60, lastDay: lastDay);
+                break;
+            case "hold":                // no trigger
+                await SeedLotAsync(db, 200, 20_000m, acquired);
+                await SeedDailyAsync(db, [20_100m, 20_300m], sma50: 20_500m, rsi14: 55, lastDay: lastDay);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+        }
+    }
+
+    [Theory]
+    [InlineData("stop-sell", MbbDecisionActions.Sell)]
+    [InlineData("stop-partial-reduce", MbbDecisionActions.Reduce)]
+    [InlineData("bearish-reduce", MbbDecisionActions.Reduce)]
+    [InlineData("conditional-sell", MbbDecisionActions.ConditionalSell)]
+    [InlineData("buy-more", MbbDecisionActions.BuyMore)]
+    public async Task Decide_Stale1d_TradingActionBecomesWait_BlockedActionKept(string scenario, string action)
+    {
+        // Fresh 1d: unchanged action. MBB declares 1h and no 1h bar is seeded, so only 1h is stale: noted, not blocking.
+        await using var freshDb = NewDb(nameof(Decide_Stale1d_TradingActionBecomesWait_BlockedActionKept) + scenario + "fresh");
+        await SeedScenarioAsync(freshDb, scenario, staleDaily: false);
+        var fresh = await NewService(freshDb).DecideAsync();
+        Assert.Equal(action, fresh.Action);
+        Assert.Equal((false, true), (Assert.Single(fresh.DataFreshness, f => f.Timeframe == "1d").IsStale,
+            Assert.Single(fresh.DataFreshness, f => f.Timeframe == "1h").IsStale));
+        Assert.Contains("stale-data", fresh.Reasons);
+        Assert.DoesNotContain(fresh.Reasons, r => r.StartsWith(MbbDecisionService.ReasonStaleDataBlockedPrefix, StringComparison.Ordinal));
+
+        await using var db = NewDb(nameof(Decide_Stale1d_TradingActionBecomesWait_BlockedActionKept) + scenario + "stale");
+        await SeedScenarioAsync(db, scenario, staleDaily: true);
+        var d = await NewService(db).DecideAsync();
+
+        Assert.True(Assert.Single(d.DataFreshness, f => f.Timeframe == "1d").IsStale);
+        Assert.Equal(MbbDecisionActions.Wait, d.Action);
+        Assert.Null(d.BuyMore);
+        Assert.Null(d.Invalidation);
+        // Same rule reasons/triggers as on fresh data (what the old close touched), minus sizing, plus the blocked action.
+        Assert.Equal(
+            fresh.Reasons.Where(r => r != MbbDecisionService.ReasonBuySizedAtNextCeiling)
+                .Append(MbbDecisionService.ReasonStaleDataBlockedPrefix + action),
+            d.Reasons);
+        Assert.Contains("stale-data", d.Reasons);
+        Assert.DoesNotContain(MbbDecisionService.ReasonBuySizedAtNextCeiling, d.Reasons);
+        Assert.Equal(fresh.Triggers, d.Triggers);
+    }
+
+    [Fact]
+    public async Task Decide_Stale1d_Hold_StaysHold()
+    {
+        await using var db = NewDb(nameof(Decide_Stale1d_Hold_StaysHold));
+        await SeedScenarioAsync(db, "hold", staleDaily: true);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.True(Assert.Single(d.DataFreshness, f => f.Timeframe == "1d").IsStale);
+        Assert.Equal(MbbDecisionActions.Hold, d.Action);
+        Assert.Contains("stale-data", d.Reasons);
+        Assert.Contains("no-trigger", d.Reasons);
+        Assert.DoesNotContain(d.Reasons, r => r.StartsWith(MbbDecisionService.ReasonStaleDataBlockedPrefix, StringComparison.Ordinal));
     }
 
     // --- EQX v2 A3: corporate-action conversion -------------------------------------

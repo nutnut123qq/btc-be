@@ -27,6 +27,8 @@ namespace Backend.Services;
 ///   deeper loss than declared).
 /// - "wait"/"hold" are first-class outcomes with reasons; nothing forces a
 ///   BUY/SELL. Missing candles or artifacts -> "wait" + "insufficient-data".
+///   A stale 1d bar turns any sell/reduce/conditional-sell/buy-more into "wait"
+///   + "stale-data-blocked:&lt;action&gt;" (MBBSTALE-1).
 ///
 /// Every emitted trigger price is checked against the HOSE ±7% band around the
 /// previous daily close; a trigger outside the band carries a nonFillRisk note
@@ -797,15 +799,35 @@ public sealed class MbbDecisionService
             freshness, generatedAt);
     }
 
+    /// <summary>MBBSTALE-1: a trading action the rules reached on a stale 1d bar, downgraded to wait (suffix = that action).</summary>
+    public const string ReasonStaleDataBlockedPrefix = "stale-data-blocked:";
+
+    private static readonly IReadOnlySet<string> TradingActions = new HashSet<string>(StringComparer.Ordinal)
+    {
+        MbbDecisionActions.Sell, MbbDecisionActions.Reduce, MbbDecisionActions.ConditionalSell, MbbDecisionActions.BuyMore,
+    };
+
     private static MbbDecisionDto Decide(
         string symbol, string action, IReadOnlyList<string> reasons,
         IReadOnlyList<MbbDecisionTrigger> triggers, string? invalidation,
         MbbPositionSummary position, MbbBuyMoreCapacity? buyMore,
         MbbMarketContext market, IReadOnlyList<MbbTimeframeFreshness> freshness,
-        DateTime generatedAt) =>
-        new(symbol, action, reasons, triggers, invalidation, position, buyMore,
+        DateTime generatedAt)
+    {
+        // Every rule reads the latest 1d close: when that bar is stale no trade is proposed (contract §4, no forced
+        // BUY/SELL without evidence). Rule reasons/triggers stay so the user sees what the old close touched; 1h is not read.
+        if (TradingActions.Contains(action)
+            && freshness.Any(f => f.Timeframe == EquityCandleTimeframes.Day && f.IsStale))
+        {
+            reasons = [.. reasons.Where(r => r != ReasonBuySizedAtNextCeiling), ReasonStaleDataBlockedPrefix + action];
+            action = MbbDecisionActions.Wait;
+            invalidation = null;
+            buyMore = null;
+        }
+        return new(symbol, action, reasons, triggers, invalidation, position, buyMore,
             market, MbbEvidenceStatuses.RulesOnly, VietnamExecutionRules.PriceBasis,
             freshness, generatedAt);
+    }
 
     private static string FormatLevel(decimal vnd) => $"{vnd:N0} VND";
 }
