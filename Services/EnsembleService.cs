@@ -425,27 +425,38 @@ public class EnsembleService : IEnsembleService
         CancellationToken ct = default)
     {
         symbol = _symbolPolicy.EnsureActive(symbol);
-        itemLimit = Math.Clamp(itemLimit, 1, 500);
+        itemLimit = Math.Clamp(itemLimit, 1, 200);
         var query = _db.EnsemblePredictionRecords.AsNoTracking()
             .Where(r => r.Symbol == symbol
                 && (includeLegacy || (r.ValidityStatus == ValidityStatuses.Valid && r.ArchivedAtUtc == null)));
-        var allRecords = await query.OrderByDescending(r => r.TimeMs).ThenBy(r => r.Id).ToListAsync(ct);
         var records = includeLegacy
-            ? allRecords.Where(r => r.SourcePredictionId == null
+            ? query.Where(r => r.SourcePredictionId == null
                 && r.PipelineVersion == ResearchVersions.Legacy
-                && r.EvaluationVersion == ResearchVersions.Legacy).ToList()
-            : allRecords;
-        var reevaluated = allRecords.Where(r => r.SourcePredictionId.HasValue && r.EvaluationVersion == ResearchVersions.Evaluation).ToList();
-        var total = records.Count;
-        var trueCount = records.Count(r => r.EvaluationStatus == "T");
-        var falseCount = records.Count(r => r.EvaluationStatus == "F");
-        var pendingCount = records.Count(r => r.EvaluationStatus == "N");
-        var items = records.Take(itemLimit).ToList();
+                && r.EvaluationVersion == ResearchVersions.Legacy)
+            : query;
+        var reevaluated = query.Where(r => r.SourcePredictionId.HasValue && r.EvaluationVersion == ResearchVersions.Evaluation);
+        // Counts and the canonical set never read LayerBreakdownJson; only the returned items load full rows.
+        var counts = await CountByStatusAsync(records, ct);
+        var total = counts.Values.Sum();
+        var trueCount = counts.GetValueOrDefault("T");
+        var falseCount = counts.GetValueOrDefault("F");
+        var pendingCount = counts.GetValueOrDefault("N");
+        var items = await records.OrderByDescending(r => r.TimeMs).ThenBy(r => r.Id).Take(itemLimit).ToListAsync(ct);
 
         var evalCount = trueCount + falseCount;
         var winRate = evalCount > 0 ? (double)trueCount / evalCount * 100.0 : 0.0;
-        var canonical = records
-            .Where(r => r.ValidityStatus != ValidityStatuses.Invalid)
+        var canonical = (await records
+                .Where(r => r.ValidityStatus != ValidityStatuses.Invalid)
+                // Only the columns IsStructurallyValid and the canonical key read.
+                .Select(r => new EnsemblePredictionRecord
+                {
+                    Id = r.Id, Symbol = r.Symbol, Timeframe = r.Timeframe, TimeMs = r.TimeMs,
+                    EntryPrice = r.EntryPrice, FinalDirection = r.FinalDirection,
+                    ProbUp = r.ProbUp, ProbDown = r.ProbDown, ProbSideways = r.ProbSideways,
+                    EvaluationStatus = r.EvaluationStatus, ActualPrice24h = r.ActualPrice24h,
+                    ActualReturnPct = r.ActualReturnPct, EvaluatedAtMs = r.EvaluatedAtMs
+                })
+                .ToListAsync(ct))
             .Where(ResearchRecordClassifier.IsStructurallyValid)
             .GroupBy(r => new { r.Symbol, r.Timeframe, r.TimeMs })
             .Select(group => group.OrderBy(r => r.Id).First())
@@ -454,9 +465,11 @@ public class EnsembleService : IEnsembleService
         var canonicalFalse = canonical.Count(r => r.EvaluationStatus == "F");
         var canonicalPending = canonical.Count(r => r.EvaluationStatus == "N");
         var canonicalEvaluated = canonicalTrue + canonicalFalse;
-        var reevaluatedTrue = reevaluated.Count(r => r.EvaluationStatus == "T");
-        var reevaluatedFalse = reevaluated.Count(r => r.EvaluationStatus == "F");
-        var reevaluatedPending = reevaluated.Count(r => r.EvaluationStatus == "N");
+        var reevaluatedCounts = await CountByStatusAsync(reevaluated, ct);
+        var reevaluatedTrue = reevaluatedCounts.GetValueOrDefault("T");
+        var reevaluatedFalse = reevaluatedCounts.GetValueOrDefault("F");
+        var reevaluatedPending = reevaluatedCounts.GetValueOrDefault("N");
+        var reevaluatedItems = await reevaluated.OrderByDescending(r => r.TimeMs).ThenBy(r => r.Id).Take(itemLimit).ToListAsync(ct);
         var reevaluatedEvaluated = reevaluatedTrue + reevaluatedFalse;
 
         return new PredictionEvaluationSummaryDto
@@ -474,7 +487,7 @@ public class EnsembleService : IEnsembleService
             CanonicalWinRatePct = canonicalEvaluated > 0
                 ? Math.Round((double)canonicalTrue / canonicalEvaluated * 100.0, 2)
                 : 0,
-            ReevaluatedCount = reevaluated.Count,
+            ReevaluatedCount = reevaluatedCounts.Values.Sum(),
             ReevaluatedTrueCount = reevaluatedTrue,
             ReevaluatedFalseCount = reevaluatedFalse,
             ReevaluatedPendingCount = reevaluatedPending,
@@ -482,9 +495,14 @@ public class EnsembleService : IEnsembleService
                 ? Math.Round((double)reevaluatedTrue / reevaluatedEvaluated * 100.0, 2)
                 : 0,
             Items = items,
-            ReevaluatedItems = reevaluated.Take(itemLimit).ToList()
+            ReevaluatedItems = reevaluatedItems
         };
     }
+
+    private static Task<Dictionary<string, int>> CountByStatusAsync(IQueryable<EnsemblePredictionRecord> query, CancellationToken ct) =>
+        query.GroupBy(r => r.EvaluationStatus)
+            .Select(group => new { Status = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
 
     private static string EvaluateDirection(string direction, double returnPct) => direction switch
     {
