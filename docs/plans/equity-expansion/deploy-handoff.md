@@ -145,9 +145,9 @@ package phải nằm trong interpreter/venv đó.
 
 ### 5.1 Dữ liệu thị trường / context (v1/v2)
 
-1. Admin `POST /api/equities/{SYM}/admin/backfill?timeframe=1d` cho MBB, BID, VCB, CTG, VNINDEX; MBB thêm `1h`.
+1. Admin `POST /api/equities/{SYM}/admin/backfill?timeframe=1d` cho MBB, BID, VCB, CTG, VNINDEX; MBB và BID thêm `1h` (BID 1h từ EQTECH-1).
    Tham số mặc định đã bounded (page 2000, MaxRequestsPerCycle 10, delay 500 ms). VNINDEX lịch sử từ 2010-01-01.
-2. `POST /api/equities/{MBB|BID}/admin/recompute` (MBB 1h+1d, BID 1d).
+2. `POST /api/equities/{MBB|BID}/admin/recompute` (MBB 1h+1d, BID 1h+1d). Backfill 1h xong thì recompute lại 1h, vì nến cũ vừa nạp chưa có chỉ báo (đã chạy cho BID 2026-10-30).
 3. `POST /api/equities/{SYM}/admin/context/sync` (VCI events, KBS fundamentals; 2 request/mã).
 4. `POST /api/equities/{MBB|BID}/admin/base-rates/rebuild` (AI build artifact; protocol đóng băng; dự kiến vẫn abstained).
 5. Revision: VCI/KBS rewrite lịch sử ở mỗi GDKHQ ⇒ sync phát hiện ⇒ refetch toàn lịch sử (atomic) ⇒ base-rates

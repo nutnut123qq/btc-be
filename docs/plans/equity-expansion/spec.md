@@ -11,7 +11,7 @@ frontend `5f9e5c8` + dirty FE companion (locked-state khi chưa có admin key). 
 |---|---|---|---|---|---|---|---|
 | BTCUSDT | crypto | USDT | raw | 1h,4h,1d | (Binance lane, không đổi) | ✓ | — (lane BTC riêng) |
 | MBB | equity | VND | adjusted | 1h,1d | ✓ | ✓ | ✓ |
-| BID | equity | VND | adjusted | **1d** | ✓ | ✓ | ✓ |
+| BID | equity | VND | adjusted | 1h,1d (1h từ EQTECH-1; journal vẫn chỉ 1d) | ✓ | ✓ | ✓ |
 | VCB | equity | VND | adjusted | 1d | ✓ | — | — (context-only: peer RS) |
 | CTG | equity | VND | adjusted | 1d | ✓ | — | — (context-only: peer RS) |
 | VNINDEX | **index** | **index-points** | raw | 1d | ✓ | — | — (context-only: benchmark RS) |
@@ -79,6 +79,7 @@ Coordinator viết entity (`Data/EquityLaneRecords.cs`) + `AppDbContext` + migra
 (đã test trên `btc_eqx_test`: `evidence/equity-expansion/eqx-00-migration-test.log`), worker không sửa.
 
 - `CK_MbbSignalObservations_Scope` → `("Symbol"='MBB' AND "Timeframe" IN ('1h','1d')) OR ("Symbol"='BID' AND "Timeframe"='1d')`.
+  Vẫn đúng sau EQTECH-1: BID có nến 1h nhưng journal không ghi BID 1h (guard `MbbSignalObservationService.JournalTimeframes`).
   Migration lịch sử giữ nguyên. Các CHECK chronology/fill/outcome/clock giữ nguyên.
 - DecisionId mới: `equity-observe/{SYMBOL}/{tf}/{signalBarOpenTimeMs}`, `RecorderVersion=equity-observe-v2`. Row MBB cũ
   (`mbb-observe/...`, v1) giữ nguyên, không rewrite. Unique (Symbol,Timeframe,SignalBarOpenTimeMs) chặn ghi trùng giữa 2 format.
@@ -220,7 +221,7 @@ ResolvedBarOpenTimeMs, OutcomeResolvedAtUtc.
 
 - `EquityScreen` (tổng quát từ `MbbScreen`), route `/co-phieu?symbol=BID|MBB` (URL là source of truth; default MBB);
   `/mbb` render cùng screen symbol MBB (đổi mã ⇒ push `/co-phieu?symbol=X`).
-- Panels: chart + conditions (MBB 1h/1d; BID chỉ 1d), decision + position (AdminGuard, locked state), data quality,
+- Panels: chart + conditions (MBB 1h/1d; BID 1d lúc viết spec — backend có BID 1h từ EQTECH-1, FE đã dừng phát triển), decision + position (AdminGuard, locked state), data quality,
   base-rates (abstained/unvalidated/stale rõ ràng), context, journal/scoring, LLM runs (admin nút tạo run).
 - States: loading/empty/error/stale/abstained/unavailable/permission. Request-id guard per symbol (pitfall #29); không gọi
   Binance websocket/crypto endpoints trên trang equity. Field additive degrade (pitfall #30).
