@@ -54,9 +54,10 @@ public sealed class MbbDecisionService
     /// separable. v1 = every row recorded before these changes. v2: stop/reduce levels
     /// rounded up onto the HOSE tick grid and buy-more sized at the next session ceiling
     /// (272ec30, MBBSIZE-1); a stale 1d close turns sell/reduce/conditional-sell/buy-more
-    /// into wait (ad30023, MBBSTALE-1).
+    /// into wait (ad30023, MBBSTALE-1). v3: BID declares 1h (d1e1fa7, EQTECH-1), so its 1d
+    /// payload carries 1h freshness and a stale 1h adds the "stale-data" reason; actions unchanged.
     /// </summary>
-    public const string RulesVersion = "declared-rules-v2";
+    public const string RulesVersion = "declared-rules-v3";
 
     // Declared rule parameters (contract constants, not data-tuned):
     private const decimal StopLossFraction = 0.08m;   // hard stop at -8% vs avg cost
