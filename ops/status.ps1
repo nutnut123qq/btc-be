@@ -14,7 +14,7 @@ $checks = @(
     [pscustomobject]@{ name = "backend"; url = "http://127.0.0.1:5197/api/health/ready"; timeout = 10 },
     [pscustomobject]@{ name = "ai"; url = "http://127.0.0.1:8000/api/capabilities"; timeout = 30 },
     [pscustomobject]@{ name = "frontend"; url = "http://127.0.0.1:3000/"; timeout = 10 }
-) | ForEach-Object {
+) | Where-Object { $_.name -ne "frontend" -or (Test-OpsFrontendEnabled) } | ForEach-Object {
     $entry = $state | Where-Object name -eq $_.name | Select-Object -First 1
     $processOk = $null -ne $entry -and (Test-ManagedProcess $entry)
     $http = Test-Http $_.url $_.timeout

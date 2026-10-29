@@ -36,6 +36,7 @@ if ($dbMigration.ExitCode -ne 0 -or $dbMigration.Output.Trim() -ne $codeMigratio
 $backendPublish = Join-Path $script:PublishDir "backend"
 $backendDll = Join-Path $backendPublish "Backend.dll"
 $frontendDir = $script:FrontendDir
+$frontendEnabled = Test-OpsFrontendEnabled
 $aiDir = $script:AiDir
 $python = Join-Path $aiDir "venv/Scripts/python.exe"
 if (-not $SkipBuild) {
@@ -43,7 +44,7 @@ if (-not $SkipBuild) {
     & "$PSScriptRoot/build.ps1"
 }
 if (-not (Test-Path -LiteralPath $backendDll)) { throw "Backend publish is missing." }
-if (-not (Test-Path -LiteralPath (Join-Path $frontendDir ".next/BUILD_ID"))) { throw "Frontend production build is missing." }
+if ($frontendEnabled -and -not (Test-Path -LiteralPath (Join-Path $frontendDir ".next/BUILD_ID"))) { throw "Frontend production build is missing." }
 if (-not (Test-Path -LiteralPath $python)) { throw "AI virtualenv missing: $python" }
 
 $llmProvider = $(if ($env:LLM_PROVIDER) { $env:LLM_PROVIDER } else { "none" })
@@ -90,10 +91,13 @@ $processes = @()
 try {
     $processes += Start-ManagedProcess "ai" $python @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000") $aiDir $aiEnvironment
     $processes += Start-ManagedProcess "backend" "dotnet" @("Backend.dll") $backendPublish $backendEnvironment
-    $processes += Start-ManagedProcess "frontend" (Join-Path $frontendDir "node_modules/.bin/next.cmd") @("start", "-H", "127.0.0.1", "-p", "3000") $frontendDir @{
-        "NODE_ENV" = "production"
-        "BACKEND_INTERNAL_URL" = "http://127.0.0.1:5197"
+    if ($frontendEnabled) {
+        $processes += Start-ManagedProcess "frontend" (Join-Path $frontendDir "node_modules/.bin/next.cmd") @("start", "-H", "127.0.0.1", "-p", "3000") $frontendDir @{
+            "NODE_ENV" = "production"
+            "BACKEND_INTERNAL_URL" = "http://127.0.0.1:5197"
+        }
     }
+    else { Write-Host "Frontend disabled by $script:StackSettingsPath; not starting it." }
     Save-ProcessState $processes
 }
 catch {

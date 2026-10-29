@@ -6,14 +6,17 @@ dotnet publish (Join-Path $script:BackendDir "Backend.csproj") -c Release -o (Jo
 if ($LASTEXITCODE -ne 0) { throw "Backend publish failed." }
 
 if (-not $SkipDependencies) {
-    Push-Location $script:FrontendDir
-    try {
-        npm ci
-        if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed." }
-        npm run build
-        if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed." }
+    if (Test-OpsFrontendEnabled) {
+        Push-Location $script:FrontendDir
+        try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed." }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed." }
+        }
+        finally { Pop-Location }
     }
-    finally { Pop-Location }
+    else { Write-Host "Frontend disabled by $script:StackSettingsPath; skipping its build." }
 
     $python = Join-Path $script:AiDir "venv/Scripts/python.exe"
     if (-not (Test-Path -LiteralPath $python)) { throw "AI virtualenv not found: $python" }

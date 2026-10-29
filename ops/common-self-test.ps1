@@ -63,6 +63,16 @@ try {
     @{ BackgroundWorkers__Enabled = "false" } | ConvertTo-Json | Set-Content -LiteralPath $profilePath -Encoding utf8
     Assert-HostProfile $profilePath
 
+    # Frontend switch: only a JSON boolean false disables it; missing/unreadable/other values keep the default on.
+    $stackPath = Join-Path $profileRoot "stack-settings.json"
+    if (-not (Test-OpsFrontendEnabled $stackPath)) { throw "Missing stack settings disabled the frontend." }
+    foreach ($case in @(@{ text = '{"frontendEnabled": false}'; want = $false }, @{ text = '{"frontendEnabled": true}'; want = $true },
+            @{ text = '{"frontendEnabled": "false"}'; want = $true }, @{ text = '{"frontendEnabled": 0}'; want = $true },
+            @{ text = '{}'; want = $true }, @{ text = 'null'; want = $true }, @{ text = '[false]'; want = $true }, @{ text = '{not json'; want = $true })) {
+        [IO.File]::WriteAllText($stackPath, $case.text)
+        if ((Test-OpsFrontendEnabled $stackPath) -ne $case.want) { throw "Stack settings '$($case.text)' gave frontendEnabled != $($case.want)." }
+    }
+
     # Machine-scope fallback is used only when the user-scope file cannot be read, and never carries API keys.
     $originalMachinePath = $script:MachineSecretsPath
     $saved = @{}; foreach ($name in $script:MachineSecretNames + @("OPENROUTER_API_KEY")) { $saved[$name] = [Environment]::GetEnvironmentVariable($name, "Process") }

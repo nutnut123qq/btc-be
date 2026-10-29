@@ -456,6 +456,23 @@ function Assert-HostProfile([string]$Path) {
     if ($bad.Count -gt 0) { throw "Host profile $Path must set true/false explicitly for: $($bad -join ', '). Refusing unattended start." }
 }
 
+# Host-only stack switch in the ignored .ops/stack-settings.json, e.g. {"frontendEnabled": false}: a host that no
+# longer serves the local frontend leaves it out of build/start/status, so the watchdog never restarts the stack
+# because it is down. Only a JSON boolean false disables it; a missing or unreadable file keeps the committed default
+# (frontend on) in every script alike, so status.ps1 and start.ps1 cannot disagree into a restart loop.
+$script:StackSettingsPath = Join-Path $script:RuntimeDir "stack-settings.json"
+
+function Test-OpsFrontendEnabled([string]$Path = $script:StackSettingsPath) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $true }
+    try {
+        $settings = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        if ($null -eq $settings) { return $true }
+        $property = $settings.PSObject.Properties["frontendEnabled"]
+        return -not ($property -and $property.Value -is [bool] -and -not $property.Value)
+    }
+    catch { return $true }
+}
+
 function Assert-SafeDataDirectory([string]$Path) {
     $resolved = [IO.Path]::GetFullPath($Path)
     if ($resolved -eq [IO.Path]::GetPathRoot($resolved) `
