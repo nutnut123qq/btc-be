@@ -30,11 +30,33 @@ namespace Backend.Services;
 /// recorded under the legacy id is never recorded twice.
 ///
 /// Multi-symbol (EQX): any catalog equity with the Decision capability, on its
-/// ActiveTimeframes only (MBB 1h/1d, BID 1d). Pending fill/outcome resolution is
-/// scoped to the polled symbol.
+/// journaled timeframes only (<see cref="JournalTimeframes"/>: MBB 1h/1d, BID 1d). Pending
+/// fill/outcome resolution is scoped to the polled symbol.
 /// </summary>
 public sealed class MbbSignalObservationService
 {
+    /// <summary>
+    /// (Symbol, Timeframe) pairs the journal table accepts: a mirror of the CHECK constraint
+    /// <c>CK_MbbSignalObservations_Scope</c> (AppDbContext, migration EquityExpansionLane).
+    /// A timeframe can be active in the catalog (candles, indicators, conditions) without being
+    /// journaled: BID declares 1h since EQTECH-1, but a BID 1h row would violate the constraint,
+    /// so recording it needs a migration that widens the constraint first, then this map.
+    /// </summary>
+    internal const string JournalScopeConstraintName = "CK_MbbSignalObservations_Scope";
+
+    internal static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> JournalScope =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["MBB"] = [EquityCandleTimeframes.Hour, EquityCandleTimeframes.Day],
+            ["BID"] = [EquityCandleTimeframes.Day],
+        };
+
+    /// <summary>The instrument's active timeframes that the journal records (catalog order).</summary>
+    public static IReadOnlyList<string> JournalTimeframes(InstrumentDescriptor instrument) =>
+        JournalScope.TryGetValue(instrument.Symbol, out var journaled)
+            ? instrument.ActiveTimeframes.Where(tf => journaled.Contains(tf, StringComparer.Ordinal)).ToArray()
+            : [];
+
     public const string RecorderVersion = "equity-observe-v2";
 
     /// <summary>Recorder of rows written before EQX (DecisionId mbb-observe/{tf}/{open}).</summary>
@@ -93,7 +115,7 @@ public sealed class MbbSignalObservationService
     public Task<ObserveReport> RecordAsync(string timeframe, CancellationToken cancellationToken = default) =>
         RecordAsync(MbbDecisionService.SupportedSymbol, timeframe, cancellationToken);
 
-    /// <summary>Multi-symbol entry point (EQX): Decision-capable symbol on one of its ActiveTimeframes.</summary>
+    /// <summary>Multi-symbol entry point (EQX): Decision-capable symbol on one of its journaled timeframes.</summary>
     public async Task<ObserveReport> RecordAsync(
         string symbol, string timeframe, CancellationToken cancellationToken = default)
     {
@@ -104,10 +126,14 @@ public sealed class MbbSignalObservationService
             throw new ArgumentException(
                 $"Symbol '{instrument.Symbol}' does not support capability 'decision'.", nameof(symbol));
         var canonical = ProductionTimeframePolicy.Canonicalize(timeframe);
+        var journaled = JournalTimeframes(instrument);
         if (canonical is not (EquityCandleTimeframes.Hour or EquityCandleTimeframes.Day)
-            || !instrument.ActiveTimeframes.Contains(canonical, StringComparer.Ordinal))
+            || !journaled.Contains(canonical, StringComparer.Ordinal))
             throw new ArgumentException(
-                $"{instrument.Symbol} observations support {string.Join(", ", instrument.ActiveTimeframes.Select(t => $"'{t}'"))} only; got '{timeframe}'.",
+                $"{instrument.Symbol} observations support {string.Join(", ", journaled.Select(t => $"'{t}'"))} only; got '{timeframe}'."
+                + (instrument.ActiveTimeframes.Contains(canonical, StringComparer.Ordinal)
+                    ? $" '{canonical}' is active for candles/indicators but not journaled ({JournalScopeConstraintName} needs a migration first)."
+                    : ""),
                 nameof(timeframe));
 
         var nowMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();

@@ -234,9 +234,13 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
         Assert.Null(a.Conditions.Payload!["generatedAtMs"]);
         Assert.Equal("partial", a.Pit.Reconstruction);
         Assert.Equal(260, a.Dataset["1d"].BarCount);
-        Assert.Equal(a.Dataset["1d"].Sha256, a.Series.Single().Fingerprint);
-        Assert.Equal(0, a.Coverage.Single().MissingBars);
-        Assert.True(a.Coverage.Single().UpToDate);
+        Assert.Equal(a.Dataset["1d"].Sha256, a.Series.Single(s => s.Timeframe == "1d").Fingerprint);
+        Assert.Equal(0, a.Coverage.Single(c => c.Timeframe == "1d").MissingBars);
+        Assert.True(a.Coverage.Single(c => c.Timeframe == "1d").UpToDate);
+        // EQTECH-1 H: BID declares 1h, so the snapshot also fingerprints the (here empty) 1h series.
+        Assert.Equal(["1d", "1h"], a.Series.Select(s => s.Timeframe).ToArray());
+        Assert.Equal(0, a.Dataset["1h"].BarCount);
+        Assert.False(a.Coverage.Single(c => c.Timeframe == "1h").UpToDate);
         Assert.Equal("ok", a.RelativeStrength.Status);
         Assert.Equal(EquityBaseRatesStatuses.Abstained, a.BaseRates.Status); // gate not passed, but artifact is PIT
         Assert.NotEmpty(a.BaseRates.Configs);

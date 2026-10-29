@@ -10,8 +10,8 @@ namespace Backend.Tests;
 
 /// <summary>
 /// EQX-A1 service-level tests (EF InMemory, fake providers): multi-symbol scope of the
-/// generalized Mbb* services, observation ids/legacy compatibility, BID daily-only freshness,
-/// and the revision → full-history refetch data-correctness rule.
+/// generalized Mbb* services, observation ids/legacy compatibility, BID 1h (active since EQTECH-1,
+/// not journaled), and the revision → full-history refetch data-correctness rule.
 /// </summary>
 public class EquityLaneServiceTests
 {
@@ -131,7 +131,51 @@ public class EquityLaneServiceTests
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecordAsync("VCB", "1d"));
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecordAsync("VNINDEX", "1d"));
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecordAsync("BTCUSDT", "1d"));
+        // BID 1h is active since EQTECH-1 but not journaled (CK_MbbSignalObservations_Scope).
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecordAsync("BID", "1h"));
+        await Assert.ThrowsAsync<ArgumentException>(() => svc.RecordAsync("MBB", "4h"));
+        Assert.Empty(await db.MbbSignalObservations.ToListAsync());
+    }
+
+    /// <summary>
+    /// EQTECH-1 H: the journal scope is a C# mirror of the DB CHECK constraint, which EF InMemory never
+    /// enforces. Pin the constraint text from the design-time model (relational provider, connection never
+    /// opened) so a migration that widens it fails here until the mirror follows.
+    /// </summary>
+    [Fact]
+    public async Task JournalScope_MirrorsDbCheckConstraint_Bid1hActiveButNotJournaled()
+    {
+        using (var model = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+                   .UseNpgsql("Host=127.0.0.1;Port=1;Database=eqtech_h_model_only").Options))
+        {
+            var entity = Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
+                .GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>(model)
+                .Model.FindEntityType(typeof(MbbSignalObservation))!;
+            var scope = Assert.Single(entity.GetCheckConstraints(),
+                c => c.ModelName == MbbSignalObservationService.JournalScopeConstraintName);
+            Assert.Equal(
+                "(\"Symbol\" = 'MBB' AND \"Timeframe\" IN ('1h','1d')) OR (\"Symbol\" = 'BID' AND \"Timeframe\" = '1d')",
+                scope.Sql);
+        }
+        Assert.Equal(["BID", "MBB"], MbbSignalObservationService.JournalScope.Keys.Order().ToArray());
+        Assert.Equal(["1h", "1d"], MbbSignalObservationService.JournalScope["MBB"]);
+        Assert.Equal(["1d"], MbbSignalObservationService.JournalScope["BID"]);
+
+        var bid = InstrumentCatalog.Default.Get("BID")!;
+        var mbb = InstrumentCatalog.Default.Get("MBB")!;
+        Assert.Equal(["1h", "1d"], bid.ActiveTimeframes);
+        Assert.Equal(["1d"], MbbSignalObservationService.JournalTimeframes(bid));
+        Assert.Equal(["1h", "1d"], MbbSignalObservationService.JournalTimeframes(mbb));
+        Assert.Empty(MbbSignalObservationService.JournalTimeframes(InstrumentCatalog.Default.Get("VCB")!));
+
+        var db = NewDb(nameof(JournalScope_MirrorsDbCheckConstraint_Bid1hActiveButNotJournaled));
+        var cal = new VietnamMarketCalendar();
+        var tp = new TestTimeProvider(Local(2026, 10, 14, 16, 0));
+        var signal = cal.LastExpectedFinalizedOpenUtcMs("1h", tp.Now.ToUnixTimeMilliseconds())!.Value;
+        db.InstrumentCandles.Add(Candle("BID", signal, cal.SessionCloseUtcMs("1h", signal), 40_000m, "1h"));
+        await db.SaveChangesAsync();
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => NewObservations(db, cal, tp).RecordAsync("BID", "1h"));
+        Assert.Contains("CK_MbbSignalObservations_Scope", ex.Message);
         Assert.Empty(await db.MbbSignalObservations.ToListAsync());
     }
 
@@ -192,23 +236,34 @@ public class EquityLaneServiceTests
     // --- decision -----------------------------------------------------------------
 
     [Fact]
-    public async Task Decide_Bid_DailyOnly_IsNotStaleForMissing1h()
+    public async Task Decide_Bid_DeclaresHourly_Missing1hIsStale_FreshHourlyIsNot()
     {
-        var db = NewDb(nameof(Decide_Bid_DailyOnly_IsNotStaleForMissing1h));
+        var db = NewDb(nameof(Decide_Bid_DeclaresHourly_Missing1hIsStale_FreshHourlyIsNot));
         var cal = new VietnamMarketCalendar();
         var tp = new TestTimeProvider(Local(2026, 10, 14, 16, 0));
-        var signal = cal.LastExpectedFinalizedOpenUtcMs("1d", tp.Now.ToUnixTimeMilliseconds())!.Value;
+        var nowMs = tp.Now.ToUnixTimeMilliseconds();
+        var signal = cal.LastExpectedFinalizedOpenUtcMs("1d", nowMs)!.Value;
         await SeedDailyAsync(db, cal, "BID", signal, 40_000m);
         var svc = new MbbDecisionService(db, cal, timeProvider: tp);
 
+        // EQTECH-1 H: BID declares 1h like MBB (1d first): no 1h bars stored ⇒ the 1h block is stale.
         var decision = await svc.DecideAsync("BID");
-
         Assert.Equal("BID", decision.Symbol);
-        var freshness = Assert.Single(decision.DataFreshness);
-        Assert.Equal("1d", freshness.Timeframe);
-        Assert.False(freshness.IsStale);
-        Assert.DoesNotContain("stale-data", decision.Reasons);
+        Assert.Equal(["1d", "1h"], decision.DataFreshness.Select(f => f.Timeframe).ToArray());
+        Assert.False(decision.DataFreshness[0].IsStale);
+        Assert.True(decision.DataFreshness[1].IsStale);
+        Assert.Contains("stale-data", decision.Reasons);
+        Assert.Equal(MbbDecisionActions.Wait, decision.Action); // no position; 1h never decides
         Assert.Null(decision.Market.LatestHourlyCloseVnd);
+
+        // The latest finalized 1h bar stored ⇒ fresh, and its close is shown (display only).
+        var lastHour = cal.LastExpectedFinalizedOpenUtcMs("1h", nowMs)!.Value;
+        db.InstrumentCandles.Add(Candle("BID", lastHour, cal.SessionCloseUtcMs("1h", lastHour), 40_200m, "1h"));
+        await db.SaveChangesAsync();
+        var fresh = await svc.DecideAsync("BID");
+        Assert.All(fresh.DataFreshness, f => Assert.False(f.IsStale));
+        Assert.DoesNotContain("stale-data", fresh.Reasons);
+        Assert.Equal(40_200m, fresh.Market.LatestHourlyCloseVnd);
 
         // MBB keeps both timeframes, 1d first (alias parity): missing 1h IS stale for MBB.
         await SeedDailyAsync(db, cal, "MBB", signal, 20_000m);
@@ -256,7 +311,10 @@ public class EquityLaneServiceTests
         var bid = await svc.RecomputeAsync("BID", "1d");
         Assert.Equal("BID", bid.Symbol);
         Assert.Equal(MbbRecomputeStatuses.NoData, bid.Status);
-        await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("BID", "1h"));
+        // EQTECH-1 H: BID 1h is an active timeframe, so recompute accepts it (no bars yet ⇒ no-data).
+        var bidHourly = await svc.RecomputeAsync("BID", "1h");
+        Assert.Equal(("BID", "1h", MbbRecomputeStatuses.NoData), (bidHourly.Symbol, bidHourly.Timeframe, bidHourly.Status));
+        await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("BID", "4h"));
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("VCB", "1d"));
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("VNINDEX", "1d"));
     }
@@ -278,8 +336,18 @@ public class EquityLaneServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             vnindex.CrossCheckAsync("1d", new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 14)));
 
+        Assert.DoesNotContain(report.Limitations, l => l.StartsWith("1h opening bar", StringComparison.Ordinal));
+
+        // EQTECH-1 H: BID reports a 1h block (configured 1d,1h ∩ catalog) plus the measured 1h caveats.
         var bid = await mbb.ForSymbol("BID").BuildReportAsync();
-        Assert.Equal(["1d"], bid.Timeframes.Select(t => t.Timeframe).ToArray());
+        Assert.Equal(["1d", "1h"], bid.Timeframes.Select(t => t.Timeframe).ToArray());
+        Assert.Contains(bid.Limitations, l => l.StartsWith("1h opening bar", StringComparison.Ordinal)
+            && l.Contains("2023-09-11 to 2025-01-17") && l.Contains("never synthesised"));
+        Assert.Contains(bid.Limitations, l => l.StartsWith("BID: the 2026-10-16 provider probe found 342 of 773", StringComparison.Ordinal));
+        Assert.Contains(bid.Limitations, l => l.Contains("KBS data_60P is a cross-check only") && l.Contains("never written"));
+        var mbbReport = await mbb.BuildReportAsync();
+        Assert.Contains(mbbReport.Limitations, l => l.StartsWith("1h opening bar", StringComparison.Ordinal));
+        Assert.DoesNotContain(mbbReport.Limitations, l => l.StartsWith("BID:", StringComparison.Ordinal));
         Assert.Same(mbb, mbb.ForSymbol("MBB"));
         Assert.Throws<ArgumentException>(() => mbb.ForSymbol("BTCUSDT"));
         Assert.Throws<ArgumentException>(() => mbb.ForSymbol("NOPE"));
@@ -295,7 +363,10 @@ public class EquityLaneServiceTests
 
         var db = NewDb(nameof(IngestionOptions_ForSymbol_UsesPerSymbolDailyStart_AndKeepsMbb));
         var ingestion = new MbbIngestionService(db, new SeriesVci(), options);
-        Assert.Equal(["1d"], ingestion.ForSymbol("BID").EffectiveTimeframes().ToArray());
+        // EQTECH-1 H: BID ingests 1h too (same 2023-09-11 hourly start as MBB).
+        Assert.Equal(["1d", "1h"], ingestion.ForSymbol("BID").EffectiveTimeframes().ToArray());
+        Assert.Equal("2023-09-11", options.ForSymbol("BID").HourlyBackfillStartLocal);
+        Assert.Equal(new DateOnly(2023, 9, 11), ingestion.ForSymbol("BID").BackfillStartLocal("1h"));
         Assert.Equal(["1d", "1h"], ingestion.EffectiveTimeframes().ToArray());
         Assert.Same(ingestion, ingestion.ForSymbol("MBB"));
         Assert.Throws<ArgumentException>(() => ingestion.ForSymbol("BTCUSDT"));

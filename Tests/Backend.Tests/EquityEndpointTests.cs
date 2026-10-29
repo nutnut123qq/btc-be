@@ -107,19 +107,31 @@ public class EquityEndpointTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task InvalidTimeframe_Returns400_ForBid1h()
+    public async Task InvalidTimeframe_Returns400_Bid1hIsActive_ButNotJournaled()
     {
         var client = _factory.CreateClient();
-        await AssertErrorAsync(await client.GetAsync("/api/equities/BID/candles?timeframe=1h"),
+        await AssertErrorAsync(await client.GetAsync("/api/equities/BID/candles?timeframe=4h"),
             HttpStatusCode.BadRequest, "INVALID_TIMEFRAME");
         await AssertErrorAsync(await client.GetAsync("/api/equities/BID/candles"),
             HttpStatusCode.BadRequest, "INVALID_TIMEFRAME");
         await AssertErrorAsync(await client.GetAsync("/api/equities/MBB/candles?timeframe=4h"),
             HttpStatusCode.BadRequest, "INVALID_TIMEFRAME");
-        await AssertErrorAsync(await Admin().PostAsync("/api/equities/BID/admin/backfill?timeframe=1h", null),
+        await AssertErrorAsync(await Admin().PostAsync("/api/equities/BID/admin/backfill?timeframe=4h", null),
             HttpStatusCode.BadRequest, "INVALID_TIMEFRAME");
-        // MBB declares 1h, so the same request is valid there.
+        // EQTECH-1 H: BID declares 1h like MBB, so the same requests are valid for both.
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/equities/MBB/candles?timeframe=1h")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/equities/BID/candles?timeframe=1h")).StatusCode);
+        var backfill = await Admin().PostAsync("/api/equities/BID/admin/backfill?timeframe=1h", null);
+        Assert.Equal(HttpStatusCode.OK, backfill.StatusCode); // ingestion is disabled in tests: reported, nothing fetched
+        Assert.Equal("1h", (await JsonAsync(backfill)).GetProperty("timeframe").GetString());
+        // ... but the forward journal stays 1d-only for BID (CK_MbbSignalObservations_Scope): reads are
+        // an empty list, an observe poll is a 400, never a DB constraint violation.
+        var observations = await Admin().GetAsync("/api/equities/BID/observations?timeframe=1h");
+        Assert.Equal(HttpStatusCode.OK, observations.StatusCode);
+        Assert.Equal(0, (await JsonAsync(observations)).GetArrayLength());
+        var observe = await Admin().PostAsync("/api/equities/BID/admin/observe?timeframe=1h", null);
+        await AssertErrorAsync(observe, HttpStatusCode.BadRequest, "INVALID_OBSERVE_ARGUMENT");
+        Assert.Contains("CK_MbbSignalObservations_Scope", (await JsonAsync(observe)).GetProperty("message").GetString());
     }
 
     [Fact]
@@ -206,9 +218,9 @@ public class EquityEndpointTests : IClassFixture<TestWebApplicationFactory>
 
         var decision = await JsonAsync(await admin.GetAsync("/api/equities/BID/decision"));
         Assert.Equal("BID", decision.GetProperty("symbol").GetString());
-        // Daily-only: freshness never lists a 1h block for BID.
-        Assert.All(decision.GetProperty("dataFreshness").EnumerateArray(),
-            f => Assert.Equal("1d", f.GetProperty("timeframe").GetString()));
+        // EQTECH-1 H: BID declares 1h, so freshness lists 1d then 1h (like MBB).
+        Assert.Equal(["1d", "1h"], decision.GetProperty("dataFreshness").EnumerateArray()
+            .Select(f => f.GetProperty("timeframe").GetString()).ToArray());
     }
 
     // --- alias parity ------------------------------------------------------------
@@ -258,7 +270,11 @@ public class EquityEndpointTests : IClassFixture<TestWebApplicationFactory>
 
         var bidDq = await JsonAsync(await client.GetAsync("/api/equities/BID/data-quality"));
         Assert.Equal("BID", bidDq.GetProperty("symbol").GetString());
-        Assert.Equal(1, bidDq.GetProperty("timeframes").GetArrayLength());
+        // EQTECH-1 H: a 1h block next to 1d, and the 1h caveats in the limitations.
+        Assert.Equal(["1d", "1h"], bidDq.GetProperty("timeframes").EnumerateArray()
+            .Select(t => t.GetProperty("timeframe").GetString()).ToArray());
+        Assert.Contains(bidDq.GetProperty("limitations").EnumerateArray().Select(l => l.GetString()!),
+            l => l.StartsWith("1h opening bar", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -275,8 +291,9 @@ public class EquityEndpointTests : IClassFixture<TestWebApplicationFactory>
         Assert.False(vnindex.GetProperty("capabilities").GetProperty("decision").GetBoolean());
         Assert.False(vnindex.GetProperty("capabilities").GetProperty("technicalAnalysis").GetBoolean());
         Assert.True(items["BID"].GetProperty("capabilities").GetProperty("decision").GetBoolean());
-        Assert.Equal(1, items["BID"].GetProperty("ingestion").GetProperty("timeframes").GetArrayLength());
+        Assert.Equal(2, items["BID"].GetProperty("ingestion").GetProperty("timeframes").GetArrayLength()); // 1h + 1d (EQTECH-1 H)
         Assert.Equal(2, items["MBB"].GetProperty("ingestion").GetProperty("timeframes").GetArrayLength());
+        Assert.Equal(1, items["VCB"].GetProperty("ingestion").GetProperty("timeframes").GetArrayLength());
         Assert.All(items.Values, i => Assert.Equal("disabled", i.GetProperty("ingestion").GetProperty("status").GetString()));
     }
 

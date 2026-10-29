@@ -42,7 +42,10 @@ public sealed class InstrumentCatalog
                 Execution: true,
                 PaperTrading: true)),
         Equity("MBB", "MBB (MB Bank)", ["1h", "1d"], decision: true),
-        Equity("BID", "BID (BIDV)", ["1d"], decision: true),
+        // EQTECH-1 H: BID declares 1h too (VCI 1h from 2023-09-11, same feed as MBB). The forward
+        // journal stays 1d-only for BID until CK_MbbSignalObservations_Scope is widened by a migration
+        // (MbbSignalObservationService.JournalTimeframes).
+        Equity("BID", "BID (BIDV)", ["1h", "1d"], decision: true),
         Equity("VCB", "VCB (Vietcombank)", ["1d"], decision: false),
         Equity("CTG", "CTG (VietinBank)", ["1d"], decision: false),
         new(

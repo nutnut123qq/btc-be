@@ -97,8 +97,9 @@ public interface IEquityLanePipeline
 /// Real pipeline over the shared lane services, sequential and bounded like the admin
 /// endpoints: sync (all the symbol's timeframes, request-bounded) → if TechnicalAnalysis,
 /// recompute each timeframe that got new/revised bars (or whose indicators lag the stored
-/// candles, e.g. after a restart) → if Decision, observe every active timeframe (latest
-/// finalized bar only, never a backfill) → post-process seam.
+/// candles, e.g. after a restart) → if Decision, observe every journaled timeframe
+/// (<see cref="MbbSignalObservationService.JournalTimeframes"/>; latest finalized bar only,
+/// never a backfill) → post-process seam.
 /// </summary>
 public sealed class EquityLanePipeline : IEquityLanePipeline
 {
@@ -162,7 +163,9 @@ public sealed class EquityLanePipeline : IEquityLanePipeline
 
         if (EquityScope.Has(instrument, EquityCapability.Decision))
         {
-            foreach (var tf in instrument.ActiveTimeframes)
+            // Journaled timeframes only: an active-but-unjournaled timeframe (BID 1h, EQTECH-1) would
+            // violate CK_MbbSignalObservations_Scope and fail the whole symbol, post-processing included.
+            foreach (var tf in MbbSignalObservationService.JournalTimeframes(instrument))
             {
                 var observed = await _observations.RecordAsync(symbol, tf, cancellationToken);
                 if (observed.Status == "finalized-bar-not-ingested")

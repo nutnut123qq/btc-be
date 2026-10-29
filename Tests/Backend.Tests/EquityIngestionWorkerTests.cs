@@ -240,20 +240,34 @@ public class EquityIngestionWorkerTests
 
     // --- real pipeline, end to end -------------------------------------------------
 
+    /// <summary>Fake VCI per timeframe: the last countBack bars with open ≤ to.</summary>
     private sealed class SeriesVci : IVciOhlcvClient
     {
         public List<ProviderOhlcvBar> Bars { get; } = [];
+        public List<ProviderOhlcvBar> HourlyBars { get; } = [];
 
         public Task<IReadOnlyList<ProviderOhlcvBar>> GetBarsAsync(string symbol, string timeframe,
             long toUnixSeconds, int countBack, CancellationToken cancellationToken = default)
         {
-            IReadOnlyList<ProviderOhlcvBar> slice = Bars
+            IReadOnlyList<ProviderOhlcvBar> slice = (timeframe == "1h" ? HourlyBars : Bars)
                 .Where(b => b.OpenTimeMs <= toUnixSeconds * 1000L)
                 .OrderBy(b => b.OpenTimeMs).TakeLast(countBack).ToArray();
             return Task.FromResult(slice);
         }
+
+        public void AddSession(DateOnly date, decimal px)
+        {
+            Bars.Add(new ProviderOhlcvBar(VietnamMarketCalendar.DailyOpenUtcMs(date), px, px + 300, px - 300, px + 100, 1_000_000m));
+            foreach (var open in VietnamMarketCalendar.HourlyOpensUtcMs(date))
+                HourlyBars.Add(new ProviderOhlcvBar(open, px, px + 200, px - 200, px + 50, 200_000m));
+        }
     }
 
+    /// <summary>
+    /// EQTECH-1 H: BID now declares 1h, so the same tick also ingests and recomputes BID 1h, while the
+    /// journal stays 1d-only (CK_MbbSignalObservations_Scope; InMemory would accept a 1h row, so the
+    /// single-row assertion is what catches a pipeline that observes every active timeframe).
+    /// </summary>
     [Fact]
     public async Task RealPipeline_LateProviderThenSuccess_RecomputesAndObservesBid()
     {
@@ -264,15 +278,12 @@ public class EquityIngestionWorkerTests
         var dates = cal.EnumerateTradingDates(new DateOnly(2026, 4, 1), new DateOnly(2026, 10, 13));
         var i = 0;
         foreach (var d in dates)
-        {
-            var px = 40_000m + (i++ % 7) * 150m;
-            vci.Bars.Add(new ProviderOhlcvBar(VietnamMarketCalendar.DailyOpenUtcMs(d), px, px + 300, px - 300, px + 100, 1_000_000m));
-        }
+            vci.AddSession(d, 40_000m + (i++ % 7) * 150m);
 
         var ingestionOptions = new MbbIngestionOptions
         {
             Enabled = true, LatestCountBack = 200, BatchCountBack = 500, RequestDelayMs = 0,
-            GapFillStartLocal = "2026-04-01", NonTradingDates = [],
+            GapFillStartLocal = "2026-04-01", NonTradingDates = [], HourlyBackfillStartLocal = "2026-04-01",
             DailyBackfillStartBySymbol = new(StringComparer.OrdinalIgnoreCase) { ["BID"] = "2026-04-01" },
         };
         var services = new ServiceCollection();
@@ -314,22 +325,27 @@ public class EquityIngestionWorkerTests
             Assert.Empty(await db.MbbSignalObservations.ToListAsync());
         }
 
-        // Provider publishes Wednesday's bar; the next tick completes the whole chain.
-        vci.Bars.Add(new ProviderOhlcvBar(Wed, 40_500m, 41_000m, 40_200m, 40_900m, 1_200_000m));
+        // Provider publishes Wednesday's bars; the next tick completes the whole chain.
+        vci.AddSession(new DateOnly(2026, 10, 14), 40_500m);
         clock.Now = Local(2026, 10, 14, 16, 15);
         await worker.RunOnceAsync(default);
 
         var state = store.Get("BID")!;
         Assert.Equal(EquityIngestionStatuses.UpToDate, state.Status);
+        Assert.Contains("recompute 1h", state.Detail);
         Assert.Contains("recompute 1d", state.Detail);
         Assert.Contains("observe 1d recorded", state.Detail);
+        Assert.DoesNotContain("observe 1h", state.Detail);
+        var lastHour = VietnamMarketCalendar.HourlyOpensUtcMs(new DateOnly(2026, 10, 14))[^1];
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             Assert.True(await db.TechnicalIndicators.AnyAsync(t => t.Symbol == "BID" && t.Timeframe == "1d" && t.OpenTimeMs == Wed));
+            Assert.True(await db.TechnicalIndicators.AnyAsync(t => t.Symbol == "BID" && t.Timeframe == "1h" && t.OpenTimeMs == lastHour));
             var obs = await db.MbbSignalObservations.SingleAsync();
             Assert.Equal($"equity-observe/BID/1d/{Wed}", obs.DecisionId);
-            Assert.False(await db.InstrumentCandles.AnyAsync(c => c.Symbol == "BID" && c.Timeframe == "1h"));
+            Assert.Equal(vci.HourlyBars.Count,
+                await db.InstrumentCandles.CountAsync(c => c.Symbol == "BID" && c.Timeframe == "1h"));
         }
     }
 }

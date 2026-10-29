@@ -363,7 +363,7 @@ public sealed class MbbDecisionService
             .ToListAsync(cancellationToken);
         daily.Reverse(); // ascending
 
-        // Hourly bars only for instruments that declare 1h (BID is daily-only). No rule
+        // Hourly bars only for instruments that declare 1h (MBB; BID since EQTECH-1). No rule
         // depends on 1h today — it feeds the display-only LastHourlyCloseVnd, which stays
         // null for daily-only instruments instead of being synthesised.
         var hourly = hourlyActive
@@ -716,7 +716,9 @@ public sealed class MbbDecisionService
 
     /// <summary>
     /// Freshness over the instrument's ActiveTimeframes only (1d first, then 1h when declared):
-    /// a daily-only instrument such as BID can never be stale for a timeframe it does not have.
+    /// an instrument can never be stale for a timeframe it does not declare. MBB and BID both
+    /// declare 1h (BID since EQTECH-1); a stale 1h only adds the "stale-data" reason, never
+    /// blocks an action (MBBSTALE-1 gates on the 1d bar).
     /// </summary>
     private IReadOnlyList<MbbTimeframeFreshness> BuildFreshness(
         InstrumentDescriptor instrument,

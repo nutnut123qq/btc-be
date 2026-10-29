@@ -291,9 +291,39 @@ public sealed class MbbDataQualityService
     }
 
     private static string[] BuildLimitations(InstrumentDescriptor instrument) =>
-        string.Equals(instrument.Symbol, "MBB", StringComparison.Ordinal)
+        (string.Equals(instrument.Symbol, "MBB", StringComparison.Ordinal)
             ? MbbLimitations()
-            : EquityLimitations(instrument);
+            : EquityLimitations(instrument))
+        .Concat(HourlyLimitations(instrument))
+        .ToArray();
+
+    /// <summary>Prefix of the first hourly caveat; stable so readers can match it.</summary>
+    internal const string HourlyOpeningBarLimitationPrefix = "1h opening bar";
+
+    /// <summary>
+    /// Caveats for every instrument that declares 1h (EQTECH-1 H; measurements and raw data in
+    /// evidence/eqtech-1-20261029/H). Reported, never repaired: the missing 09:00 bars are not
+    /// synthesised and no second source is mixed into the canonical VCI series.
+    /// </summary>
+    private static IEnumerable<string> HourlyLimitations(InstrumentDescriptor instrument)
+    {
+        if (!instrument.ActiveTimeframes.Contains(EquityCandleTimeframes.Hour, StringComparer.Ordinal))
+            yield break;
+        yield return HourlyOpeningBarLimitationPrefix + " (VCI 1h starts 2023-09-11): MBB has no 09:00 bar on any session "
+            + "from 2023-09-11 to 2025-01-17 and one on every session from 2025-01-20 (measured 2026-10-29 on stored bars). "
+            + "Missing 09:00 bars stay counted as missing expected bars and are never synthesised.";
+        yield return "On those MBB sessions the 10:00 bar's volume also carries the 09:00 hour while its open/high/low start at "
+            + "10:00 (342 sessions: sum of 1h volume = 99.9% of the 1d volume, as on complete sessions; the 10:00 bar holds a "
+            + "median 37% of the day vs 18% when a 09:00 bar exists; the 1d open equals the first 1h open on 60 of 342). "
+            + "Opening-hour price action and 1h volume readings before 2025-01-20 are not comparable with later sessions.";
+        if (string.Equals(instrument.Symbol, "BID", StringComparison.Ordinal))
+            yield return "BID: the 2026-10-16 provider probe found 342 of 773 sessions since 2023-09-11 without a 09:00 bar "
+                + "(the same count as MBB) and the same stray 12:00 bar on 2024-06-20, which is stored and counted under "
+                + "UnexpectedSessionBars. Which BID sessions lack 09:00, and the 10:00 volume fold, were not measured on BID: "
+                + "read this report's 1h block.";
+        yield return "No second source fills the opening bar: KBS data_60P is a cross-check only (integer-rounded, different "
+            + "adjustment basis) and is never written into the store.";
+    }
 
     /// <summary>Per-symbol caveats for the EQX instruments (W0 provider probe, 2026-10-16).</summary>
     private static string[] EquityLimitations(InstrumentDescriptor instrument)

@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Bitcoin AI Analyst Backend",
-    "version": "2026-10-forward-journal-totals-v1"
+    "version": "2026-10-equity-technical-v1"
   },
   "paths": {
     "/api/ai-chat/capabilities": {
@@ -4034,6 +4034,116 @@
         }
       }
     },
+    "/api/equities/{symbol}/research-notes/direction-scores": {
+      "get": {
+        "tags": [
+          "EquityDirectionScores"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityDirectionScoresResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityDirectionScoresResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityDirectionScoresResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/equities/{symbol}/dossier": {
       "get": {
         "tags": [
@@ -5637,6 +5747,96 @@
               "text/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EquityFinancialFactsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/equities/{symbol}/technical": {
+      "get": {
+        "tags": [
+          "EquityTechnical"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bars",
+            "in": "query",
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityTechnicalResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityTechnicalResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityTechnicalResponse"
                 }
               }
             }
@@ -12782,6 +12982,285 @@
         },
         "additionalProperties": false
       },
+      "EquityDirectionConstantBaselineDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "hits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hitRate": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityDirectionHorizonScoreDto": {
+        "type": "object",
+        "properties": {
+          "horizonSessions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "configId": {
+            "type": "string",
+            "nullable": true
+          },
+          "upThresholdPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "downThresholdPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "forwardNotes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "outOfWindow": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "windowUndetermined": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "eligible": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "superseded": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "scored": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "noView": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "directional": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resolved": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingReasons": {
+            "$ref": "#/components/schemas/EquityDirectionPendingCounts"
+          },
+          "hits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hitRate": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "coverage": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "nEffective": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minEffectiveForScoring": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "baselinePrior": {
+            "$ref": "#/components/schemas/EquityDirectionPriorBaselineDto"
+          },
+          "bestConstantInHindsight": {
+            "$ref": "#/components/schemas/EquityDirectionConstantBaselineDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityDirectionPendingCounts": {
+        "type": "object",
+        "properties": {
+          "immature": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetBarMissing": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "calendarCoverageExpired": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "signalBarMissing": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityDirectionPriorBaselineDto": {
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hitRate": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityDirectionScoreItemDto": {
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "nullable": true
+          },
+          "signalBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "horizonSessions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "direction": {
+            "type": "string",
+            "nullable": true
+          },
+          "availableTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "pendingReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "signalClose": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "targetBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "targetClose": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "returnPct": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "realized": {
+            "type": "string",
+            "nullable": true
+          },
+          "baselineCall": {
+            "type": "string",
+            "nullable": true
+          },
+          "hit": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityDirectionScoresResponse": {
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "ruleVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "calendarCoverageTo": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalNotes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "retrospectiveNotes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "noDeclaredThresholdNotes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "horizons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EquityDirectionHorizonScoreDto"
+            },
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EquityDirectionScoreItemDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "EquityDocumentExtractionStatusDto": {
         "type": "object",
         "properties": {
@@ -15314,6 +15793,620 @@
           },
           "publishedAtFilled": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalCalendarDto": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "calendarVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "coverageFrom": {
+            "type": "string",
+            "nullable": true
+          },
+          "coverageTo": {
+            "type": "string",
+            "nullable": true
+          },
+          "signalBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "signalBarStored": {
+            "type": "boolean"
+          },
+          "nextSessionOpenUtcMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "forwardNoteOpen": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalCandleDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closeTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "open": {
+            "type": "number",
+            "format": "double"
+          },
+          "high": {
+            "type": "number",
+            "format": "double"
+          },
+          "low": {
+            "type": "number",
+            "format": "double"
+          },
+          "close": {
+            "type": "number",
+            "format": "double"
+          },
+          "volume": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalCaveatDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "text": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalConditionsDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonNode"
+            },
+            "nullable": true
+          },
+          "alignedWithLatestCandle": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalDataQualityDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "missingBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "coveragePct": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "gapRangeCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "symbolMissingBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "marketWideMissingBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "noPeerDataMissingBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "belowCalendarCoverageMissingBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "unexpectedSessionBars": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "invalidOhlcvRows": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "calendarFlags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "inCoverage": {
+            "$ref": "#/components/schemas/EquityTechnicalInCoverageGapsDto"
+          },
+          "caveats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EquityTechnicalCaveatDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalFreshnessDto": {
+        "type": "object",
+        "properties": {
+          "latestStoredOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "expectedLatestOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "isStale": {
+            "type": "boolean"
+          },
+          "staleRule": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalInCoverageGapsDto": {
+        "type": "object",
+        "properties": {
+          "fromOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "toOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expectedBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingBars": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "missingByLocalOpen": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "nullable": true
+          },
+          "latestMissingOpenTimeMs": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "nullable": true
+          },
+          "missingInCandleWindow": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalIndicatorsDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isLatestCandle": {
+            "type": "boolean"
+          },
+          "rsi14": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ema12": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ema26": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ema50": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ema200": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sma50": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sma200": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "macd": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "macdSignal": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "macdHistogram": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "macdNorm": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "macdSignalNorm": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "macdHistogramNorm": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "bollingerUpper": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "bollingerMiddle": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "bollingerLower": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "atr14": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "obv": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "obvEma50": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "vwap": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "rollingVwap24": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "methods": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalNoteBindingDto": {
+        "type": "object",
+        "properties": {
+          "snapshotId": {
+            "type": "string",
+            "nullable": true
+          },
+          "snapshotSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedAsOf": {
+            "type": "string",
+            "nullable": true
+          },
+          "signalBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalPatternDto": {
+        "type": "object",
+        "properties": {
+          "openTimeMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastBarOpenTimeMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "patternType": {
+            "type": "string",
+            "nullable": true
+          },
+          "patternCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "spanBars": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "trendDirection": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalResponse": {
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "symbol": {
+            "type": "string",
+            "nullable": true
+          },
+          "asOfUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "priceBasis": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataProvider": {
+            "type": "string",
+            "nullable": true
+          },
+          "barsRequested": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "barsApplied": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "timeframes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EquityTechnicalTimeframeDto"
+            },
+            "nullable": true
+          },
+          "baseRates": {
+            "$ref": "#/components/schemas/EquityBaseRatesResponse"
+          },
+          "baseRatesUnavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "relativeStrength": {
+            "$ref": "#/components/schemas/EquityRelativeStrengthSection"
+          },
+          "calendar": {
+            "$ref": "#/components/schemas/EquityTechnicalCalendarDto"
+          },
+          "noteBinding": {
+            "$ref": "#/components/schemas/EquityTechnicalNoteBindingDto"
+          },
+          "noteBindingUnavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "scoring": {
+            "$ref": "#/components/schemas/EquityTechnicalScoringDto"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalScoringDto": {
+        "type": "object",
+        "properties": {
+          "ruleVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "horizons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EquityTechnicalScoringHorizonDto"
+            },
+            "nullable": true
+          },
+          "probabilityPolicy": {
+            "type": "string",
+            "nullable": true
+          },
+          "probabilityInstruction": {
+            "type": "string",
+            "nullable": true
+          },
+          "scoresEndpoint": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalScoringHorizonDto": {
+        "type": "object",
+        "properties": {
+          "configId": {
+            "type": "string",
+            "nullable": true
+          },
+          "horizonSessions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "upThresholdPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "downThresholdPct": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EquityTechnicalTimeframeDto": {
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "nullable": true
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/EquityTechnicalFreshnessDto"
+          },
+          "candles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EquityTechnicalCandleDto"
+            },
+            "nullable": true
+          },
+          "indicators": {
+            "$ref": "#/components/schemas/EquityTechnicalIndicatorsDto"
+          },
+          "indicatorsUnavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "candlePatterns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EquityTechnicalPatternDto"
+            },
+            "nullable": true
+          },
+          "conditions": {
+            "$ref": "#/components/schemas/EquityTechnicalConditionsDto"
+          },
+          "dataQuality": {
+            "$ref": "#/components/schemas/EquityTechnicalDataQualityDto"
           }
         },
         "additionalProperties": false
