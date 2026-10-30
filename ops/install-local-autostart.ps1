@@ -1,12 +1,12 @@
-# Elevated, one-time: switch this host's unattended tasks to an S4U batch logon of the deploy user so the stack,
-# the forward-paper recorder and the guarded backup run after boot without anyone logging on. No password is stored;
+# Elevated, one-time: switch this host's unattended tasks to an S4U batch logon of the deploy user so the stack
+# and the guarded backup run after boot without anyone logging on. No password is stored;
 # S4U cannot unlock the user's DPAPI key, so the tasks read only the machine-scope subset written by
 # configure-machine-secrets.ps1 (DB connection + admin key, no paid API keys).
-# Rollback (elevated): Disable-ScheduledTask for the three tasks; the stack then needs a manual start.ps1 again.
+# Rollback (elevated): Disable-ScheduledTask for the two tasks; the stack then needs a manual start.ps1 again.
+# The BTC forward-paper recorder (BTCPaperTrader) is no longer registered (VNONLY-1, VN-equity-only host).
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$WatchdogTask = "BTCServiceWatchdog",
-    [string]$PaperTask = "BTCPaperTrader",
     [string]$BackupTask = "Bitcoin Analyst DB Backup",
     [string]$BackupDailyAt = "02:00",
     [ValidateRange(1, 1024)][int]$BackupMinimumFreeGiB = 15,
@@ -44,30 +44,22 @@ function Assert-Task([string]$Name, [string]$Arguments) {
 # restarts via start.ps1 -SkipBuild -RequireHostProfile. start.ps1 refuses (no process churn) when PostgreSQL is not
 # ready, the schema head differs from the code, or the host profile is missing/partial.
 $watchdogArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$([IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'watchdog.ps1')))`" -RequireHostProfile"
-$paperArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$([IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'run-ai-job.ps1')))`" -Job Paper"
 $every15 = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(9) -RepetitionInterval (New-TimeSpan -Minutes 15)
 $commonSettings = @{ MultipleInstances = "IgnoreNew"; StartWhenAvailable = $true; AllowStartIfOnBatteries = $true; DontStopIfGoingOnBatteries = $true }
 
-if ($PSCmdlet.ShouldProcess("$WatchdogTask, $PaperTask, $BackupTask", "register $logonType principal")) {
+if ($PSCmdlet.ShouldProcess("$WatchdogTask, $BackupTask", "register $logonType principal")) {
     Register-ScheduledTask -TaskName $WatchdogTask -Force -ErrorAction Stop -Principal $principal `
         -Action (New-ScheduledTaskAction -Execute $powerShell -Argument $watchdogArgs -WorkingDirectory $script:BackendDir) `
         -Trigger @((New-ScheduledTaskTrigger -AtStartup), $every15) `
         -Settings (New-ScheduledTaskSettingsSet @commonSettings -ExecutionTimeLimit (New-TimeSpan -Minutes 30)) `
         -Description "BTC local stack autostart/recovery (watchdog.ps1 -RequireHostProfile)." | Out-Null
-    Register-ScheduledTask -TaskName $PaperTask -Force -ErrorAction Stop -Principal $principal `
-        -Action (New-ScheduledTaskAction -Execute $powerShell -Argument $paperArgs -WorkingDirectory $script:BackendDir) `
-        -Trigger $every15 `
-        -Settings (New-ScheduledTaskSettingsSet @commonSettings -ExecutionTimeLimit (New-TimeSpan -Minutes 14)) `
-        -Description "Forward-paper recorder (paper_trader.py --mode forward-paper); idempotent per finalized 4h bar." | Out-Null
     # Daily guarded backup, catch-up after a missed run (StartWhenAvailable), keeps the newest $BackupRetentionCount verified set(s).
     & "$PSScriptRoot/install-backup-task.ps1" -TaskName $BackupTask -OutputDirectory (Join-Path $script:RuntimeDir "backups") -RetentionCount $BackupRetentionCount -MinimumFreeGiB $BackupMinimumFreeGiB -DailyAt $BackupDailyAt -Enable
     Set-ScheduledTask -TaskName $BackupTask -Principal $principal -ErrorAction Stop | Out-Null
     Enable-ScheduledTask -TaskName $WatchdogTask | Out-Null
-    Enable-ScheduledTask -TaskName $PaperTask | Out-Null
 }
 
 Assert-Task $WatchdogTask $watchdogArgs
-Assert-Task $PaperTask $paperArgs
 $backup = Get-ScheduledTask -TaskName $BackupTask
 if ($backup.Principal.LogonType -ne $logonType -or $backup.Actions[0].Arguments -notmatch "-RetentionCount $BackupRetentionCount ") { throw "Backup task does not match the intended definition." }
 Write-Host "$BackupTask : $($backup.Principal.UserId) $logonType, $($backup.State), $($backup.Actions[0].Arguments)"

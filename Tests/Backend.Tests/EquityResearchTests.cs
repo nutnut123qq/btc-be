@@ -588,7 +588,7 @@ public class EquityResearchTests : IDisposable
             new StubFactory(new StubHandler(_ => throw new HttpRequestException("AI down"))), tp);
         var source = new FakeSource(VciFixture, KbsFixture);
         var post = new EquitySessionPostProcessor(baseRates, new EquityForecastJournalService(db, baseRates, Cal, tp),
-            new EquityContextCollector(db, source, tp),
+            new EquityContextCollector(db, source, tp, options: KbsOn),
             Microsoft.Extensions.Options.Options.Create(new Backend.Options.EquityIngestionOptions()));
         var bid = InstrumentCatalog.Default.Get("BID")!;
 
@@ -662,6 +662,9 @@ public class EquityResearchTests : IDisposable
           "Nhóm chỉ số Chất lượng tài sản":[{"ReportNormID":117,"Name":"LLR","Unit":"%","Value1":-1.41}]}}
         """;
 
+    private static readonly Microsoft.Extensions.Options.IOptions<Backend.Options.EquityIngestionOptions> KbsOn =
+        Microsoft.Extensions.Options.Options.Create(new Backend.Options.EquityIngestionOptions { KbsFundamentalsEnabled = true });
+
     private sealed class FakeSource(string vci, string kbs) : IEquityContextSource
     {
         public List<string> Urls { get; } = [];
@@ -734,7 +737,7 @@ public class EquityResearchTests : IDisposable
     {
         var db = NewDb(nameof(Collector_SyncIsIdempotent_AndNeverOverwritesAdminRows));
         var source = new FakeSource(VciFixture, KbsFixture);
-        var collector = new EquityContextCollector(db, source, new TestTimeProvider(Now));
+        var collector = new EquityContextCollector(db, source, new TestTimeProvider(Now), options: KbsOn);
 
         await collector.ImportCorporateActionsAsync("BID", [new EquityCorporateActionImport
         {
@@ -752,6 +755,32 @@ public class EquityResearchTests : IDisposable
         Assert.Equal(("admin-manual", "verified"), (div.Provenance, div.VerificationStatus));
         Assert.Equal(3, await db.EquityCorporateActions.CountAsync());
         Assert.Throws<ArgumentException>(() => collector.RequireContextEquity("VNINDEX"));
+    }
+
+    [Fact]
+    public async Task Collector_DefaultSkipsKbsFundamentals_KeepsVciEventsAndActions()
+    {
+        var db = NewDb(nameof(Collector_DefaultSkipsKbsFundamentals_KeepsVciEventsAndActions));
+        var source = new FakeSource(VciFixture, KbsFixture);
+        var report = await new EquityContextCollector(db, source, new TestTimeProvider(Now)).SyncAsync("BID");
+
+        Assert.DoesNotContain(source.Urls, u => u.Contains("kbsec"));
+        Assert.Equal(("succeeded", 1), (report.Status, report.ProviderRequests));
+        Assert.Equal((3, 2, 0), (report.CorporateActionsUpserted, report.EventsUpserted, report.FundamentalsUpserted));
+        Assert.Empty(await db.EquityFundamentals.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Collector_VciFailureWithKbsOff_IsFailedNotPartial()
+    {
+        // Only VCI is enabled by default, so its failure with nothing written is a failed sync.
+        var db = NewDb(nameof(Collector_VciFailureWithKbsOff_IsFailedNotPartial));
+        var report = await new EquityContextCollector(db, new FakeSource("not json", KbsFixture), new TestTimeProvider(Now))
+            .SyncAsync("BID");
+
+        Assert.Equal(("failed", 1), (report.Status, report.ProviderRequests));
+        Assert.Single(report.Errors);
+        Assert.Empty(await db.EquityCorporateActions.ToListAsync());
     }
 
     [Fact]
@@ -925,7 +954,7 @@ public class EquityResearchTests : IDisposable
         await SeedBarsAsync(db, "BID", 80, last, i => 40_000m + i * 10);
         await SeedBarsAsync(db, "VNINDEX", 80, last, i => 1_600m + i);
         await SeedBarsAsync(db, "VCB", 15, last);
-        var collector = new EquityContextCollector(db, new FakeSource(VciFixture, KbsFixture), new TestTimeProvider(Now));
+        var collector = new EquityContextCollector(db, new FakeSource(VciFixture, KbsFixture), new TestTimeProvider(Now), options: KbsOn);
         await collector.SyncAsync("BID");
         await collector.ImportEventsAsync("BID", [new() { EventType = "earnings", EventDate = "2026-10-30", Title = "Q3 results", SourceUrl = "https://bidv.com.vn/ir" }], default);
         // A provider row published today becomes available only tomorrow 00:00 VN → hidden now.

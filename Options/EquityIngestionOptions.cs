@@ -37,4 +37,12 @@ public sealed class EquityIngestionOptions
 
     /// <summary>Wave-2 seam flag: record quant forecasts after base-rates (no-op until implemented).</summary>
     public bool RecordForecasts { get; set; } = true;
+
+    /// <summary>
+    /// KBS finance-info (bank fundamentals) call in <see cref="Backend.Services.EquityContextCollector.SyncAsync"/>.
+    /// Off by default (VNONLY-1: the lane is technical-only); VCI events and corporate actions, which feed price
+    /// adjustment, are always synced. Stored fundamentals stay readable. Host opt-in:
+    /// EquityIngestion__KbsFundamentalsEnabled=true.
+    /// </summary>
+    public bool KbsFundamentalsEnabled { get; set; } = false;
 }

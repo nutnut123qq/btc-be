@@ -38,17 +38,37 @@ catch { $pg.detail = $_.Exception.Message }
 # without an API key) is a configured-off state, not a failure; "idle" means
 # the last cycle found no pending work and "partial" self-heals on the next
 # cycle. None of these fail the gate, but non-healthy states stay visible.
+# Freshness covers the decision equities (MBB, BID) since BTC ingestion is off (VNONLY-1); /api/health/freshness
+# still measures BTC. The expected bar comes from the HOSE calendar (weekends/holidays never count), but equity
+# ingestion runs once per session after RunAfterLocal (15:15 local), so intraday 1h bars and the day's 1d bar land
+# after the close by design. Stale therefore means the newest expected finalized bar is still missing well past
+# that window, ~18:00 local: 4 h after the 14:00 1h bar opens (4 h also spans the longest intraday wait, the
+# 11:00 bar until the 13:00 bar finalizes at 14:10 with grace) and 11 h after the 1d bar's 00:00Z stamp.
 $freshnessHealth = [pscustomobject]@{ component = "backend-freshness"; process = $null; ready = $false; restartable = $false; detail = "not checked" }
 $workersHealth = [pscustomobject]@{ component = "backend-workers"; process = $null; ready = $false; restartable = $true; detail = "not checked" }
 $backendCheck = @($checks | Where-Object { $_.component -eq "backend" }) | Select-Object -First 1
 if ($backendCheck -and $backendCheck.ready) {
     try {
-        $freshness = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/health/freshness" -TimeoutSec 10
-        $staleTfs = @($freshness.klines | Where-Object { $_.active -and $_.status -ne "fresh" })
-        $freshnessHealth.ready = ($freshness.status -eq "healthy")
-        $freshnessHealth.detail = "freshness=$($freshness.status)" + $(if ($staleTfs.Count -gt 0) {
-            "; stale: " + (($staleTfs | ForEach-Object { "$($_.timeframe) $($_.ageSeconds)s>$($_.maxAgeSeconds)s" }) -join ", ")
-        } else { "" })
+        $maxLagHours = @{ "1h" = 4; "1d" = 11 }  # unknown timeframe: no lag budget
+        $equities = Invoke-RestMethod -Uri "http://127.0.0.1:5197/api/equities" -TimeoutSec 10
+        $nowMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        $checked = @(); $stale = @(); $awaiting = @()
+        foreach ($item in @($equities.items | Where-Object { $_.capabilities.decision })) {
+            foreach ($tf in @($item.ingestion.timeframes)) {
+                $name = "$($item.symbol) $($tf.timeframe)"
+                $checked += $name
+                $expected = $tf.latestExpectedFinalizedOpenTimeMs
+                if ($null -eq $expected) { $stale += "$name no expected bar"; continue }
+                if ($tf.upToDate) { continue }
+                $budgetMs = $(if ($maxLagHours.ContainsKey($tf.timeframe)) { $maxLagHours[$tf.timeframe] } else { 0 }) * 3600000
+                $missing = "$name missing bar opened $([DateTimeOffset]::FromUnixTimeMilliseconds($expected).ToString('u'))"
+                if ($nowMs - $expected -gt $budgetMs) { $stale += $missing } else { $awaiting += $name }
+            }
+        }
+        $freshnessHealth.ready = ($checked.Count -gt 0 -and $stale.Count -eq 0)
+        $freshnessHealth.detail = $(if ($checked.Count -eq 0) { "no decision equity timeframes to check" }
+            elseif ($stale.Count -gt 0) { "stale: " + ($stale -join ", ") }
+            else { "within ingest window: " + ($checked -join ", ") }) + $(if ($awaiting.Count -gt 0) { "; awaiting session ingest: " + ($awaiting -join ", ") })
     }
     catch { $freshnessHealth.detail = $_.Exception.Message }
     try {

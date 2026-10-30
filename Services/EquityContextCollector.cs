@@ -2,8 +2,10 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Backend.Data;
+using Backend.Options;
 using Backend.Services.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Services;
 
@@ -161,14 +163,17 @@ public sealed class EquityContextCollector
     private readonly TimeProvider _timeProvider;
     private readonly InstrumentCatalog _catalog;
     private readonly ILogger<EquityContextCollector> _logger;
+    private readonly bool _kbsFundamentals;
 
     public EquityContextCollector(
         AppDbContext db,
         IEquityContextSource source,
         TimeProvider? timeProvider = null,
         InstrumentCatalog? catalog = null,
-        ILogger<EquityContextCollector>? logger = null)
+        ILogger<EquityContextCollector>? logger = null,
+        IOptions<EquityIngestionOptions>? options = null)
     {
+        _kbsFundamentals = (options?.Value ?? new EquityIngestionOptions()).KbsFundamentalsEnabled;
         _db = db;
         _source = source;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -221,7 +226,7 @@ public sealed class EquityContextCollector
             errors.Add($"vci-events: {ex.GetType().Name}: {ex.Message}");
         }
 
-        try
+        if (_kbsFundamentals) try
         {
             var url = _source.KbsFinanceInfoUrl(sym);
             var body = await _source.GetAsync(url, ct);
@@ -237,7 +242,9 @@ public sealed class EquityContextCollector
             errors.Add($"kbs-finance-info: {ex.GetType().Name}: {ex.Message}");
         }
 
-        var status = errors.Count == 0 ? "succeeded" : requests == 0 || (ca + ev + fu == 0 && errors.Count >= 2) ? "failed" : "partial";
+        // "failed" = nothing written and every enabled source errored (KBS is optional since VNONLY-1).
+        var sources = _kbsFundamentals ? 2 : 1;
+        var status = errors.Count == 0 ? "succeeded" : requests == 0 || (ca + ev + fu == 0 && errors.Count >= sources) ? "failed" : "partial";
         return new EquityContextSyncReport(sym, now.UtcDateTime, status, requests, ca, ev, fu, skipped, errors);
     }
 
