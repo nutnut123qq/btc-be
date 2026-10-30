@@ -273,6 +273,42 @@ public class EquityLaneServiceTests
     }
 
     [Fact]
+    public async Task Decide_Bid_BandIsTheNextSessionBand_AroundTheSignalClose()
+    {
+        // EQDEC-1 with real BID closes: 28/10/2026 33,650, 29/10/2026 33,850 (signal bar at 16:00 on 29/10).
+        var db = NewDb(nameof(Decide_Bid_BandIsTheNextSessionBand_AroundTheSignalClose));
+        var cal = new VietnamMarketCalendar();
+        var tp = new TestTimeProvider(Local(2026, 10, 29, 16, 0));
+        var signal = cal.LastExpectedFinalizedOpenUtcMs("1d", tp.Now.ToUnixTimeMilliseconds())!.Value;
+        Assert.Equal(VietnamMarketCalendar.DailyOpenUtcMs(new DateOnly(2026, 10, 29)), signal);
+        await SeedDailyAsync(db, cal, "BID", signal, 33_650m);
+        var signalBar = await db.InstrumentCandles.SingleAsync(c => c.Symbol == "BID" && c.OpenTimeMs == signal);
+        signalBar.Close = 33_850m;
+        // Below SMA50 with RSI 55: neither bearish nor bullish -> hold.
+        var indicator = await db.TechnicalIndicators.SingleAsync(t => t.Symbol == "BID");
+        indicator.Sma50 = 34_000m;
+        // avg 34,100: reduce 32,736 -> 32,750; stop 31,372 -> 31,400, inside the old floor (31,300), below the new one.
+        db.EquityPositionLots.Add(new EquityPositionLot
+        {
+            Symbol = "BID", Quantity = 200, CostPerShareVnd = 34_100m, AcquireDate = new DateOnly(2026, 10, 1),
+            Source = "manual", CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var d = await new MbbDecisionService(db, cal, timeProvider: tp).DecideAsync("BID");
+
+        Assert.Equal((33_850m, 33_650m), (d.Market.LastDailyCloseVnd, d.Market.PreviousDailyCloseVnd));
+        Assert.Equal((36_200m, 31_500m), (d.Market.CeilingPriceVnd, d.Market.FloorPriceVnd));
+        Assert.Equal(MbbDecisionActions.Hold, d.Action);
+        var reduce = Assert.Single(d.Triggers, t => t.Name == "reduce-below-cost");
+        Assert.Equal((32_750m, true), (reduce.PriceLevelVnd, reduce.WithinPriceBand));
+        Assert.Null(reduce.NonFillRisk);
+        var stop = Assert.Single(d.Triggers, t => t.Name == "stop-loss");
+        Assert.Equal((31_400m, false), (stop.PriceLevelVnd, stop.WithinPriceBand));
+        Assert.Contains(VnBandStates.OpenBelowFloor, stop.NonFillRisk);
+    }
+
+    [Fact]
     public async Task Decision_PositionsArePerSymbol_AndContextOnlySymbolsFailClosed()
     {
         var db = NewDb(nameof(Decision_PositionsArePerSymbol_AndContextOnlySymbolsFailClosed));

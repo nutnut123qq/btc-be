@@ -48,7 +48,7 @@ public class MbbPositionDecisionTests
     /// <summary>
     /// Seed the last <paramref name="count"/> trading-day 1d candles ending today (or <paramref name="lastDay"/>)
     /// plus an indicator row on the last bar. closes[i] = close of bar i
-    /// (last = current price, second-to-last = band reference).
+    /// (last = current price and the next-session band reference, second-to-last = previous close).
     /// </summary>
     private static async Task SeedDailyAsync(
         AppDbContext db, IReadOnlyList<decimal> closes,
@@ -352,8 +352,8 @@ public class MbbPositionDecisionTests
     {
         await using var db = NewDb(nameof(Decide_Sell_WhenStopHit_AndFullySettled_AndInBand));
         await SeedLotAsync(db, 200, 25_000m, TodayLocal().AddDays(-14));
-        // stop = 25,000*0.92 = 23,000; last close 22,000 -> stop hit.
-        // prev close 22,500 -> floor 20,925 / ceiling 24,075 -> 22,000 in band.
+        // stop = 25,000*0.92 = 23,000; last close 22,000 -> stop hit; the sell goes at the next session,
+        // whose band is around 22,000 itself (EQDEC-1), so there is no band check on it.
         await SeedDailyAsync(db, [22_500m, 22_000m], sma50: 23_000m, rsi14: 38);
         var svc = NewService(db);
 
@@ -520,7 +520,7 @@ public class MbbPositionDecisionTests
     {
         await using var db = NewDb(nameof(Decide_TriggerBeyondPriceBand_GetsNonFillRisk));
         await SeedLotAsync(db, 200, 19_000m, TodayLocal().AddDays(-14));
-        // prev close 20,000 -> floor 18,600. avgCost 19,000 -> reduce lvl 18,240 -> tick 18,250 < floor.
+        // signal close 19,900 -> next-session floor 18,507 -> tick 18,550. avgCost 19,000 -> reduce lvl 18,240 -> tick 18,250 < floor.
         // last 19,900 > reduce lvl (not hit) and < sma50 20,500, rsi 40 -> conditional-sell.
         await SeedDailyAsync(db, [20_000m, 19_900m], sma50: 20_500m, rsi14: 40);
         var svc = NewService(db);
@@ -728,6 +728,34 @@ public class MbbPositionDecisionTests
         Assert.Contains("stale-data", d.Reasons);
         Assert.Contains("no-trigger", d.Reasons);
         Assert.DoesNotContain(d.Reasons, r => r.StartsWith(MbbDecisionService.ReasonStaleDataBlockedPrefix, StringComparison.Ordinal));
+    }
+
+    // --- EQDEC-1: the cost-based levels are emitted on every branch -------------------
+
+    [Theory]
+    [InlineData("stop-sell", MbbDecisionActions.Sell, 24_000, 23_000)]                       // avg 25,000
+    [InlineData("stop-partial-reduce", MbbDecisionActions.Reduce, 24_000, 23_000)]
+    [InlineData("bearish-reduce", MbbDecisionActions.Reduce, 24_000, 23_000)]
+    [InlineData("conditional-sell", MbbDecisionActions.ConditionalSell, 24_000, 23_000)]
+    [InlineData("buy-more", MbbDecisionActions.BuyMore, 17_300, 16_600)]                     // avg 18,000: 17,280 / 16,560 up to the tick
+    [InlineData("hold", MbbDecisionActions.Hold, 19_200, 18_400)]                            // avg 20,000
+    public async Task Decide_PositionWithComparableCost_AlwaysCarriesStopAndReduceTriggers(
+        string scenario, string action, int reduceLevel, int stopLevel)
+    {
+        await using var db = NewDb(nameof(Decide_PositionWithComparableCost_AlwaysCarriesStopAndReduceTriggers) + scenario);
+        await SeedScenarioAsync(db, scenario, staleDaily: false);
+
+        var d = await NewService(db).DecideAsync();
+
+        Assert.Equal(action, d.Action);
+        var reduce = Assert.Single(d.Triggers, t => t.Name == "reduce-below-cost");
+        var stop = Assert.Single(d.Triggers, t => t.Name == "stop-loss");
+        Assert.Equal(((decimal)reduceLevel, (decimal)stopLevel), (reduce.PriceLevelVnd, stop.PriceLevelVnd));
+        Assert.All(new[] { reduce, stop }, t =>
+        {
+            Assert.Equal((MbbTriggerDirections.CloseBelow, "1d"), (t.Direction, t.Timeframe));
+            Assert.NotNull(t.WithinPriceBand);
+        });
     }
 
     // --- EQX v2 A3: corporate-action conversion -------------------------------------

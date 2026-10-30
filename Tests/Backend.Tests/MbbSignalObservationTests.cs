@@ -72,7 +72,7 @@ public class MbbSignalObservationTests
             var open = VietnamMarketCalendar.DailyOpenUtcMs(dates[i]);
             db.InstrumentCandles.Add(Candle(open, cal.SessionCloseUtcMs("1d", open), prevClose));
         }
-        // Previous bar sets the ±7% band reference.
+        // Previous bar: the close before the signal (the ±7% band is around the signal close since EQDEC-1).
         var prevOpen = VietnamMarketCalendar.DailyOpenUtcMs(dates[^2]);
         db.InstrumentCandles.Add(Candle(prevOpen, cal.SessionCloseUtcMs("1d", prevOpen), prevClose));
         db.InstrumentCandles.Add(Candle(signalOpenMs, cal.SessionCloseUtcMs("1d", signalOpenMs), signalClose));
@@ -111,8 +111,8 @@ public class MbbSignalObservationTests
         // EQX: new rows use the multi-symbol id + recorder v2 (legacy mbb-observe rows untouched).
         Assert.Equal($"equity-observe/MBB/1d/{signal}", row.DecisionId);
         Assert.Equal("equity-observe-v2", row.RecorderVersion);
-        // Rules changed in MBBSIZE-1/MBBSTALE-1 (v2) and EQTECH-1 (v3): new rows must not share an older label.
-        Assert.Equal("declared-rules-v3", MbbDecisionService.RulesVersion);
+        // Rules changed in MBBSIZE-1/MBBSTALE-1 (v2), EQTECH-1 (v3) and EQDEC-1 (v4): new rows must not share an older label.
+        Assert.Equal("declared-rules-v4", MbbDecisionService.RulesVersion);
         Assert.Equal(MbbDecisionService.RulesVersion, row.RulesVersion);
         Assert.Equal("wait", row.Decision); // no position seeded → wait/no-position
         Assert.Null(row.FillPrice);
@@ -203,8 +203,8 @@ public class MbbSignalObservationTests
         var cal = new VietnamMarketCalendar();
         var tp = new TestTimeProvider();
         var signal = cal.LastExpectedFinalizedOpenUtcMs("1d", tp.Now.ToUnixTimeMilliseconds())!.Value;
-        // Stop-loss setup: avgCost 25,000 → stop 23,000; signal close 22,000 hits it;
-        // prevClose 22,500 keeps 22,000 inside the ±7% band → decision = sell.
+        // Stop-loss setup: avgCost 25,000 → stop 23,000; signal close 22,000 hits it,
+        // fully settled → decision = sell.
         await SeedDailyThroughSignalAsync(db, cal, signal, signalClose: 22_000m, prevClose: 22_500m);
         // Pin the observation clock to just after the signal close: the fill must
         // land at the first stored open ≥ AvailableTimeMs (the observation moment).

@@ -30,9 +30,14 @@ namespace Backend.Services;
 ///   A stale 1d bar turns any sell/reduce/conditional-sell/buy-more into "wait"
 ///   + "stale-data-blocked:&lt;action&gt;" (MBBSTALE-1).
 ///
-/// Every emitted trigger price is checked against the HOSE ±7% band around the
-/// previous daily close; a trigger outside the band carries a nonFillRisk note
-/// because the band-breach policy is "reject", not clamp.
+/// - With a position and a comparable cost basis, the stop-loss and reduce-below-cost
+///   triggers are emitted on every rule branch (EQDEC-1); the early waits on missing data
+///   or calendar coverage emit no trigger.
+///
+/// The ±7% band (market ceiling/floor and every trigger's withinPriceBand) is the band of
+/// the NEXT session, where any order from this decision executes: its reference is the
+/// signal (last stored, finalized) 1d close. A trigger outside the band carries a
+/// nonFillRisk note because the band-breach policy is "reject", not clamp.
 ///
 /// Price basis caveat: candles and levels are on the VCI "adjusted" basis —
 /// absolute levels may diverge from real matched prices around corporate
@@ -56,8 +61,11 @@ public sealed class MbbDecisionService
     /// (272ec30, MBBSIZE-1); a stale 1d close turns sell/reduce/conditional-sell/buy-more
     /// into wait (ad30023, MBBSTALE-1). v3: BID declares 1h (d1e1fa7, EQTECH-1), so its 1d
     /// payload carries 1h freshness and a stale 1h adds the "stale-data" reason; actions unchanged.
+    /// v4 (EQDEC-1): the band is around the signal 1d close (was the close before it), the
+    /// stop-hit sell no longer has a band check (selling at the reference is always inside), and
+    /// stop-loss / reduce-below-cost triggers are emitted on every branch with a comparable cost.
     /// </summary>
-    public const string RulesVersion = "declared-rules-v3";
+    public const string RulesVersion = "declared-rules-v4";
 
     // Declared rule parameters (contract constants, not data-tuned):
     private const decimal StopLossFraction = 0.08m;   // hard stop at -8% vs avg cost
@@ -408,10 +416,11 @@ public sealed class MbbDecisionService
         }
 
         var lastPrice = lastDaily.Close;
-        var prevClose = prevDaily?.Close;
+        // Orders from this decision execute in the next session, whose reference price is this close.
+        decimal? bandReference = lastPrice > 0 ? lastPrice : null;
         decimal? ceiling = null, floor = null;
-        if (prevClose is > 0)
-            (floor, ceiling) = VietnamExecutionRules.BandBounds(prevClose.Value, _costs.PriceBandFraction);
+        if (bandReference is { } reference)
+            (floor, ceiling) = VietnamExecutionRules.BandBounds(reference, _costs.PriceBandFraction);
 
         var market = BuildMarketContext(lastIndicator, lastDaily, prevDaily, hourly, floor, ceiling);
 
@@ -470,28 +479,29 @@ public sealed class MbbDecisionService
         var reducePrice = costComparable && avgCost is > 0 ? VietnamExecutionRules.RoundUpToTick(avgCost.Value * (1m - ReduceLossFraction)) : (decimal?)null;
         var stopHit = stopLossPrice is not null && lastPrice <= stopLossPrice;
         var reduceHit = reducePrice is not null && lastPrice <= reducePrice;
+        if (stopLossPrice is not null)
+        {
+            triggers.Add(BandCheckedTrigger("reduce-below-cost", EquityCandleTimeframes.Day,
+                reducePrice,
+                "reduce the settled portion on a 1d close at/below this level",
+                bandReference, MbbTriggerDirections.CloseBelow));
+            triggers.Add(BandCheckedTrigger("stop-loss", EquityCandleTimeframes.Day,
+                stopLossPrice,
+                "exit the position on a 1d close at/below this level",
+                bandReference, MbbTriggerDirections.CloseBelow));
+        }
 
         if (stopHit)
         {
             reasons.Add("stop-loss-hit");
-            var (allowed, bandReason) = prevClose is > 0
-                ? VietnamExecutionRules.CanSellAt(lastPrice, prevClose.Value, _costs.PriceBandFraction)
-                : (false, "band-reference-missing");
-            if (!allowed)
-            {
-                reasons.Add(bandReason!);
-                triggers.Add(BandCheckedTrigger("sell-at-market", EquityCandleTimeframes.Day,
-                    lastPrice, "sell order would execute at/after next session open",
-                    prevClose));
-            }
-            if (settled == total && sellQuote is { NetVnd: > 0 } && allowed)
+            if (settled == total && sellQuote is { NetVnd: > 0 })
             {
                 return Decide(symbol, MbbDecisionActions.Sell, reasons, triggers,
                     "stop-loss level reclaimed: 1d close back above "
                     + FormatLevel(stopLossPrice!.Value),
                     summary, null, market, freshness, generatedAt);
             }
-            if (settled > 0 && sellQuote is { NetVnd: > 0 } && allowed)
+            if (settled > 0 && sellQuote is { NetVnd: > 0 })
             {
                 reasons.Add("partial-settlement-sell-settled-only");
                 return Decide(symbol, MbbDecisionActions.Reduce, reasons, triggers,
@@ -514,14 +524,6 @@ public sealed class MbbDecisionService
         if (bearish)
         {
             reasons.Add("trend-bearish");
-            triggers.Add(BandCheckedTrigger("reduce-below-cost", EquityCandleTimeframes.Day,
-                reducePrice,
-                "reduce the settled portion on a 1d close at/below this level",
-                prevClose, MbbTriggerDirections.CloseBelow));
-            triggers.Add(BandCheckedTrigger("stop-loss", EquityCandleTimeframes.Day,
-                stopLossPrice,
-                "exit the position on a 1d close at/below this level",
-                prevClose, MbbTriggerDirections.CloseBelow));
             if (reduceHit)
             {
                 reasons.Add("reduce-threshold-hit");
@@ -771,26 +773,26 @@ public sealed class MbbDecisionService
             ceiling, floor);
     }
 
-    /// <summary>Attach the price-band verdict to a trigger level; breach -> nonFillRisk.</summary>
+    /// <summary>Attach the next-session price-band verdict to a trigger level; breach -> nonFillRisk.</summary>
     private MbbDecisionTrigger BandCheckedTrigger(
-        string name, string timeframe, decimal? priceLevel, string condition, decimal? prevClose,
+        string name, string timeframe, decimal? priceLevel, string condition, decimal? bandReference,
         string? direction = null)
     {
         bool? within = null;
         string? risk = null;
         if (priceLevel is not null)
         {
-            if (prevClose is > 0)
+            if (bandReference is > 0)
             {
                 var band = VietnamExecutionRules.ClassifyBand(
-                    priceLevel.Value, prevClose.Value, _costs.PriceBandFraction);
+                    priceLevel.Value, bandReference.Value, _costs.PriceBandFraction);
                 within = band == VnBandStates.WithinBand;
                 if (within == false)
                     risk = $"non-fill risk: {band} — band-breach policy is reject, not clamp";
             }
             else
             {
-                risk = "non-fill risk: band-reference-missing (no previous 1d close)";
+                risk = "non-fill risk: band-reference-missing (no positive 1d close)";
             }
         }
         return new MbbDecisionTrigger(name, timeframe, priceLevel, condition, within, risk, direction);
