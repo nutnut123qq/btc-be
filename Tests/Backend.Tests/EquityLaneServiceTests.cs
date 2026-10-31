@@ -338,10 +338,7 @@ public class EquityLaneServiceTests
         var svc = new MbbTechnicalRecomputeService(
             db,
             new CandlePatternIndexer(db, new FakeBinanceKlinesService(), opts),
-            new WindowVectorIndexer(db, opts),
-            new CandleVolumeIndexer(db, NullLogger<CandleVolumeIndexer>.Instance, opts),
             new TechnicalIndicatorIndexer(db, NullLogger<TechnicalIndicatorIndexer>.Instance, opts),
-            new CandlePatternSequenceIndexer(db, NullLogger<CandlePatternSequenceIndexer>.Instance, opts),
             new VietnamMarketCalendar());
 
         var bid = await svc.RecomputeAsync("BID", "1d");

@@ -299,10 +299,7 @@ public class EquityIngestionWorkerTests
             var opts = OptionsFactory.Create(new IndexingOptions());
             return new MbbTechnicalRecomputeService(db,
                 new CandlePatternIndexer(db, new FakeBinanceKlinesService(), opts),
-                new WindowVectorIndexer(db, opts),
-                new CandleVolumeIndexer(db, NullLogger<CandleVolumeIndexer>.Instance, opts),
                 new TechnicalIndicatorIndexer(db, NullLogger<TechnicalIndicatorIndexer>.Instance, opts),
-                new CandlePatternSequenceIndexer(db, NullLogger<CandlePatternSequenceIndexer>.Instance, opts),
                 cal);
         });
         services.AddScoped(sp => new MbbDecisionService(sp.GetRequiredService<AppDbContext>(), cal, timeProvider: clock));

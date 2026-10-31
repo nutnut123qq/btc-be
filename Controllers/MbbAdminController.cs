@@ -11,7 +11,7 @@ namespace Backend.Controllers;
 /// There is intentionally no hosted worker for MBB (MBB-02 contract), so these
 /// AdminGuard'd endpoints are the only operational entry points — an operator
 /// runs sync to top up recent bars, backfill for deeper history, and recompute
-/// after ingest to rebuild indicators/patterns/volume stats/vectors/sequences.
+/// after ingest to rebuild indicators and candle patterns.
 ///
 /// When "MbbIngestion:Enabled" is false the sync/backfill reports come back with
 /// a Disabled status / per-timeframe error — a truthful answer, not a silent
@@ -106,8 +106,9 @@ public sealed class MbbAdminController : ControllerBase
     }
 
     /// <summary>
-    /// Full rebuild of MBB technical artifacts (indicators, candle patterns,
-    /// volume stats, window vectors, pattern sequences) from InstrumentCandles.
+    /// Full rebuild of MBB technical artifacts (indicators, candle patterns) from
+    /// InstrumentCandles; also clears the symbol's volume stats, window vectors and
+    /// pattern sequences, which are no longer built for equities (EQTRIM-1).
     /// `timeframe` optional — omitted rebuilds every active MBB timeframe.
     /// </summary>
     [HttpPost("recompute")]

@@ -171,15 +171,11 @@ public class MarketCalendarTests : IClassFixture<TestWebApplicationFactory>
     {
         var opts = OptionsFactory.Create(new IndexingOptions
         {
-            CandlePatternBatchSize = 100, VolumeStatsBatchSize = 100, TechnicalIndicatorsBatchSize = 100,
-            PatternSequenceBatchSize = 100, WindowVectorBatchSize = 100,
+            CandlePatternBatchSize = 100, TechnicalIndicatorsBatchSize = 100,
         });
         return new MbbTechnicalRecomputeService(db,
             new CandlePatternIndexer(db, new FakeBinanceKlinesService(), opts),
-            new WindowVectorIndexer(db, opts),
-            new CandleVolumeIndexer(db, NullLogger<CandleVolumeIndexer>.Instance, opts),
             new TechnicalIndicatorIndexer(db, NullLogger<TechnicalIndicatorIndexer>.Instance, opts),
-            new CandlePatternSequenceIndexer(db, NullLogger<CandlePatternSequenceIndexer>.Instance, opts),
             cal);
     }
 

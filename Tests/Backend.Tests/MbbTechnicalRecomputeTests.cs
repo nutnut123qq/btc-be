@@ -24,10 +24,7 @@ public class MbbTechnicalRecomputeTests
     private static IndexingOptions TestIndexingOptions() => new()
     {
         CandlePatternBatchSize = 100,
-        VolumeStatsBatchSize = 100,
         TechnicalIndicatorsBatchSize = 100,
-        PatternSequenceBatchSize = 100,
-        WindowVectorBatchSize = 100,
     };
 
     private static MbbTechnicalRecomputeService NewService(AppDbContext db)
@@ -36,10 +33,7 @@ public class MbbTechnicalRecomputeTests
         return new MbbTechnicalRecomputeService(
             db,
             new CandlePatternIndexer(db, new FakeBinanceKlinesService(), opts),
-            new WindowVectorIndexer(db, opts),
-            new CandleVolumeIndexer(db, NullLogger<CandleVolumeIndexer>.Instance, opts),
             new TechnicalIndicatorIndexer(db, NullLogger<TechnicalIndicatorIndexer>.Instance, opts),
-            new CandlePatternSequenceIndexer(db, NullLogger<CandlePatternSequenceIndexer>.Instance, opts),
             new VietnamMarketCalendar());
     }
 
@@ -132,9 +126,9 @@ public class MbbTechnicalRecomputeTests
     }
 
     [Fact]
-    public async Task Recompute_Daily_WritesAllArtifactsUnderMbbSymbol()
+    public async Task Recompute_Daily_WritesIndicatorsAndPatternsUnderMbbSymbolOnly()
     {
-        await using var db = NewDb(nameof(Recompute_Daily_WritesAllArtifactsUnderMbbSymbol));
+        await using var db = NewDb(nameof(Recompute_Daily_WritesIndicatorsAndPatternsUnderMbbSymbolOnly));
         var barCount = await SeedDailyCandlesAsync(db, 80, new DateOnly(2024, 1, 1));
         var svc = NewService(db);
 
@@ -144,6 +138,7 @@ public class MbbTechnicalRecomputeTests
         Assert.Equal("1d", report.Timeframe);
         Assert.Equal(barCount, report.CandleCount);
         Assert.Equal(MbbRecomputeStatuses.Succeeded, report.Status);
+        Assert.Equal(["TechnicalIndicators", "CandlePatterns"], report.Modules.Select(m => m.Module));
         Assert.All(report.Modules,
             m => Assert.Equal(MbbRecomputeModuleStatuses.Recomputed, m.Status));
 
@@ -155,26 +150,42 @@ public class MbbTechnicalRecomputeTests
             Assert.Equal("1d", x.Timeframe);
         });
 
-        var volume = await db.CandleVolumeStats.ToListAsync();
-        Assert.Equal(barCount, volume.Count);
-        Assert.All(volume, x => Assert.Equal("MBB", x.Symbol));
-
         var patterns = await db.CandlePatterns.ToListAsync();
         Assert.True(patterns.Count >= 5, $"expected >=5 patterns, got {patterns.Count}");
         Assert.Contains(patterns, x => x.PatternType == "Doji");
         Assert.All(patterns, x => Assert.Equal("MBB", x.Symbol));
 
-        var sequences = await db.PatternSequences.ToListAsync();
-        Assert.True(sequences.Count > 0);
-        Assert.All(sequences, x => Assert.Equal("MBB", x.Symbol));
+        // EQTRIM-1: layers nothing in the equity lane reads are no longer built.
+        Assert.Equal(0, await db.CandleVolumeStats.CountAsync());
+        Assert.Equal(0, await db.PatternSequences.CountAsync());
+        Assert.Equal(0, await db.WindowVectors.CountAsync());
+    }
 
-        var vectors = await db.WindowVectors.ToListAsync();
-        Assert.True(vectors.Count > 0);
-        Assert.All(vectors, x =>
+    [Fact]
+    public async Task Recompute_ClearsRetiredLayersForItsSymbolTimeframe_KeepsOtherRows()
+    {
+        await using var db = NewDb(nameof(Recompute_ClearsRetiredLayersForItsSymbolTimeframe_KeepsOtherRows));
+        await SeedDailyCandlesAsync(db, 80, new DateOnly(2024, 1, 1));
+        // Rows built before EQTRIM-1 (MBB 1d), plus rows the run must not touch (MBB 1h, BTCUSDT 1d).
+        foreach (var (symbol, tf) in new[] { ("MBB", "1d"), ("MBB", "1h"), ("BTCUSDT", "1d") })
         {
-            Assert.Equal("MBB", x.Symbol);
-            Assert.Equal("1d", x.Timeframe);
-        });
+            db.CandleVolumeStats.Add(new CandleVolumeStats { Symbol = symbol, Timeframe = tf, OpenTimeMs = 1L, Volume = 1m });
+            db.PatternSequences.Add(new PatternSequence { Symbol = symbol, Timeframe = tf, StartTimeMs = 1L, EndTimeMs = 2L, WindowSize = 3 });
+            db.WindowVectors.Add(new WindowVector { Symbol = symbol, Timeframe = tf, StartTimeMs = 1L, EndTimeMs = 2L, Vector = [1f] });
+        }
+        await db.SaveChangesAsync();
+
+        await NewService(db).RecomputeAsync("MBB", "1d");
+
+        Assert.Equal(0, await db.CandleVolumeStats.CountAsync(x => x.Symbol == "MBB" && x.Timeframe == "1d"));
+        Assert.Equal(0, await db.PatternSequences.CountAsync(x => x.Symbol == "MBB" && x.Timeframe == "1d"));
+        Assert.Equal(0, await db.WindowVectors.CountAsync(x => x.Symbol == "MBB" && x.Timeframe == "1d"));
+        foreach (var (symbol, tf) in new[] { ("MBB", "1h"), ("BTCUSDT", "1d") })
+        {
+            Assert.Equal(1, await db.CandleVolumeStats.CountAsync(x => x.Symbol == symbol && x.Timeframe == tf));
+            Assert.Equal(1, await db.PatternSequences.CountAsync(x => x.Symbol == symbol && x.Timeframe == tf));
+            Assert.Equal(1, await db.WindowVectors.CountAsync(x => x.Symbol == symbol && x.Timeframe == tf));
+        }
     }
 
     [Fact]
@@ -275,9 +286,6 @@ public class MbbTechnicalRecomputeTests
         {
             Indicators = await db.TechnicalIndicators.CountAsync(),
             Patterns = await db.CandlePatterns.CountAsync(),
-            Volume = await db.CandleVolumeStats.CountAsync(),
-            Sequences = await db.PatternSequences.CountAsync(),
-            Vectors = await db.WindowVectors.CountAsync(),
         };
 
         var second = await svc.RecomputeAsync("MBB", "1d");
@@ -285,9 +293,6 @@ public class MbbTechnicalRecomputeTests
         Assert.Equal(MbbRecomputeStatuses.Succeeded, second.Status);
         Assert.Equal(snapshot.Indicators, await db.TechnicalIndicators.CountAsync());
         Assert.Equal(snapshot.Patterns, await db.CandlePatterns.CountAsync());
-        Assert.Equal(snapshot.Volume, await db.CandleVolumeStats.CountAsync());
-        Assert.Equal(snapshot.Sequences, await db.PatternSequences.CountAsync());
-        Assert.Equal(snapshot.Vectors, await db.WindowVectors.CountAsync());
     }
 
     [Fact]

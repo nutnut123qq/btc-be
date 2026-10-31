@@ -5,9 +5,11 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Services;
 
 /// <summary>
-/// Rebuilds the shared technical artifact tables (TechnicalIndicators, CandlePatterns,
-/// CandleVolumeStats, PatternSequences, WindowVectors) for MBB from the provider-agnostic
-/// <see cref="InstrumentCandle"/> store — never from Binance <see cref="Kline"/> rows.
+/// Rebuilds the technical artifact tables the equity lane reads (TechnicalIndicators,
+/// CandlePatterns) for MBB/BID from the provider-agnostic <see cref="InstrumentCandle"/>
+/// store — never from Binance <see cref="Kline"/> rows. CandleVolumeStats, PatternSequences
+/// and WindowVectors are no longer built for equities (EQTRIM-1: only BTC-lane code reads
+/// them); their rows for the symbol/timeframe are still deleted, so old ones get cleaned up.
 ///
 /// Contract (MBB-03):
 /// - Manual/explicit invocation only. MBB is a known-but-disabled instrument in
@@ -22,9 +24,8 @@ namespace Backend.Services;
 /// - Session gaps are NOT data gaps: indicator segmentation uses a
 ///   <see cref="BarAdjacency"/> built from <see cref="VietnamMarketCalendar"/> expected
 ///   opens, so lunch/overnight/weekend/holiday breaks keep indicator state contiguous
-///   while a genuinely missing expected bar still restarts it. Modules that operate on
-///   stored-bar order (patterns, volume stats, window vectors, pattern sequences) are
-///   inherently cadence-free and reuse the existing math unchanged.
+///   while a genuinely missing expected bar still restarts it. Candle patterns operate on
+///   stored-bar order, are inherently cadence-free and reuse the existing math unchanged.
 /// </summary>
 public sealed class MbbTechnicalRecomputeService
 {
@@ -36,19 +37,10 @@ public sealed class MbbTechnicalRecomputeService
     public const string SupportedSymbol = "MBB";
 
     private const int MinIndicatorBars = 50;
-    private const int MinWindowVectorBars = 10;
-
-    // Same feature set as IndexingBackgroundWorker — every feature is pure OHLCV.
-    private static readonly string[] FeatureTypes =
-        ["open", "high", "low", "close", "all", "returns_shape", "returns_log", "volume_norm", "volatility", "trend"];
-    private static readonly int[] WindowSizes = [10, 15, 25];
 
     private readonly AppDbContext _db;
     private readonly ICandlePatternIndexer _patternIndexer;
-    private readonly IWindowVectorIndexer _vectorIndexer;
-    private readonly CandleVolumeIndexer _volumeIndexer;
     private readonly TechnicalIndicatorIndexer _technicalIndexer;
-    private readonly CandlePatternSequenceIndexer _sequenceIndexer;
     private readonly VietnamMarketCalendar _calendar;
     private readonly InstrumentCatalog _catalog;
     private readonly TimeProvider _timeProvider;
@@ -57,10 +49,7 @@ public sealed class MbbTechnicalRecomputeService
     public MbbTechnicalRecomputeService(
         AppDbContext db,
         ICandlePatternIndexer patternIndexer,
-        IWindowVectorIndexer vectorIndexer,
-        CandleVolumeIndexer volumeIndexer,
         TechnicalIndicatorIndexer technicalIndexer,
-        CandlePatternSequenceIndexer sequenceIndexer,
         VietnamMarketCalendar calendar,
         InstrumentCatalog? catalog = null,
         TimeProvider? timeProvider = null,
@@ -68,10 +57,7 @@ public sealed class MbbTechnicalRecomputeService
     {
         _db = db;
         _patternIndexer = patternIndexer;
-        _vectorIndexer = vectorIndexer;
-        _volumeIndexer = volumeIndexer;
         _technicalIndexer = technicalIndexer;
-        _sequenceIndexer = sequenceIndexer;
         _calendar = calendar;
         _catalog = catalog ?? InstrumentCatalog.Default;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -127,8 +113,9 @@ public sealed class MbbTechnicalRecomputeService
                     "no InstrumentCandles rows for this symbol/timeframe")).ToArray());
         }
 
-        // Full-rebuild strategy: wipe the artifact rows of THIS symbol/timeframe only.
-        // Other symbols (BTCUSDT) and other timeframes are never touched.
+        // Full-rebuild strategy: wipe the artifact rows of THIS symbol/timeframe only, including
+        // the three tables no longer rebuilt (clears pre-EQTRIM-1 rows). Other symbols (BTCUSDT)
+        // and other timeframes are never touched.
         await DeleteArtifactsAsync(instrument.Symbol, tf, cancellationToken);
 
         var adjacency = BuildSessionAdjacency(_calendar, tf, bars);
@@ -151,29 +138,6 @@ public sealed class MbbTechnicalRecomputeService
         modules.Add(await RunModuleAsync(
             "CandlePatterns",
             () => _patternIndexer.IndexAsync(instrument.Symbol, tf, bars, cancellationToken)));
-
-        modules.Add(await RunModuleAsync(
-            "CandleVolumeStats",
-            () => _volumeIndexer.IndexAsync(instrument.Symbol, tf, bars, cancellationToken)));
-
-        if (bars.Count < MinWindowVectorBars)
-        {
-            modules.Add(new MbbRecomputeModuleResult(
-                "WindowVectors", MbbRecomputeModuleStatuses.Skipped, 0,
-                $"requires at least {MinWindowVectorBars} candles; have {bars.Count}"));
-        }
-        else
-        {
-            modules.Add(await RunModuleAsync(
-                "WindowVectors",
-                () => _vectorIndexer.BuildAllForTimeframeAsync(
-                    instrument.Symbol, tf, bars, FeatureTypes, WindowSizes, cancellationToken)));
-        }
-
-        // Pattern sequences derive from the CandlePatterns rows just written for MBB.
-        modules.Add(await RunModuleAsync(
-            "CandlePatternSequences",
-            () => _sequenceIndexer.IndexAsync(instrument.Symbol, tf, 0, cancellationToken)));
 
         var status = modules.Any(m => m.Status == MbbRecomputeModuleStatuses.Failed)
             ? MbbRecomputeStatuses.Partial
@@ -229,8 +193,7 @@ public sealed class MbbTechnicalRecomputeService
         }
     }
 
-    private static IReadOnlyList<string> ModuleNames() =>
-        ["TechnicalIndicators", "CandlePatterns", "CandleVolumeStats", "WindowVectors", "CandlePatternSequences"];
+    private static IReadOnlyList<string> ModuleNames() => ["TechnicalIndicators", "CandlePatterns"];
 
     private async Task<IReadOnlyList<OhlcvBar>> LoadBarsAsync(
         string symbol, string timeframe, CancellationToken cancellationToken)
