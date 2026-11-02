@@ -7,6 +7,31 @@ public class InstrumentCatalogTests
 {
     private readonly InstrumentCatalog _catalog = InstrumentCatalog.Default;
 
+    /// <summary>VN30 basket in effect from 2026-08-03 minus MBB, BID, VCB, CTG (VN30-DATA), catalog order.</summary>
+    internal static readonly string[] Vn30DataOnly =
+    [
+        "ACB", "BSR", "FPT", "GAS", "GVR", "HDB", "HPG", "LPB", "MCH", "MSN", "MWG", "SAB", "SHB",
+        "SSB", "SSI", "STB", "TCB", "TCX", "VHM", "VIB", "VIC", "VJC", "VNM", "VPB", "VPL", "VRE",
+    ];
+
+    [Fact]
+    public void Vn30Constituents_AreDataOnly_AndOutsideTheReferencePeers()
+    {
+        var equities = _catalog.Instruments.Where(i => i.AssetClass == InstrumentAssetClasses.Equity).Select(i => i.Symbol).ToHashSet();
+        Assert.Equal(30, equities.Count); // the whole basket: 26 data-only + MBB, BID, VCB, CTG
+        foreach (var symbol in Vn30DataOnly)
+        {
+            var i = _catalog.Get(symbol)!;
+            Assert.Equal(["1d"], i.ActiveTimeframes);
+            Assert.True(EquityScope.Has(i, EquityCapability.Ingestion));
+            Assert.False(EquityScope.Has(i, EquityCapability.TechnicalAnalysis));
+            Assert.False(EquityScope.Has(i, EquityCapability.Decision));
+        }
+        // Relative strength and data-quality peers stay exactly what MBB/BID used before VN30-DATA.
+        Assert.Equal(["MBB", "BID", "VCB", "CTG", "VNINDEX"],
+            _catalog.Instruments.Where(EquityScope.IsReferencePeer).Select(i => i.Symbol).ToArray());
+    }
+
     [Fact]
     public void Registry_DeclaresBtcAndMbbWithContractSemantics()
     {

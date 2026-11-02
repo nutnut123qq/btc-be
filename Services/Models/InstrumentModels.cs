@@ -26,7 +26,7 @@ public static class InstrumentAssetClasses
 /// Equity-lane flags (instrument-catalog-v2, additive):
 /// <see cref="Ingestion"/> = the InstrumentCandles ingestion lane exists for the symbol;
 /// <see cref="Decision"/> = position/decision/observation/base-rates/context/dossier lane.
-/// Context-only instruments (VCB, CTG, VNINDEX) are Ingestion without Decision.
+/// Context-only instruments (VCB, CTG, VNINDEX and the 26 VN30-DATA constituents) are Ingestion without Decision.
 /// </summary>
 public sealed record InstrumentCapabilities(
     bool TechnicalAnalysis,

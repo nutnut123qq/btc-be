@@ -284,7 +284,8 @@ public class EquityEndpointTests : IClassFixture<TestWebApplicationFactory>
         Assert.Equal("equity-instruments-v1", root.GetProperty("contractVersion").GetString());
         Assert.False(root.GetProperty("workerActive").GetBoolean());
         var items = root.GetProperty("items").EnumerateArray().ToDictionary(i => i.GetProperty("symbol").GetString()!);
-        Assert.Equal(new[] { "BID", "CTG", "MBB", "VCB", "VNINDEX" }, items.Keys.Order().ToArray());
+        Assert.Equal(new[] { "BID", "CTG", "MBB", "VCB", "VNINDEX" }.Concat(InstrumentCatalogTests.Vn30DataOnly).Order().ToArray(),
+            items.Keys.Order().ToArray());
 
         var vnindex = items["VNINDEX"];
         Assert.Equal("index", vnindex.GetProperty("assetClass").GetString());

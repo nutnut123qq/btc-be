@@ -35,7 +35,7 @@ public sealed class EquityContextService
     /// <summary>Benchmarks: the index plus peers (VCB, CTG and the other decision bank).</summary>
     internal IReadOnlyList<(string Symbol, string Kind)> BenchmarksFor(string symbol) =>
         _catalog.Instruments
-            .Where(i => i.Symbol != symbol && EquityScope.Has(i, EquityCapability.Ingestion)
+            .Where(i => i.Symbol != symbol && EquityScope.IsReferencePeer(i)
                         && i.ActiveTimeframes.Contains(EquityCandleTimeframes.Day, StringComparer.Ordinal))
             .OrderBy(i => i.AssetClass == InstrumentAssetClasses.Index ? 0 : 1)
             .Select(i => (i.Symbol, i.AssetClass == InstrumentAssetClasses.Index ? "index" : "peer"))

@@ -969,6 +969,7 @@ public class EquityResearchTests : IDisposable
 
         Assert.Equal("equity-context-v1", ctx.ContractVersion);
         var rs = ctx.RelativeStrength.Benchmarks.ToDictionary(b => b.Symbol);
+        // VN30-DATA constituents are ingested too but are not benchmarks (EquityScope.IsReferencePeer).
         Assert.Equal(["VNINDEX", "MBB", "VCB", "CTG"], ctx.RelativeStrength.Benchmarks.Select(b => b.Symbol).ToArray());
         Assert.Equal(("index", "ok", 80), (rs["VNINDEX"].Kind, rs["VNINDEX"].Status, rs["VNINDEX"].AlignedSessions));
         Assert.NotNull(rs["VNINDEX"].Returns["60"]);

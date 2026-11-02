@@ -53,6 +53,17 @@ public static class EquityScope
             _ => false,
         };
 
+    /// <summary>
+    /// Market reference set for MBB/BID relative strength and data-quality peer presence: the
+    /// index, the decision equities and the original bank peers VCB/CTG. The VN30 data-only
+    /// constituents (VN30-DATA) are left out on purpose so adding them does not change those payloads.
+    /// </summary>
+    public static bool IsReferencePeer(InstrumentDescriptor instrument) =>
+        Has(instrument, EquityCapability.Ingestion)
+        && (instrument.AssetClass == InstrumentAssetClasses.Index
+            || instrument.Capabilities.Decision
+            || instrument.Symbol is "VCB" or "CTG");
+
     public static string CapabilityName(EquityCapability capability) => capability switch
     {
         EquityCapability.Ingestion => "ingestion",

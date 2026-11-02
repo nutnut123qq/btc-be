@@ -82,7 +82,9 @@ public class EquityIngestionWorkerTests
             new EquityIngestionOptions { Enabled = true, Symbols = ["BTCUSDT", "bid", "NOPE", "VNINDEX"] });
         Assert.Equal(["BID", "VNINDEX"], worker.EffectiveInstruments().Select(i => i.Symbol).ToArray());
         var (all, _, _, _) = NewWorker(Local(2026, 10, 14, 16, 0));
-        Assert.Equal(["MBB", "BID", "VCB", "CTG", "VNINDEX"], all.EffectiveInstruments().Select(i => i.Symbol).ToArray());
+        // Catalog order: the decision equities first, the VN30 data-only constituents last.
+        Assert.Equal(new[] { "MBB", "BID", "VCB", "CTG", "VNINDEX" }.Concat(InstrumentCatalogTests.Vn30DataOnly).ToArray(),
+            all.EffectiveInstruments().Select(i => i.Symbol).ToArray());
     }
 
     [Fact]
@@ -165,7 +167,7 @@ public class EquityIngestionWorkerTests
 
         await worker.RunOnceAsync(default);
 
-        Assert.Equal(5, pipeline.Calls.Count);
+        Assert.Equal(5 + InstrumentCatalogTests.Vn30DataOnly.Length, pipeline.Calls.Count);
         Assert.All(pipeline.Calls, c => Assert.Equal(Tue, c.Session));
         Assert.All(store.Snapshot(), s => Assert.Equal(EquityIngestionStatuses.UpToDate, s.Status));
     }
@@ -180,14 +182,15 @@ public class EquityIngestionWorkerTests
 
         var report = await worker.RunOnceAsync(default);
 
-        Assert.Equal(5, pipeline.Calls.Count);
+        var others = new[] { "BID", "VCB", "CTG", "VNINDEX" }.Concat(InstrumentCatalogTests.Vn30DataOnly).ToArray();
+        Assert.Equal(1 + others.Length, pipeline.Calls.Count);
         Assert.Equal(EquityIngestionStatuses.Failed, store.Get("MBB")!.Status);
         Assert.Contains("boom", store.Get("MBB")!.Detail);
-        foreach (var symbol in new[] { "BID", "VCB", "CTG", "VNINDEX" })
+        foreach (var symbol in others)
             Assert.Equal(EquityIngestionStatuses.UpToDate, store.Get(symbol)!.Status);
         Assert.Equal(WorkerCycleOutcome.Partial, report.Outcome);
         Assert.Equal(1, report.Failed);
-        Assert.Equal(4, report.Succeeded);
+        Assert.Equal(others.Length, report.Succeeded);
     }
 
     [Fact]

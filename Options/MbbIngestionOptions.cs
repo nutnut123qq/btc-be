@@ -61,6 +61,26 @@ public sealed class MbbIngestionOptions
         ["VCB"] = "2009-06-30",
         ["CTG"] = "2009-07-16",
         ["VNINDEX"] = "2010-01-01",
+        // VN30-DATA constituents listed after 2011-11-01 (first VCI bar with volume > 0, fetched 2026-11-02);
+        // older ones use DailyBackfillStartLocal like MBB. VHM starts at its HOSE listing: earlier VCI rows
+        // are flat pre-listing quotes with sporadic tiny volume.
+        ["GAS"] = "2012-05-21",
+        ["MWG"] = "2014-07-14",
+        ["SAB"] = "2016-12-06",
+        ["MCH"] = "2017-01-05",
+        ["VIB"] = "2017-01-09",
+        ["VJC"] = "2017-02-28",
+        ["VPB"] = "2017-08-17",
+        ["LPB"] = "2017-10-05",
+        ["VRE"] = "2017-11-06",
+        ["HDB"] = "2018-01-05",
+        ["BSR"] = "2018-03-01",
+        ["GVR"] = "2018-03-21",
+        ["VHM"] = "2018-05-17",
+        ["TCB"] = "2018-06-04",
+        ["SSB"] = "2021-03-24",
+        ["VPL"] = "2025-05-13",
+        ["TCX"] = "2025-10-21",
     };
 
     /// <summary>

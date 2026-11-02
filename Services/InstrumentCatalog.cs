@@ -67,6 +67,35 @@ public sealed class InstrumentCatalog
                 TechnicalAnalysis: false, News: false, Sentiment: false, Futures: false,
                 Liquidation: false, OrderBook: false, Execution: false, PaperTrading: false,
                 Ingestion: true, Decision: false)),
+        // VN30-DATA: the rest of the VN30 basket in effect from 2026-08-03 (with MBB, BID, VCB, CTG above).
+        // Data-only: 1d candles, no technical artifacts, no decision lane, not reference peers
+        // (EquityScope.IsReferencePeer). Listed after the index so the worker still serves MBB/BID first.
+        Equity("ACB", "ACB (ACB)", ["1d"], decision: false),
+        Equity("BSR", "BSR (Binh Son Refining)", ["1d"], decision: false),
+        Equity("FPT", "FPT (FPT)", ["1d"], decision: false),
+        Equity("GAS", "GAS (PV Gas)", ["1d"], decision: false),
+        Equity("GVR", "GVR (Vietnam Rubber Group)", ["1d"], decision: false),
+        Equity("HDB", "HDB (HDBank)", ["1d"], decision: false),
+        Equity("HPG", "HPG (Hoa Phat)", ["1d"], decision: false),
+        Equity("LPB", "LPB (LPBank)", ["1d"], decision: false),
+        Equity("MCH", "MCH (Masan Consumer)", ["1d"], decision: false),
+        Equity("MSN", "MSN (Masan Group)", ["1d"], decision: false),
+        Equity("MWG", "MWG (Mobile World)", ["1d"], decision: false),
+        Equity("SAB", "SAB (Sabeco)", ["1d"], decision: false),
+        Equity("SHB", "SHB (SHB)", ["1d"], decision: false),
+        Equity("SSB", "SSB (SeABank)", ["1d"], decision: false),
+        Equity("SSI", "SSI (SSI Securities)", ["1d"], decision: false),
+        Equity("STB", "STB (Sacombank)", ["1d"], decision: false),
+        Equity("TCB", "TCB (Techcombank)", ["1d"], decision: false),
+        Equity("TCX", "TCX (Techcom Securities)", ["1d"], decision: false),
+        Equity("VHM", "VHM (Vinhomes)", ["1d"], decision: false),
+        Equity("VIB", "VIB (VIB)", ["1d"], decision: false),
+        Equity("VIC", "VIC (Vingroup)", ["1d"], decision: false),
+        Equity("VJC", "VJC (Vietjet)", ["1d"], decision: false),
+        Equity("VNM", "VNM (Vinamilk)", ["1d"], decision: false),
+        Equity("VPB", "VPB (VPBank)", ["1d"], decision: false),
+        Equity("VPL", "VPL (Vinpearl)", ["1d"], decision: false),
+        Equity("VRE", "VRE (Vincom Retail)", ["1d"], decision: false),
     });
 
     /// <summary>

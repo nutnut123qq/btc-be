@@ -256,6 +256,7 @@ public class MarketCalendarTests : IClassFixture<TestWebApplicationFactory>
         Seed("MBB", "2026-09-10", "2026-09-15");
         Seed("BID", "2026-09-15");
         Seed("VNINDEX", "2026-09-15");
+        Seed("ACB"); // VN30-DATA constituent traded on 09-15, but it is not a reference peer: 09-15 stays market-wide
         await db.SaveChangesAsync();
 
         var options = new MbbIngestionOptions { Symbol = "MBB", Timeframes = ["1d"], DailyBackfillStartLocal = "2026-08-03" };
@@ -274,6 +275,7 @@ public class MarketCalendarTests : IClassFixture<TestWebApplicationFactory>
             && g.StartOpenTimeMs == VietnamMarketCalendar.DailyOpenUtcMs(D("2026-09-10")));
         Assert.Equal("canonical-file", report.Calendar!.Source);
         Assert.Contains("VNINDEX", report.Calendar.PeerSymbols);
+        Assert.DoesNotContain("ACB", report.Calendar.PeerSymbols);
         // A market-wide-missing date is reported only — never added to the calendar.
         Assert.True(canonical.IsTradingDay(D("2026-09-15")));
     }

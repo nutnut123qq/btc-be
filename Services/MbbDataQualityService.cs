@@ -214,7 +214,7 @@ public sealed class MbbDataQualityService
             .Count(d => d >= from && d <= to);
     }
 
-    /// <summary>Daily-bar presence of the OTHER equity-lane instruments (incl. VNINDEX), by local date.</summary>
+    /// <summary>Daily-bar presence of the other reference peers (<see cref="EquityScope.IsReferencePeer"/>, incl. VNINDEX), by local date.</summary>
     internal sealed record PeerDailyPresence(
         IReadOnlyList<string> Symbols,
         IReadOnlySet<DateOnly> TradedDates,
@@ -223,7 +223,7 @@ public sealed class MbbDataQualityService
     private async Task<PeerDailyPresence> LoadPeerDailyPresenceAsync(CancellationToken ct)
     {
         var symbols = _catalog.Instruments
-            .Where(i => EquityScope.Has(i, EquityCapability.Ingestion)
+            .Where(i => EquityScope.IsReferencePeer(i)
                 && !string.Equals(i.Symbol, _instrument.Symbol, StringComparison.Ordinal))
             .Select(i => i.Symbol)
             .OrderBy(s => s, StringComparer.Ordinal)
