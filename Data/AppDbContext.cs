@@ -536,8 +536,9 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.Symbol, x.SignalBarOpenTimeMs });
             e.ToTable(t =>
             {
+                // VN30-TA: no symbol list; the backend admits TechnicalAnalysis symbols through the catalog.
                 t.HasCheckConstraint("CK_EquityResearchNotes_Scope",
-                    "\"Symbol\" IN ('MBB','BID') AND \"Mode\" IN ('forward','retrospective') AND \"HorizonSessions\" > 0");
+                    "\"Mode\" IN ('forward','retrospective') AND \"HorizonSessions\" > 0");
                 t.HasCheckConstraint("CK_EquityResearchNotes_Enums",
                     "\"Direction\" IN ('up','down','sideways','no-view') AND \"ActionView\" IN ('buy-more','hold','reduce','sell','wait','none') AND \"ActionBasis\" IN ('position-aware','market-only','insufficient-input')");
                 t.HasCheckConstraint("CK_EquityResearchNotes_Provenance",

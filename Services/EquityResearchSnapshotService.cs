@@ -134,19 +134,25 @@ public sealed class EquityResearchSnapshotService
         return true;
     }
 
-    private string RequireDecision(string symbol)
+    private InstrumentDescriptor RequireTechnicalAnalysis(string symbol)
     {
         var instrument = _catalog.Get(symbol)
             ?? throw new ArgumentException($"Unknown symbol '{InstrumentCatalog.Canonicalize(symbol)}'.", nameof(symbol));
-        if (!EquityScope.Has(instrument, EquityCapability.Decision))
-            throw new ArgumentException($"Symbol '{instrument.Symbol}' does not support capability 'decision'.", nameof(symbol));
-        return instrument.Symbol;
+        if (!EquityScope.Has(instrument, EquityCapability.TechnicalAnalysis))
+            throw new ArgumentException($"Symbol '{instrument.Symbol}' does not support capability 'technicalAnalysis'.", nameof(symbol));
+        return instrument;
     }
 
+    /// <summary>
+    /// Snapshot of a TechnicalAnalysis symbol. Without Decision (VN30-TA) it only backs a research-note binding:
+    /// context sections and base rates are unavailable with <see cref="EquityScope.NoDecisionCapability"/> instead
+    /// of being read, so the snapshot (and its sha) depends on market data only.
+    /// </summary>
     public async Task<EquityResearchSnapshot> BuildAsync(string symbol, DateTimeOffset asOf, CancellationToken ct = default)
     {
-        var sym = RequireDecision(symbol);
-        var instrument = _catalog.Get(sym)!;
+        var instrument = RequireTechnicalAnalysis(symbol);
+        var sym = instrument.Symbol;
+        var hasDecision = EquityScope.Has(instrument, EquityCapability.Decision);
         var now = _timeProvider.GetUtcNow();
         var nowMs = now.ToUnixTimeMilliseconds();
         var asOfMs = asOf.ToUnixTimeMilliseconds();
@@ -198,7 +204,10 @@ public sealed class EquityResearchSnapshotService
             }
 
             // --- context (clock pinned to asOf) ---------------------------------------------
-            var context = await new EquityContextService(_db, _calendar, asOfClock, _catalog).GetAsync(sym, ct);
+            var contextService = new EquityContextService(_db, _calendar, asOfClock, _catalog);
+            var context = hasDecision
+                ? await contextService.GetAsync(sym, ct)
+                : await contextService.TechnicalOnlyAsync(sym, ct);
             if (context.RelativeStrength.Status == EquityContextStatuses.Unavailable)
                 unavailable.Add(new("relativeStrength", context.RelativeStrength.Reason ?? "unavailable"));
             if (context.Fundamentals.Status == EquityContextStatuses.Unavailable)
@@ -209,7 +218,10 @@ public sealed class EquityResearchSnapshotService
                 unavailable.Add(new("events", context.Events.Reason ?? "unavailable"));
 
             // --- base rates (clock pinned to asOf; withheld when not PIT) -------------------
-            var baseRates = await baseRatesAsOf.GetAsync(sym, ct);
+            var baseRates = hasDecision
+                ? await baseRatesAsOf.GetAsync(sym, ct)
+                : new EquityBaseRatesResponse(EquityBaseRatesResponse.Version, sym, EquityCandleTimeframes.Day,
+                    EquityBaseRatesStatuses.Unavailable, [EquityScope.NoDecisionCapability], null, []);
             if (baseRates.Artifact is { } art && (signalOpen is null || art.DataAsOfOpenTimeMs > signalOpen.Value))
                 baseRates = baseRates with
                 {

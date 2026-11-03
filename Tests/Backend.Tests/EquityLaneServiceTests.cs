@@ -348,7 +348,9 @@ public class EquityLaneServiceTests
         var bidHourly = await svc.RecomputeAsync("BID", "1h");
         Assert.Equal(("BID", "1h", MbbRecomputeStatuses.NoData), (bidHourly.Symbol, bidHourly.Timeframe, bidHourly.Status));
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("BID", "4h"));
-        await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("VCB", "1d"));
+        // VN30-TA: VCB (like every VN30 equity) has TA now; only the index is context-only.
+        Assert.Equal(MbbRecomputeStatuses.NoData, (await svc.RecomputeAsync("VCB", "1d")).Status);
+        await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("VCB", "1h"));
         await Assert.ThrowsAsync<ArgumentException>(() => svc.RecomputeAsync("VNINDEX", "1d"));
     }
 

@@ -38,6 +38,9 @@ public static class EquityScope
     public const string InvalidTimeframe = "INVALID_TIMEFRAME";
     public const string LaneBusy = "LANE_BUSY";
 
+    /// <summary>Reason for a Decision-only section of a TechnicalAnalysis payload on a symbol without Decision (VN30-TA).</summary>
+    public const string NoDecisionCapability = "no-decision-capability";
+
     /// <summary>Asset classes served by the equity lane (crypto stays on the Binance lane).</summary>
     public static bool IsEquityLaneAsset(InstrumentDescriptor instrument) =>
         instrument.AssetClass is InstrumentAssetClasses.Equity or InstrumentAssetClasses.Index;
@@ -55,7 +58,7 @@ public static class EquityScope
 
     /// <summary>
     /// Market reference set for MBB/BID relative strength and data-quality peer presence: the
-    /// index, the decision equities and the original bank peers VCB/CTG. The VN30 data-only
+    /// index, the decision equities and the original bank peers VCB/CTG. The other VN30
     /// constituents (VN30-DATA) are left out on purpose so adding them does not change those payloads.
     /// </summary>
     public static bool IsReferencePeer(InstrumentDescriptor instrument) =>

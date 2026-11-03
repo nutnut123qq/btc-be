@@ -31,8 +31,8 @@ public sealed class MbbTechnicalRecomputeService
 {
     /// <summary>
     /// The /api/mbb alias symbol. Since EQX the lane serves every equity carrying the
-    /// TechnicalAnalysis + Ingestion capabilities (MBB, BID); context-only instruments
-    /// (VCB, CTG, VNINDEX) and Binance instruments are rejected.
+    /// TechnicalAnalysis + Ingestion capabilities (the VN30 equities); context-only instruments
+    /// (VNINDEX) and Binance instruments are rejected.
     /// </summary>
     public const string SupportedSymbol = "MBB";
 

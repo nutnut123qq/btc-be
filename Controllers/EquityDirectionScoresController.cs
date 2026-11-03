@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Backend.Controllers;
 
 /// <summary>
-/// Direction scores of session research notes (EQTECH-1 lane S, rule direction-score-v1) for Decision
-/// equities (MBB, BID). AdminGuard'd like GET research-notes (notes carry actionView). Read-only: the
+/// Direction scores of session research notes (EQTECH-1 lane S, rule direction-score-v1) for TechnicalAnalysis
+/// equities (VN30-TA). AdminGuard'd like GET research-notes (notes carry actionView). Read-only: the
 /// backend computes every number from stored 1d closes; the note's direction is the only input.
 /// The scoring service is built here from already-registered dependencies (no DI change).
 /// </summary>
@@ -44,7 +44,7 @@ public sealed class EquityDirectionScoresController : ControllerBase
         string symbol, [FromQuery] int take = EquityDirectionScoringService.DefaultTake,
         CancellationToken cancellationToken = default)
     {
-        var scope = EquityScope.Resolve(_catalog, symbol, EquityCapability.Decision);
+        var scope = EquityScope.Resolve(_catalog, symbol, EquityCapability.TechnicalAnalysis);
         if (!scope.Ok) return EquityLaneHttp.ScopeError(this, scope);
         return Ok(await _scores.GetAsync(scope.Instrument!.Symbol, take, cancellationToken));
     }

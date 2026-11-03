@@ -333,7 +333,51 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
         var r = EquityResearchSnapshotService.Readiness(s);
         Assert.Equal(EquityReadinessStatuses.NotReady, r.Purposes["technical"].Status);
         Assert.Contains("calendar", r.Purposes["technical"].Reasons);
-        await Assert.ThrowsAsync<ArgumentException>(() => rig.Snapshots.BuildAsync("VCB", Now));
+        await Assert.ThrowsAsync<ArgumentException>(() => rig.Snapshots.BuildAsync("VNINDEX", Now));
+    }
+
+    [Fact]
+    public async Task Snapshot_TaOnlySymbol_MarksDecisionPartsUnavailable_AndItsShaIgnoresContextRows()
+    {
+        var db = NewDb(nameof(Snapshot_TaOnlySymbol_MarksDecisionPartsUnavailable_AndItsShaIgnoresContextRows));
+        await SeedAsync(db);
+        var last = new DateOnly(2026, 10, 14);
+        foreach (var (d, i) in Cal.EnumerateTradingDates(last.AddDays(-520), last).TakeLast(260).Select((d, i) => (d, i)))
+            db.InstrumentCandles.Add(Bar("VCB", d, 60_000m + i));
+        await db.SaveChangesAsync();
+        var rig = Build(db);
+
+        var a = await rig.Snapshots.BuildAsync("VCB", Now);
+        // The admin events import accepts any ingested equity; a TA-only snapshot never reads such rows.
+        db.EquityEvents.Add(new EquityEvent
+        {
+            Symbol = "VCB", EventType = "earnings", EventDate = last.AddDays(-7), Title = "Q3 results",
+            SourceUrl = "https://vietcombank.com.vn/ir", Provenance = "admin", AvailableAtUtc = Updated.AddDays(-7),
+            CreatedAtUtc = Updated.AddDays(-7), UpdatedAtUtc = Updated.AddDays(-7),
+        });
+        await db.SaveChangesAsync();
+        rig.Clock.Now = Now.AddMinutes(5);
+        var b = await rig.Snapshots.BuildAsync("VCB", Now);
+
+        Assert.Equal(a.SnapshotSha256, b.SnapshotSha256);
+        Assert.Matches(@"^snap/VCB/\d+/[0-9a-f]{12}$", a.SnapshotId);
+        Assert.Equal(Wed, a.SignalBar!.OpenTimeMs);
+        Assert.Equal(["1d"], a.Series.Select(s => s.Timeframe).ToArray());
+        Assert.Equal("ok", a.RelativeStrength.Status);
+        Assert.DoesNotContain(a.RelativeStrength.Benchmarks, x => x.Symbol == "VCB");
+        Assert.Equal((EquityBaseRatesStatuses.Unavailable, "no-decision-capability", 0),
+            (a.BaseRates.Status, a.BaseRates.Reasons.Single(), a.BaseRates.Configs.Count));
+        foreach (var section in new[] { a.Events.Reason, a.CorporateActions.Reason, a.Fundamentals.Reason })
+            Assert.Equal("no-decision-capability", section);
+        Assert.Empty(b.Events.Items);
+        Assert.Equal(["baseRates", "corporateActions", "events", "fundamentals"], a.Unavailable
+            .Where(u => u.Reason == "no-decision-capability").Select(u => u.Section).Order().ToArray());
+
+        // Decision symbols are unchanged: the BID snapshot still reads base rates and context.
+        var bid = await rig.Snapshots.BuildAsync("BID", Now);
+        Assert.DoesNotContain(bid.Unavailable, u => u.Reason == "no-decision-capability");
+        Assert.Equal(EquityContextStatuses.Unavailable, bid.Events.Status);
+        Assert.Equal("context-not-synced", bid.Events.Reason);
     }
 
     [Fact]
@@ -1199,6 +1243,45 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
         _output.WriteLine($"fresh {fresh.SnapshotId} | {FreshCheck(fresh).Detail}");
         _output.WriteLine($"holiday {holiday.SnapshotId} | {FreshCheck(holiday).Detail}");
         _output.WriteLine($"stale {stale.SnapshotId} | {check.Detail}");
+    });
+
+    /// <summary>
+    /// VN30-TA migration DropResearchNoteSymbolList: on a database migrated from scratch a forward note for a
+    /// TechnicalAnalysis-only symbol (FPT) is stored, while CK_EquityResearchNotes_Scope still rejects a bad Mode.
+    /// </summary>
+    [Fact]
+    public async Task Postgres_NoteForTaOnlySymbol_IsAcceptedAfterMigrations_ModeCheckStays() => await WithFreshPostgresDbAsync(async pg =>
+    {
+        await using (var seed = pg())
+        {
+            await SeedHoseBarsAsync(seed, Fri28Aug);
+            foreach (var (d, i) in Hose.EnumerateTradingDates(Fri28Aug.AddDays(-520), Fri28Aug).TakeLast(260).Select((d, i) => (d, i)))
+                seed.InstrumentCandles.Add(Bar("FPT", d, 90_000m + i));
+            await seed.SaveChangesAsync();
+        }
+        var at = Local(2026, 8, 28, 15, 0);
+        await using var db = pg();
+        var rig = Build(db, at, Hose);
+        var snap = await rig.Snapshots.BuildAsync("FPT", at);
+        Assert.Equal(Open(Fri28Aug), snap.SignalBar!.OpenTimeMs);
+
+        var result = await rig.Notes.RecordAsync("FPT", Note(snap, "forward", Body()));
+        Assert.True(result.Outcome == EquityResearchNoteService.Outcome.Created, $"{result.Code} {result.Message}");
+        await using (var check = pg())
+        {
+            var stored = await check.EquityResearchNotes.AsNoTracking().SingleAsync();
+            Assert.Equal(("FPT", "forward"), (stored.Symbol, stored.Mode));
+            Assert.Empty(await check.EquityForecastRecords.ToListAsync());
+        }
+
+        await using var bad = pg();
+        var row = await bad.EquityResearchNotes.AsNoTracking().SingleAsync();
+        row.Id = Guid.NewGuid();
+        row.NoteId += "-bad-mode";
+        row.Mode = "backfill";
+        bad.EquityResearchNotes.Add(row);
+        var ex = await Assert.ThrowsAnyAsync<DbUpdateException>(() => bad.SaveChangesAsync());
+        Assert.Contains("CK_EquityResearchNotes_Scope", ex.InnerException?.Message ?? ex.Message);
     });
 
     [Fact]

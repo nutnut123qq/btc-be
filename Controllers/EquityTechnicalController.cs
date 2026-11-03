@@ -9,7 +9,7 @@ namespace Backend.Controllers;
 
 /// <summary>
 /// EQTECH-1 lane T: GET /api/equities/{symbol}/technical (equity-technical-v1) — the technical/candle-only payload an
-/// AI in chat reads to analyse a TechnicalAnalysis equity (MBB, BID), plus the binding it needs to record a research
+/// AI in chat reads to analyse a TechnicalAnalysis equity (the VN30 basket), plus the binding it needs to record a research
 /// note. Public like GET conditions (market-only: no position, lots or cash). The symbol resolves through
 /// <see cref="EquityScope"/> with capability technicalAnalysis (unknown ⇒ 404 UNKNOWN_SYMBOL, crypto or context-only ⇒
 /// 400 UNSUPPORTED_CAPABILITY), so the BTC enabled-traffic gate is skipped. Rate-limited "expensive": one request calls

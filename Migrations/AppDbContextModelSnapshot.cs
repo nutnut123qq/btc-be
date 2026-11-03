@@ -2121,7 +2121,7 @@ namespace Backend.Migrations
 
                             t.HasCheckConstraint("CK_EquityResearchNotes_Provenance", "\"SnapshotSha256\" ~ '^[0-9a-f]{64}$' AND NULLIF(BTRIM(\"SnapshotId\"), '') IS NOT NULL AND NULLIF(BTRIM(\"SkillVersion\"), '') IS NOT NULL AND NULLIF(BTRIM(\"MethodVersion\"), '') IS NOT NULL");
 
-                            t.HasCheckConstraint("CK_EquityResearchNotes_Scope", "\"Symbol\" IN ('MBB','BID') AND \"Mode\" IN ('forward','retrospective') AND \"HorizonSessions\" > 0");
+                            t.HasCheckConstraint("CK_EquityResearchNotes_Scope", "\"Mode\" IN ('forward','retrospective') AND \"HorizonSessions\" > 0");
                         });
                 });
 

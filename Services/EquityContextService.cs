@@ -107,6 +107,23 @@ public sealed class EquityContextService
             Limitations());
     }
 
+    /// <summary>
+    /// Context of a TechnicalAnalysis symbol without Decision, for its research snapshot (VN30-TA): relative strength
+    /// as in <see cref="GetAsync"/>; corporate actions, events and fundamentals are Decision-only and stay unavailable.
+    /// </summary>
+    internal async Task<EquityContextResponse> TechnicalOnlyAsync(string symbol, CancellationToken ct = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var rs = await RelativeStrengthAsync(symbol, now.ToUnixTimeMilliseconds(), ct);
+        const string reason = EquityScope.NoDecisionCapability;
+        return new EquityContextResponse(
+            EquityContextResponse.Version, symbol, now.UtcDateTime, rs,
+            new EquityCorporateActionsSection(EquityContextStatuses.Unavailable, reason, []),
+            new EquityEventsSection(EquityContextStatuses.Unavailable, reason, []),
+            new EquityFundamentalsSection(EquityContextStatuses.Unavailable, reason, []),
+            [Limitations()[0], "Corporate actions, events and fundamentals are not served for symbols without the decision capability."]);
+    }
+
     /// <summary>The item's own date: ex-date, or the record date when that is earlier.</summary>
     internal static DateOnly ItemDate(EquityCorporateAction a) =>
         a.RecordDate is { } rd && rd < a.ExDate ? rd : a.ExDate;

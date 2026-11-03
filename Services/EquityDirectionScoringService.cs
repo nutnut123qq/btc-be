@@ -73,18 +73,18 @@ public sealed class EquityDirectionScoringService
         public bool? Hit { get; set; }
     }
 
-    private string RequireDecision(string symbol)
+    private string RequireTechnicalAnalysis(string symbol)
     {
         var instrument = _catalog.Get(symbol)
             ?? throw new ArgumentException($"Unknown symbol '{InstrumentCatalog.Canonicalize(symbol)}'.", nameof(symbol));
-        if (!EquityScope.Has(instrument, EquityCapability.Decision))
-            throw new ArgumentException($"Symbol '{instrument.Symbol}' does not support capability 'decision'.", nameof(symbol));
+        if (!EquityScope.Has(instrument, EquityCapability.TechnicalAnalysis))
+            throw new ArgumentException($"Symbol '{instrument.Symbol}' does not support capability 'technicalAnalysis'.", nameof(symbol));
         return instrument.Symbol;
     }
 
     public async Task<EquityDirectionScoresResponse> GetAsync(string symbol, int take = DefaultTake, CancellationToken ct = default)
     {
-        var sym = RequireDecision(symbol);
+        var sym = RequireTechnicalAnalysis(symbol);
         var now = _timeProvider.GetUtcNow();
         var nowMs = now.ToUnixTimeMilliseconds();
 

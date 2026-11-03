@@ -212,7 +212,7 @@ public class EquityDirectionScoringHttpTests
             Assert.Equal(status, r.StatusCode);
             Assert.Equal(code, (await Json(r)).GetProperty("code").GetString());
         }
-        await AssertError("/api/equities/VCB/research-notes/direction-scores", HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
+        await AssertError("/api/equities/VNINDEX/research-notes/direction-scores", HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
         await AssertError("/api/equities/NOPE/research-notes/direction-scores", HttpStatusCode.NotFound, "UNKNOWN_SYMBOL");
     }
 

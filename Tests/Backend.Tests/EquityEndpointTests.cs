@@ -91,7 +91,7 @@ public class EquityEndpointTests : IClassFixture<TestWebApplicationFactory>
             HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
         await AssertErrorAsync(await client.GetAsync("/api/equities/BTCUSDT/conditions?timeframe=1d"),
             HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
-        // Context-only equities/index: no decision, no TA.
+        // TA-only equities have no decision; the index has neither decision nor TA.
         await AssertErrorAsync(await Admin().GetAsync("/api/equities/VCB/observations?timeframe=1d"),
             HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
         await AssertErrorAsync(await client.GetAsync("/api/equities/VNINDEX/conditions?timeframe=1d"),
@@ -100,7 +100,7 @@ public class EquityEndpointTests : IClassFixture<TestWebApplicationFactory>
         var admin = Admin();
         var vcbDecision = await admin.GetAsync("/api/equities/VCB/decision");
         await AssertErrorAsync(vcbDecision, HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
-        await AssertErrorAsync(await admin.PostAsync("/api/equities/VCB/admin/recompute", null),
+        await AssertErrorAsync(await admin.PostAsync("/api/equities/VNINDEX/admin/recompute", null),
             HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
         await AssertErrorAsync(await admin.PostAsync("/api/equities/CTG/admin/observe?timeframe=1d", null),
             HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");

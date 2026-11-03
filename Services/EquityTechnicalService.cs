@@ -126,24 +126,18 @@ public sealed class EquityTechnicalService
         var relativeStrength = await _context.RelativeStrengthAsync(sym, nowMs, ct);
 
         // Note binding: the same snapshot POST research-notes rebuilds for requestedAsOf. Conditions above already
-        // filled the shared cache, so the snapshot's 1d conditions read is normally a cache hit.
+        // filled the shared cache, so the snapshot's 1d conditions read is normally a cache hit. Every
+        // TechnicalAnalysis symbol gets one (VN30-TA): research notes are TA-scoped, only probabilities need Decision.
         EquityResearchSnapshot? snapshot = null;
         string? bindingReason = null;
-        if (!hasDecision)
+        try
         {
-            bindingReason = "no-decision-capability";
+            snapshot = await _snapshots.BuildAsync(sym, asOf, ct);
         }
-        else
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            try
-            {
-                snapshot = await _snapshots.BuildAsync(sym, asOf, ct);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex, "Research snapshot for the note binding failed for {Symbol}", sym);
-                bindingReason = "snapshot-build-failed";
-            }
+            _logger.LogWarning(ex, "Research snapshot for the note binding failed for {Symbol}", sym);
+            bindingReason = "snapshot-build-failed";
         }
         EquityTechnicalNoteBindingDto? binding = null;
         if (snapshot is not null)
@@ -162,7 +156,7 @@ public sealed class EquityTechnicalService
         return new EquityTechnicalResponse(
             EquityTechnicalContracts.Version, sym, asOf.UtcDateTime, _timeProvider.GetUtcNow().UtcDateTime,
             instrument.PriceBasis, instrument.DataProvider, barsRequested, bars, entries,
-            baseRates, hasDecision ? null : "no-decision-capability",
+            baseRates, hasDecision ? null : EquityScope.NoDecisionCapability,
             relativeStrength, calendar, binding, binding is null ? bindingReason : null, scoring, limitations);
     }
 

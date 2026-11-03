@@ -521,8 +521,7 @@ public class EquityTechnicalEndpointTests(ITestOutputHelper output) : IDisposabl
         Assert.Equal(JsonValueKind.Null, bid1d.GetProperty("indicators").ValueKind);
         Assert.Equal("no-indicator-row", bid1d.GetProperty("indicatorsUnavailableReason").GetString());
 
-        // Scope errors exactly like the existing equity lane.
-        await AssertErrorAsync(await client.GetAsync("/api/equities/VCB/technical"), HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
+        // Scope errors exactly like the existing equity lane (every VN30 equity has TA since VN30-TA).
         await AssertErrorAsync(await client.GetAsync("/api/equities/VNINDEX/technical"), HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
         await AssertErrorAsync(await client.GetAsync("/api/equities/BTCUSDT/technical"), HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
         await AssertErrorAsync(await client.GetAsync("/api/equities/NOPE/technical"), HttpStatusCode.NotFound, "UNKNOWN_SYMBOL");
@@ -629,41 +628,122 @@ public class EquityTechnicalEndpointTests(ITestOutputHelper output) : IDisposabl
         var snapshotId = binding.GetProperty("snapshotId").GetString()!;
         Assert.StartsWith("snap/MBB/", snapshotId);
 
-        var admin = factory.CreateClient();
-        admin.DefaultRequestHeaders.Add("X-Admin-Key", TestWebApplicationFactory.AdminApiKey);
-        var note = new
-        {
-            mode = "forward",
-            requestedAsOf,
-            signalBarOpenTimeMs = binding.GetProperty("signalBarOpenTimeMs").GetInt64(),
-            horizonSessions = 20,
-            snapshotId,
-            snapshotSha256 = binding.GetProperty("snapshotSha256").GetString(),
-            skillVersion = "equity-technical-v1",
-            methodVersion = "eqtech-t-test",
-            direction = "sideways",
-            actionView = "none",
-            actionBasis = "insufficient-input",
-            body = new
-            {
-                schemaVersion = "equity-research-note-v1",
-                thesis = "Technical-only test note.",
-                evidence = Array.Empty<object>(),
-                counterEvidence = Array.Empty<object>(),
-                scenarios = Array.Empty<object>(),
-                limitations = Array.Empty<string>(),
-                missingData = Array.Empty<string>(),
-                outcomeCheck = new { how = "direction-score-v1", dueAfterSessions = 20 },
-                probability = (object?)null,
-            },
-        };
-        var created = await admin.PostAsJsonAsync("/api/equities/MBB/research-notes", note, Web);
+        var admin = Admin(factory);
+        var created = await admin.PostAsJsonAsync("/api/equities/MBB/research-notes", ForwardNote(binding), Web);
         var createdBody = await created.Content.ReadAsStringAsync();
         Assert.True(created.StatusCode == HttpStatusCode.Created, $"{(int)created.StatusCode} {createdBody}");
         var stored = JsonDocument.Parse(createdBody).RootElement;
         Assert.Equal(snapshotId, stored.GetProperty("snapshotId").GetString());
         Assert.Equal("forward", stored.GetProperty("mode").GetString());
         Assert.Empty(stored.GetProperty("forecastIds").EnumerateArray());
+    }
+
+    private static HttpClient Admin(Factory factory)
+    {
+        var admin = factory.CreateClient();
+        admin.DefaultRequestHeaders.Add("X-Admin-Key", TestWebApplicationFactory.AdminApiKey);
+        return admin;
+    }
+
+    /// <summary>Forward H=20 note citing a payload's noteBinding (no probability unless given).</summary>
+    private static object ForwardNote(JsonElement binding, object? probability = null, string mode = "forward") => new
+    {
+        mode,
+        requestedAsOf = binding.GetProperty("requestedAsOf").GetString(),
+        signalBarOpenTimeMs = binding.GetProperty("signalBarOpenTimeMs").GetInt64(),
+        horizonSessions = 20,
+        snapshotId = binding.GetProperty("snapshotId").GetString(),
+        snapshotSha256 = binding.GetProperty("snapshotSha256").GetString(),
+        skillVersion = "equity-technical-v1",
+        methodVersion = "eqtech-t-test",
+        direction = "sideways",
+        actionView = "none",
+        actionBasis = "insufficient-input",
+        body = new
+        {
+            schemaVersion = "equity-research-note-v1",
+            thesis = "Technical-only test note.",
+            evidence = Array.Empty<object>(),
+            counterEvidence = Array.Empty<object>(),
+            scenarios = Array.Empty<object>(),
+            limitations = Array.Empty<string>(),
+            missingData = Array.Empty<string>(),
+            outcomeCheck = new { how = "direction-score-v1", dueAfterSessions = 20 },
+            probability,
+        },
+    };
+
+    // --- (g) VN30-TA: a TechnicalAnalysis-only symbol records, lists and scores notes; Decision routes stay closed ----
+
+    [Fact]
+    public async Task TaOnlySymbol_GetsABinding_RecordsListsAndScoresANote_DecisionRoutesStayClosed()
+    {
+        var fx = await CreateAsync(AfterClose);
+        await using var factory = fx.Factory;
+        // FPT (VN30-DATA, not a reference peer, 1d only): bars on MBB's sessions, no indicators, no base-rates artifact.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            for (var i = 0; i < fx.Mbb1d.Length; i++)
+                db.InstrumentCandles.Add(Candle(fx.Calendar, "FPT", "1d", fx.Mbb1d[i], 90_000m + Px(i)));
+            await db.SaveChangesAsync();
+        }
+        var signal = fx.Mbb1d[^1];
+        factory.Ai.Latest["FPT:1d"] = (signal, fx.Calendar.SessionCloseUtcMs("1d", signal));
+        var client = factory.CreateClient();
+        var admin = Admin(factory);
+
+        var (root, _) = await OkJsonAsync(await client.GetAsync("/api/equities/FPT/technical"));
+        Assert.Equal(new[] { "1d" }, root.GetProperty("timeframes").EnumerateArray()
+            .Select(t => t.GetProperty("timeframe").GetString()!).ToArray());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("baseRates").ValueKind);
+        Assert.Equal("no-decision-capability", root.GetProperty("baseRatesUnavailableReason").GetString());
+        Assert.Equal("ok", Tf(root, "1d").GetProperty("conditions").GetProperty("status").GetString());
+        var calendar = root.GetProperty("calendar");
+        Assert.True(calendar.GetProperty("forwardNoteOpen").GetBoolean(), calendar.GetRawText());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("noteBindingUnavailableReason").ValueKind);
+        var binding = root.GetProperty("noteBinding");
+        Assert.Equal(signal, binding.GetProperty("signalBarOpenTimeMs").GetInt64());
+        Assert.StartsWith("snap/FPT/", binding.GetProperty("snapshotId").GetString());
+        Assert.Equal("/api/equities/FPT/research-notes/direction-scores",
+            root.GetProperty("scoring").GetProperty("scoresEndpoint").GetString());
+
+        // A probability needs Decision: rejected before anything is stored (CK_EquityForecastRecords_Scope stays MBB/BID).
+        var probability = new
+        {
+            configId = "tb-p5-s4-h20", probTargetFirst = 0.35, probStopFirst = 0.4,
+            method = "base-rate-adjusted-judgement", methodRef = "ai/skills/equity-technical/SKILL.md",
+        };
+        await AssertErrorAsync(await admin.PostAsJsonAsync("/api/equities/FPT/research-notes", ForwardNote(binding, probability), Web),
+            HttpStatusCode.BadRequest, "PROBABILITY_UNSUPPORTED");
+        await AssertErrorAsync(await admin.PostAsJsonAsync("/api/equities/FPT/research-notes",
+            ForwardNote(binding, probability, mode: "retrospective"), Web), HttpStatusCode.BadRequest, "PROBABILITY_UNSUPPORTED");
+
+        var created = await admin.PostAsJsonAsync("/api/equities/FPT/research-notes", ForwardNote(binding), Web);
+        var createdBody = await created.Content.ReadAsStringAsync();
+        Assert.True(created.StatusCode == HttpStatusCode.Created, $"{(int)created.StatusCode} {createdBody}");
+        var note = JsonDocument.Parse(createdBody).RootElement;
+        var noteId = note.GetProperty("noteId").GetString()!;
+        Assert.StartsWith($"session/FPT/{signal}/", noteId);
+        Assert.Empty(note.GetProperty("forecastIds").EnumerateArray());
+
+        var (list, _) = await OkJsonAsync(await admin.GetAsync("/api/equities/FPT/research-notes"));
+        Assert.Equal(noteId, list.GetProperty("items").EnumerateArray().Single().GetProperty("noteId").GetString());
+        var (scores, _) = await OkJsonAsync(await admin.GetAsync("/api/equities/FPT/research-notes/direction-scores"));
+        Assert.Equal(("FPT", 1), (scores.GetProperty("symbol").GetString(), scores.GetProperty("totalNotes").GetInt32()));
+        var item = scores.GetProperty("items").EnumerateArray().Single();
+        Assert.Equal((noteId, "pending"), (item.GetProperty("noteId").GetString(), item.GetProperty("status").GetString()));
+        await using (var check = factory.Services.CreateAsyncScope())
+            Assert.Empty(check.ServiceProvider.GetRequiredService<AppDbContext>().EquityForecastRecords);
+
+        // Everything Decision-only keeps its gate.
+        foreach (var url in new[]
+        {
+            "/api/equities/FPT/research-readiness", "/api/equities/FPT/research-snapshot", "/api/equities/FPT/context",
+            "/api/equities/FPT/base-rates", "/api/equities/FPT/position", "/api/equities/FPT/decision",
+            "/api/equities/FPT/source-documents", "/api/equities/FPT/forecast-journal",
+        })
+            await AssertErrorAsync(await admin.GetAsync(url), HttpStatusCode.BadRequest, "UNSUPPORTED_CAPABILITY");
     }
 
     // --- (f) a conditions failure only marks its own entry --------------------------------------------------

@@ -68,7 +68,7 @@ public sealed class InstrumentCatalog
                 Liquidation: false, OrderBook: false, Execution: false, PaperTrading: false,
                 Ingestion: true, Decision: false)),
         // VN30-DATA: the rest of the VN30 basket in effect from 2026-08-03 (with MBB, BID, VCB, CTG above).
-        // Data-only: 1d candles, no technical artifacts, no decision lane, not reference peers
+        // 1d candles + technical analysis (VN30-TA), no decision lane, not reference peers
         // (EquityScope.IsReferencePeer). Listed after the index so the worker still serves MBB/BID first.
         Equity("ACB", "ACB (ACB)", ["1d"], decision: false),
         Equity("BSR", "BSR (Binh Son Refining)", ["1d"], decision: false),
@@ -101,7 +101,8 @@ public sealed class InstrumentCatalog
     /// <summary>
     /// HOSE equity on the VCI adjusted series. Enabled stays false: equities never pass
     /// the BTC/crypto production-traffic gate; the equity lane checks capabilities instead.
-    /// Decision instruments (MBB, BID) also carry TechnicalAnalysis; context-only peers do not.
+    /// Every equity here is a VN30 constituent and carries TechnicalAnalysis (VN30-TA: technical payload,
+    /// research notes, direction scores); only MBB and BID carry Decision.
     /// </summary>
     private static InstrumentDescriptor Equity(string symbol, string label, string[] timeframes, bool decision) => new(
         Symbol: symbol,
@@ -118,7 +119,7 @@ public sealed class InstrumentCatalog
         DefaultTimeframe: "1d",
         Enabled: false,
         Capabilities: new(
-            TechnicalAnalysis: decision, News: false, Sentiment: false, Futures: false,
+            TechnicalAnalysis: true, News: false, Sentiment: false, Futures: false,
             Liquidation: false, OrderBook: false, Execution: false, PaperTrading: false,
             Ingestion: true, Decision: decision));
 

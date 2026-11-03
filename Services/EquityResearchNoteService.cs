@@ -22,6 +22,8 @@ namespace Backend.Services;
 /// <item>probability is accepted only with a non-empty method and methodRef; a forward note with a
 ///   probability adds one <c>session-research</c> EquityForecastRecords row (Validated = false) that
 ///   the outcome resolver labels like quant/LLM rows.</item>
+/// <item>scope: every TechnicalAnalysis symbol (VN30-TA); a probability needs Decision too
+///   (400 PROBABILITY_UNSUPPORTED), since CK_EquityForecastRecords_Scope only admits MBB/BID.</item>
 /// </list>
 /// </summary>
 public sealed class EquityResearchNoteService
@@ -64,18 +66,18 @@ public sealed class EquityResearchNoteService
         _catalog = catalog ?? InstrumentCatalog.Default;
     }
 
-    private string RequireDecision(string symbol)
+    private InstrumentDescriptor RequireTechnicalAnalysis(string symbol)
     {
         var instrument = _catalog.Get(symbol)
             ?? throw new ArgumentException($"Unknown symbol '{InstrumentCatalog.Canonicalize(symbol)}'.", nameof(symbol));
-        if (!EquityScope.Has(instrument, EquityCapability.Decision))
-            throw new ArgumentException($"Symbol '{instrument.Symbol}' does not support capability 'decision'.", nameof(symbol));
-        return instrument.Symbol;
+        if (!EquityScope.Has(instrument, EquityCapability.TechnicalAnalysis))
+            throw new ArgumentException($"Symbol '{instrument.Symbol}' does not support capability 'technicalAnalysis'.", nameof(symbol));
+        return instrument;
     }
 
     public async Task<EquityResearchNoteListResponse> ListAsync(string symbol, int take, CancellationToken ct = default)
     {
-        var sym = RequireDecision(symbol);
+        var sym = RequireTechnicalAnalysis(symbol).Symbol;
         var rows = await _db.EquityResearchNotes.AsNoTracking().Where(n => n.Symbol == sym)
             .OrderByDescending(n => n.SignalBarOpenTimeMs).ThenByDescending(n => n.AvailableTimeMs).ThenBy(n => n.NoteId)
             .Take(Math.Clamp(take, 1, 200)).ToListAsync(ct);
@@ -108,7 +110,8 @@ public sealed class EquityResearchNoteService
 
     public async Task<WriteResult> RecordAsync(string symbol, EquityResearchNoteRequest? request, CancellationToken ct = default)
     {
-        var sym = RequireDecision(symbol);
+        var instrument = RequireTechnicalAnalysis(symbol);
+        var sym = instrument.Symbol;
         if (request is null) return Invalid("Request body is required.");
         var now = _timeProvider.GetUtcNow();
         var nowMs = now.ToUnixTimeMilliseconds();
@@ -134,6 +137,9 @@ public sealed class EquityResearchNoteService
         if (probabilityError is not null)
             return new WriteResult(Outcome.ProbabilityMethodRequired, "PROBABILITY_METHOD_REQUIRED", probabilityError, null);
         if (bodyError is not null) return Invalid(bodyError);
+        if (probability is not null && !EquityScope.Has(instrument, EquityCapability.Decision))
+            return new WriteResult(Outcome.Invalid, "PROBABILITY_UNSUPPORTED",
+                $"{sym} has no decision capability: body.probability must be null (record a direction only).", null);
         EquityBarrierConfigs.Config? config = null;
         if (probability is not null)
         {

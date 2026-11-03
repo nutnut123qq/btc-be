@@ -10,7 +10,8 @@ namespace Backend.Controllers;
 /// <list type="bullet">
 /// <item>GET research-readiness / research-snapshot?asOf= — public, market-only (no position/cash/lots);</item>
 /// <item>GET source-documents — public metadata; POST admin/source-documents — AdminGuard;</item>
-/// <item>POST / GET research-notes — AdminGuard (actionView can reveal holdings);</item>
+/// <item>POST / GET research-notes — AdminGuard (actionView can reveal holdings); these two also serve every
+///   TechnicalAnalysis equity (VN30-TA);</item>
 /// <item>v3 document pipeline: POST admin/documents/pipeline (+ /{runId}/cancel) — AdminGuard; GET
 ///   documents/pipeline-runs, fundamentals/coverage, financial-facts — public, market-only.</item>
 /// </list>
@@ -47,9 +48,10 @@ public sealed class EquityResearchController : ControllerBase
         _catalog = catalog ?? InstrumentCatalog.Default;
     }
 
-    private bool TryScope(string symbol, out string sym, out ObjectResult? error)
+    private bool TryScope(string symbol, out string sym, out ObjectResult? error,
+        EquityCapability capability = EquityCapability.Decision)
     {
-        var scope = EquityScope.Resolve(_catalog, symbol, EquityCapability.Decision);
+        var scope = EquityScope.Resolve(_catalog, symbol, capability);
         sym = scope.Instrument?.Symbol ?? "";
         error = scope.Ok ? null : EquityLaneHttp.ScopeError(this, scope);
         return scope.Ok;
@@ -147,7 +149,7 @@ public sealed class EquityResearchController : ControllerBase
     public async Task<IActionResult> RecordNote(
         string symbol, [FromBody] EquityResearchNoteRequest? body, CancellationToken cancellationToken = default)
     {
-        if (!TryScope(symbol, out var sym, out var error)) return error!;
+        if (!TryScope(symbol, out var sym, out var error, EquityCapability.TechnicalAnalysis)) return error!;
         var result = await _notes.RecordAsync(sym, body, cancellationToken);
         return result.Outcome switch
         {
@@ -171,7 +173,7 @@ public sealed class EquityResearchController : ControllerBase
     public async Task<ActionResult<EquityResearchNoteListResponse>> ListNotes(
         string symbol, [FromQuery] int take = 50, CancellationToken cancellationToken = default)
     {
-        if (!TryScope(symbol, out var sym, out var error)) return error!;
+        if (!TryScope(symbol, out var sym, out var error, EquityCapability.TechnicalAnalysis)) return error!;
         return Ok(await _notes.ListAsync(sym, take, cancellationToken));
     }
 
