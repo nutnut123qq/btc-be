@@ -11,6 +11,13 @@ public static class MarketCalendarVerification
 
     /// <summary>Carried over from the old config list without an official document; still treated as closed.</summary>
     public const string UnverifiedLegacy = "unverified-legacy";
+
+    /// <summary>
+    /// Derived from an official Government / labour-law holiday source before HOSE published its own schedule for that
+    /// year; treated as closed, needs an http(s) source, and must become <see cref="Verified"/> (or be corrected) once
+    /// the HOSE notice is out. Counted as not verified everywhere.
+    /// </summary>
+    public const string Provisional = "provisional";
 }
 
 /// <summary>Kinds of a canonical non-trading day.</summary>
@@ -167,12 +174,13 @@ public sealed class MarketCalendarSource
             switch (day.Verification)
             {
                 case MarketCalendarVerification.Verified:
+                case MarketCalendarVerification.Provisional:
                     if (string.IsNullOrWhiteSpace(day.SourceUrl)
                         || !Uri.TryCreate(day.SourceUrl, UriKind.Absolute, out var uri)
                         || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
                         || string.IsNullOrWhiteSpace(day.SourceTitle))
                         throw new InvalidDataException(
-                            $"Verified market calendar day {date:yyyy-MM-dd} needs an http(s) sourceUrl and a sourceTitle.");
+                            $"{day.Verification} market calendar day {date:yyyy-MM-dd} needs an http(s) sourceUrl and a sourceTitle.");
                     break;
                 case MarketCalendarVerification.UnverifiedLegacy:
                     break;

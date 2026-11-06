@@ -1,15 +1,16 @@
 {
   "schemaVersion": "vn-hose-calendar-v1",
   "venue": "HOSE",
-  "calendarVersion": "vn-hose-2026-10-18",
+  "calendarVersion": "vn-hose-2026-11-06",
   "coverage": {
     "fromDate": "2020-01-01",
-    "toDate": "2026-12-31"
+    "toDate": "2027-12-31"
   },
   "notes": [
     "Chỉ 'verified' khi đã đọc văn bản gốc của HOSE (staticfile.hsx.vn). 2021–2023: tin HOSE tồn tại trên hsx.vn nhưng tệp đính kèm không còn được phục vụ ⇒ 'unverified-legacy'.",
     "Ngày nghỉ cuối tuần và ngày làm bù thứ Bảy không liệt kê (thứ Bảy/Chủ nhật vốn không giao dịch).",
-    "Đã bỏ khỏi cấu hình cũ: 2021-12-31 và 2025-02-03 (đều có nến của cả 5 mã; 2025-02-03 trái Thông báo 2079/TB-SGDHCM)."
+    "Đã bỏ khỏi cấu hình cũ: 2021-12-31 và 2025-02-03 (đều có nến của cả 5 mã; 2025-02-03 trái Thông báo 2079/TB-SGDHCM).",
+    "2027: 'provisional' = suy ra từ lịch nghỉ của Chính phủ (Thông báo 11483/TB-BNV) và Bộ luật Lao động trước khi HOSE công bố lịch giao dịch 2027 (HOSE công bố lịch 2026 ngày 09/12/2025). Tiền lệ: HOSE nghỉ đúng ngày nghỉ của khu vực nhà nước và không giao dịch thứ Bảy làm bù. Đổi sang 'verified' (hoặc sửa) khi có thông báo của HOSE."
   ],
   "days": [
     {
@@ -651,6 +652,94 @@
       "sourceUrl": "https://staticfile.hsx.vn/Uploads/UploadDocuments/2437411/20251209_Thong%20bao%20ve%20lich%20nghi%202026%20toan%20thi%20truong.pdf",
       "sourceTitle": "HOSE Thông báo 2294/TB-SGDHCM ngày 09/12/2025 về việc công bố lịch nghỉ giao dịch trong năm 2026",
       "verification": "verified"
+    },
+    {
+      "date": "2027-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://thuvienphapluat.vn/phap-luat-doanh-nghiep/bai-viet/tong-hop-cac-ngay-nghi-le-trong-nam-2027-chi-tiet-22907.html",
+      "sourceTitle": "Bộ luật Lao động 2019 Điều 112 (ngày lễ, nghỉ bù khi trùng ngày nghỉ hằng tuần), tổng hợp ngày nghỉ lễ 2027; HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-02-04",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://luatvietnam.vn/linh-vuc-khac/lich-nghi-tet-nguyen-dan-2027-duoc-chot-the-nao-tai-thong-bao-11483-tb-bnv-883-113717-article.html",
+      "sourceTitle": "Thông báo 11483/TB-BNV ngày 09/10/2026 của Bộ Nội vụ về lịch nghỉ Tết Âm lịch và Quốc khánh 2027 (khu vực nhà nước); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-02-05",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://luatvietnam.vn/linh-vuc-khac/lich-nghi-tet-nguyen-dan-2027-duoc-chot-the-nao-tai-thong-bao-11483-tb-bnv-883-113717-article.html",
+      "sourceTitle": "Thông báo 11483/TB-BNV ngày 09/10/2026 của Bộ Nội vụ về lịch nghỉ Tết Âm lịch và Quốc khánh 2027 (khu vực nhà nước); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-02-08",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://luatvietnam.vn/linh-vuc-khac/lich-nghi-tet-nguyen-dan-2027-duoc-chot-the-nao-tai-thong-bao-11483-tb-bnv-883-113717-article.html",
+      "sourceTitle": "Thông báo 11483/TB-BNV ngày 09/10/2026 của Bộ Nội vụ về lịch nghỉ Tết Âm lịch và Quốc khánh 2027 (khu vực nhà nước); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-02-09",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://luatvietnam.vn/linh-vuc-khac/lich-nghi-tet-nguyen-dan-2027-duoc-chot-the-nao-tai-thong-bao-11483-tb-bnv-883-113717-article.html",
+      "sourceTitle": "Thông báo 11483/TB-BNV ngày 09/10/2026 của Bộ Nội vụ về lịch nghỉ Tết Âm lịch và Quốc khánh 2027 (khu vực nhà nước); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-02-10",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://luatvietnam.vn/linh-vuc-khac/lich-nghi-tet-nguyen-dan-2027-duoc-chot-the-nao-tai-thong-bao-11483-tb-bnv-883-113717-article.html",
+      "sourceTitle": "Thông báo 11483/TB-BNV ngày 09/10/2026 của Bộ Nội vụ về lịch nghỉ Tết Âm lịch và Quốc khánh 2027 (khu vực nhà nước); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-04-16",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://thuvienphapluat.vn/hoi-dap-phap-luat/lich-nghi-gio-to-hung-vuong-2027-ngay-bao-nhieu-138105902.html",
+      "sourceTitle": "Giỗ Tổ Hùng Vương 10/3 Âm lịch năm 2027 = thứ Sáu 16/04/2027 (Bộ luật Lao động 2019 Điều 112); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4",
+      "sourceUrl": "https://thuvienphapluat.vn/phap-luat-doanh-nghiep/bai-viet/tong-hop-cac-ngay-nghi-le-trong-nam-2027-chi-tiet-22907.html",
+      "sourceTitle": "Bộ luật Lao động 2019 Điều 112 (ngày lễ, nghỉ bù khi trùng ngày nghỉ hằng tuần), tổng hợp ngày nghỉ lễ 2027; HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-05-03",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động (1/5 trùng thứ Bảy, nghỉ bù theo Luật Lao động)",
+      "sourceUrl": "https://thuvienphapluat.vn/phap-luat-doanh-nghiep/bai-viet/tong-hop-cac-ngay-nghi-le-trong-nam-2027-chi-tiet-22907.html",
+      "sourceTitle": "Bộ luật Lao động 2019 Điều 112 (ngày lễ, nghỉ bù khi trùng ngày nghỉ hằng tuần), tổng hợp ngày nghỉ lễ 2027; HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://luatvietnam.vn/linh-vuc-khac/lich-nghi-tet-nguyen-dan-2027-duoc-chot-the-nao-tai-thong-bao-11483-tb-bnv-883-113717-article.html",
+      "sourceTitle": "Thông báo 11483/TB-BNV ngày 09/10/2026 của Bộ Nội vụ về lịch nghỉ Tết Âm lịch và Quốc khánh 2027 (khu vực nhà nước); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
+    },
+    {
+      "date": "2027-09-03",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://luatvietnam.vn/linh-vuc-khac/lich-nghi-tet-nguyen-dan-2027-duoc-chot-the-nao-tai-thong-bao-11483-tb-bnv-883-113717-article.html",
+      "sourceTitle": "Thông báo 11483/TB-BNV ngày 09/10/2026 của Bộ Nội vụ về lịch nghỉ Tết Âm lịch và Quốc khánh 2027 (khu vực nhà nước); HOSE chưa công bố lịch 2027",
+      "verification": "provisional"
     }
   ]
 }

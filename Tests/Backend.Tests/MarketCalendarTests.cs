@@ -83,9 +83,30 @@ public class MarketCalendarTests : IClassFixture<TestWebApplicationFactory>
     [InlineData("""{"schemaVersion":"vn-hose-calendar-v1","venue":"HOSE","coverage":{"fromDate":"2026-01-01","toDate":"2026-12-31"},"days":[{"date":"2026-09-01","kind":"market-holiday","reason":"x","verification":"unverified-legacy"},{"date":"2026-09-01","kind":"market-holiday","reason":"y","verification":"unverified-legacy"}]}""")]
     [InlineData("""{"schemaVersion":"vn-hose-calendar-v1","venue":"HOSE","coverage":{"fromDate":"2026-01-01","toDate":"2026-12-31"},"days":[{"date":"2026-09-01","kind":"holiday","reason":"x","verification":"unverified-legacy"}]}""")]
     [InlineData("""{"schemaVersion":"vn-hose-calendar-v1","venue":"HOSE","coverage":{"fromDate":"2026-01-01","toDate":"2026-12-31"},"days":[{"date":"2027-01-01","kind":"market-holiday","reason":"x","verification":"unverified-legacy"}]}""")]
+    [InlineData("""{"schemaVersion":"vn-hose-calendar-v1","venue":"HOSE","coverage":{"fromDate":"2026-01-01","toDate":"2026-12-31"},"days":[{"date":"2026-09-01","kind":"market-holiday","reason":"x","verification":"provisional"}]}""")]
     [InlineData("not json")]
     public void Parse_FailsClosed_OnInvalidDocument(string json) =>
         Assert.Throws<InvalidDataException>(() => MarketCalendarSource.Parse(json));
+
+    [Fact]
+    public void ProvisionalDays_NeedASource_AndAreClosedButNotVerified()
+    {
+        var src = MarketCalendarSource.Parse("""{"schemaVersion":"vn-hose-calendar-v1","venue":"HOSE","coverage":{"fromDate":"2027-01-01","toDate":"2027-12-31"},"days":[{"date":"2027-02-04","kind":"market-holiday","reason":"Tết Âm lịch","sourceUrl":"https://example.org/notice","sourceTitle":"Government notice","verification":"provisional"}]}""");
+        var day = Assert.Single(src.Days);
+        Assert.Equal(MarketCalendarVerification.Provisional, day.Verification);
+        Assert.Equal((0, 0), (src.VerifiedCount, src.UnverifiedLegacyCount));
+
+        // The checked-in file covers 2027 with provisional days only (HOSE has not published its 2027 schedule).
+        var cal = VietnamMarketCalendar.CreateDefault();
+        Assert.Equal(new DateOnly(2027, 12, 31), cal.CoverageTo);
+        var y2027 = cal.Source!.Days.Where(d => d.Date.Year == 2027).ToArray();
+        Assert.Equal(11, y2027.Length);
+        Assert.All(y2027, d => Assert.Equal(MarketCalendarVerification.Provisional, d.Verification));
+        Assert.False(cal.IsTradingDay(D("2027-02-08")));
+        Assert.False(cal.IsTradingDay(D("2027-05-03")));
+        Assert.True(cal.IsTradingDay(D("2027-02-11")));
+        Assert.True(cal.IsUnverifiedNonTradingDate(D("2027-09-02")));
+    }
 
     [Fact]
     public void LoadFile_MissingFile_Throws() =>

@@ -471,7 +471,7 @@ public class AppDbContext : DbContext
                 t.HasCheckConstraint("CK_MarketCalendarDays_Kind",
                     "\"Kind\" IN ('market-holiday','market-closure')");
                 t.HasCheckConstraint("CK_MarketCalendarDays_Verification",
-                    "(\"Verification\" = 'verified' AND \"SourceUrl\" ~ '^https?://') OR \"Verification\" = 'unverified-legacy'");
+                    "(\"Verification\" IN ('verified','provisional') AND \"SourceUrl\" ~ '^https?://') OR \"Verification\" = 'unverified-legacy'");
             });
         });
 

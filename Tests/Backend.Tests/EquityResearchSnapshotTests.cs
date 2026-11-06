@@ -630,10 +630,12 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(EquityReadinessStatuses.NotReady, EquityResearchSnapshotService.Readiness(s).Purposes["technical"].Status);
 
         // The in-memory canonical calendar fails closed on its own coverage too (no MarketCalendarDays row needed).
+        // The checked-in file covers 2027 (provisional), so its boundary is 2027-12-31.
         var memDb = NewDb(nameof(Freshness_AsOfBeyondCalendarCoverage_FailsClosed) + "-mem");
-        await SeedAsync(memDb, 60, new DateOnly(2026, 12, 31));
+        await SeedAsync(memDb, 60, new DateOnly(2027, 12, 31));
         var canonical = VietnamMarketCalendar.FromSource(MarketCalendarSource.Default);
-        var mem = await Build(memDb, asOf, canonical).Snapshots.BuildAsync("BID", asOf);
+        var beyondCanonical = Local(2028, 1, 5, 10, 0);
+        var mem = await Build(memDb, beyondCanonical, canonical).Snapshots.BuildAsync("BID", beyondCanonical);
         Assert.Null(mem.LatestExpectedOpenTimeMsAtAsOf);
         Assert.Contains("not evaluable", FreshCheck(mem).Detail);
         Assert.Equal("fail", FreshCheck(mem).Status);
