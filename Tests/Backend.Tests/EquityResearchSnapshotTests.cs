@@ -956,11 +956,18 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(journal.Items, i => i.Source == "session-research" && i.ForecastId == forecast.ForecastId);
         var next = Cal.EnumerateTradingDates(new DateOnly(2026, 10, 15), new DateOnly(2026, 10, 30)).ToArray();
         db.InstrumentCandles.Add(Bar("BID", next[0], 40_300m));
-        var spike = Bar("BID", next[1], 40_300m);
+        // T+2: the spike must land on the first sellable session (entry + 2); one on entry + 1 is ignored.
+        var early = Bar("BID", next[1], 40_300m);
+        early.High = 50_000m;
+        db.InstrumentCandles.Add(early);
+        await db.SaveChangesAsync();
+        rig.Clock.Now = Local(2026, 10, 16, 16, 0);
+        Assert.Equal(0, await rig.Journal.ResolveOutcomesAsync("BID"));
+        var spike = Bar("BID", next[2], 40_300m);
         spike.High = 50_000m;
         db.InstrumentCandles.Add(spike);
         await db.SaveChangesAsync();
-        rig.Clock.Now = Local(2026, 10, 16, 16, 0);
+        rig.Clock.Now = Local(2026, 10, 19, 16, 0);
         Assert.Equal(1, await rig.Journal.ResolveOutcomesAsync("BID"));
         Assert.Equal("target-first", (await db.EquityForecastRecords.SingleAsync()).OutcomeLabel);
     }

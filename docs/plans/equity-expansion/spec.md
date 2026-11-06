@@ -152,6 +152,20 @@ Options `EquityIngestion` (mặc định **Enabled=false**, không bật trên p
   (else `artifact-stale-asof`). Thiếu artifact ⇒ `unavailable` + `artifact-missing`, **không fallback mã khác**.
   `decisionUse` chỉ non-null khi gatePassed ∧ fresh ∧ fingerprint khớp.
 
+### 5.1 Sửa đổi v2 — `equity-base-rates-protocol-v2` (2026-11-06): quy tắc T+2
+
+- Lỗi của v1: barrier được duyệt từ chính phiên entry, nên một nhãn có thể cắt lỗ/chốt lời ngay trong phiên mua hoặc
+  phiên kế tiếp. Luật HOSE (T+2, `vn_execution_model` `settlement_trading_days = 2`) không cho bán cổ phiếu trước phiên
+  thứ 2 sau phiên mua.
+- v2: vẫn mua ở open phiên entry, nhưng barrier chỉ được duyệt trên các bar **entry+2..entry+H−1**. Chạm target/stop ở
+  phiên entry và entry+1 bị bỏ qua (không hành động được). Nếu open của entry+2 đã vượt barrier thì áp dụng luật gap như cũ
+  (stop: exit tại open; target: exit tại target). Nến ngày không cho biết cổ phiếu về tài khoản lúc trưa entry+2, nên
+  phiên đó được coi là bán được cả phiên. H phải > 2.
+- Mọi thứ khác của §5 giữ nguyên (configs, features, kNN, walk-forward, gate). Python `label_barriers` và C#
+  `EquityBarrierLabeler` (resolver của journal) cùng đổi; artifact ghi `protocol.version = equity-base-rates-protocol-v2`,
+  `protocol.amendedAt`, `protocol.earliestExit`. Kết quả v1 (gate trượt 4/4) không còn so sánh trực tiếp được với v2;
+  v2 là một lần thử mới, phải ghi vào trial registry, không phải lần chạy lại để "cứu" v1.
+
 ## 6. Context (P2) — `equity-context-v1`
 
 `{contractVersion, symbol, generatedAtUtc, relativeStrength, corporateActions, events, fundamentals, limitations[]}`; mỗi phần

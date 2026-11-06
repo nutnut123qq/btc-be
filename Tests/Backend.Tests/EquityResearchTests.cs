@@ -40,45 +40,73 @@ public class EquityResearchTests : IDisposable
 
     private static EquityBarrierLabeler.Outcome? LabelFirst(params (double O, double H, double L, double C)[] ohlc)
     {
-        // Python cases are written with the signal bar at index 0; entry is bar 1.
+        // Python cases are written with the signal bar at index 0; entry is bar 1 (= C# index 0).
+        // Protocol v2 (T+2): the first sellable bar is entry + 2 (python index 3, C# index 2); H = 4.
         var bars = ohlc.Skip(1).Select((b, i) => new EquityBarrierLabeler.Bar(i, b.O, b.H, b.L, b.C)).ToArray();
-        return EquityBarrierLabeler.Label(bars, 0.05, 0.04, 3, Fee, Fee, Tax);
+        return EquityBarrierLabeler.Label(bars, 0.05, 0.04, 4, Fee, Fee, Tax);
     }
 
     private static readonly (double, double, double, double) Flat = (100.0, 100.5, 99.5, 100.0);
+    private static readonly (double, double, double, double) Entry = (100.0, 101.0, 99.0, 100.0);
 
     [Fact]
     public void Labeler_MatchesPythonReferenceCases()
     {
-        var target = LabelFirst(Flat, (100, 101, 99, 100), (100.5, 106, 99.5, 104), Flat, Flat)!;
-        Assert.Equal(("target-first", 1), (target.Label, target.ResolveIndex)); // python resolve_idx 2 = entry+1
+        var target = LabelFirst(Flat, Entry, Flat, (100.5, 106, 99.5, 104), Flat)!;
+        Assert.Equal(("target-first", 2), (target.Label, target.ResolveIndex)); // python resolve_idx 3 = entry+2
         Assert.Equal(Net(100, 105), target.NetReturn, 12);
         Assert.False(target.GapExit || target.DoubleTouch);
 
-        var stop = LabelFirst(Flat, (100, 101, 95.5, 97), Flat, Flat, Flat)!;
-        Assert.Equal(("stop-first", 0), (stop.Label, stop.ResolveIndex));
+        var stop = LabelFirst(Flat, Entry, Flat, (100, 101, 95.5, 97), Flat)!;
+        Assert.Equal(("stop-first", 2), (stop.Label, stop.ResolveIndex));
         Assert.Equal(Net(100, 96), stop.NetReturn, 12);
 
-        var gapDown = LabelFirst(Flat, (100, 101, 99, 100), (93, 99, 92, 98), Flat, Flat)!;
+        var gapDown = LabelFirst(Flat, Entry, Flat, (93, 99, 92, 98), Flat)!;
         Assert.True(gapDown is { Label: "stop-first", GapExit: true });
         Assert.Equal(Net(100, 93), gapDown.NetReturn, 12);
         Assert.True(gapDown.NetReturn < Net(100, 96));
 
-        var gapUp = LabelFirst(Flat, (100, 101, 99, 100), (107, 108, 106, 107), Flat, Flat)!;
+        var gapUp = LabelFirst(Flat, Entry, Flat, (107, 108, 106, 107), Flat)!;
         Assert.True(gapUp is { Label: "target-first", GapExit: true });
         Assert.Equal(Net(100, 105), gapUp.NetReturn, 12);
 
-        var both = LabelFirst(Flat, (100, 106, 95, 101), Flat, Flat, Flat)!;
+        var both = LabelFirst(Flat, Entry, Flat, (100, 106, 95, 101), Flat)!;
         Assert.True(both is { Label: "stop-first", DoubleTouch: true });
         Assert.Equal(Net(100, 96), both.NetReturn, 12);
 
-        var timeout = LabelFirst(Flat, (100, 101, 99, 100), (100, 102, 98, 101), (101, 103, 99, 102.5), Flat)!;
-        Assert.Equal(("timeout", 2), (timeout.Label, timeout.ResolveIndex)); // python resolve_idx 3
+        var timeout = LabelFirst(Flat, Entry, (100, 102, 98, 101), (101, 103, 99, 102), (102, 103, 100, 102.5))!;
+        Assert.Equal(("timeout", 3), (timeout.Label, timeout.ResolveIndex)); // python resolve_idx 4
         Assert.Equal(Net(100, 102.5), timeout.NetReturn, 12);
 
-        Assert.Null(LabelFirst(Flat, (100, 101, 99, 100), (100, 102, 98, 101))); // immature
-        Assert.Equal("target-first", LabelFirst(Flat, (100, 106, 99.5, 105))!.Label); // early touch matures
+        Assert.Null(LabelFirst(Flat, Entry, (100, 102, 98, 101), (101, 103, 99, 102))); // immature
+        Assert.Equal(("target-first", 2), (LabelFirst(Flat, Entry, Flat, (100, 106, 99.5, 105))!.Label,
+            LabelFirst(Flat, Entry, Flat, (100, 106, 99.5, 105))!.ResolveIndex)); // early touch matures
         Assert.Equal(0.9975 / 1.0015 - 1, EquityBarrierLabeler.NetReturn(100, 100, Fee, Fee, Tax), 12);
+    }
+
+    [Fact]
+    public void Labeler_TPlus2_IgnoresTouchesBeforeSharesAreSellable()
+    {
+        // Stop touched on the purchase session: v1 stopped out at index 0; T+2 forbids selling then.
+        var entryDayStop = LabelFirst(Flat, (100, 101, 95.5, 97), (97, 99, 96.5, 98), (98, 99, 97, 98.5), (98.5, 99, 98, 98.6))!;
+        Assert.Equal(("timeout", 3), (entryDayStop.Label, entryDayStop.ResolveIndex));
+        Assert.Equal(Net(100, 98.6), entryDayStop.NetReturn, 12);
+
+        // Target touched on the session after the purchase: still not sellable.
+        var nextDayTarget = LabelFirst(Flat, Entry, (100, 106, 99.5, 101), Flat, Flat)!;
+        Assert.Equal(("timeout", 3), (nextDayTarget.Label, nextDayTarget.ResolveIndex));
+
+        // Price already through the stop at the first sellable open exits at that open (gap rule).
+        var firstSellableGap = LabelFirst(Flat, (100, 101, 94, 95), (95, 96, 94, 95), (94, 95, 93, 94), Flat)!;
+        Assert.True(firstSellableGap is { Label: "stop-first", GapExit: true, ResolveIndex: 2 });
+        Assert.Equal(Net(100, 94), firstSellableGap.NetReturn, 12);
+
+        // A touch before T+2 with no sellable bar yet stays pending.
+        Assert.Null(LabelFirst(Flat, (100, 106, 99.5, 105), Flat));
+
+        // A horizon that ends before the shares are sellable is a protocol violation.
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            EquityBarrierLabeler.Label([new EquityBarrierLabeler.Bar(0, 100, 101, 99, 100)], 0.05, 0.04, 2, Fee, Fee, Tax));
     }
 
     // --- base-rates artifact verification ---------------------------------------------------
@@ -388,7 +416,8 @@ public class EquityResearchTests : IDisposable
         pending.TargetPct = 0.10;
         pending.StopPct = 0.06;
         db.EquityForecastRecords.AddRange(resolvable, pending);
-        // Entry 10-14 open 100; 10-15 high 106 ⇒ +5% target first (pending: +10% never touched, < 60 bars).
+        // Entry 10-14 open 100; 10-15 high 106 is not sellable (T+2); 10-16 opens at 105 ⇒ target-first at the
+        // first sellable session (pending: +10% never touched, < 60 bars).
         var px = new (double O, double H, double L, double C)[] { (100, 101, 99, 100), (101, 106, 100, 105), (105, 106, 104, 105), (105, 106, 104, 105), (105, 106, 104, 105) };
         var days = Cal.EnumerateTradingDates(new DateOnly(2026, 10, 14), new DateOnly(2026, 10, 20)).ToArray();
         for (var i = 0; i < px.Length; i++)
@@ -409,7 +438,7 @@ public class EquityResearchTests : IDisposable
         Assert.Equal("target-first", row.OutcomeLabel);
         Assert.Equal(VietnamMarketCalendar.DailyOpenUtcMs(days[0]), row.EntryBarOpenTimeMs);
         Assert.Equal(100m, row.EntryPrice);
-        Assert.Equal(VietnamMarketCalendar.DailyOpenUtcMs(days[1]), row.ResolvedBarOpenTimeMs);
+        Assert.Equal(VietnamMarketCalendar.DailyOpenUtcMs(days[2]), row.ResolvedBarOpenTimeMs);
         Assert.Equal(Net(100, 105), row.OutcomeReturnNet!.Value, 12);
         Assert.Null((await db.EquityForecastRecords.SingleAsync(f => f.Id == pending.Id)).OutcomeLabel);
 

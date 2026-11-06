@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Backend.Services;
 
-/// <summary>Frozen barrier configs of protocol equity-base-rates-protocol-v1 (spec §5). Fractions.</summary>
+/// <summary>Frozen barrier configs of protocol equity-base-rates-protocol-v2 (spec §5; v2 only adds the T+2 exit rule). Fractions.</summary>
 public static class EquityBarrierConfigs
 {
     public sealed record Config(string ConfigId, double TargetPct, double StopPct, int HorizonSessions);

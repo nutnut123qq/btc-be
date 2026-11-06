@@ -6,7 +6,9 @@ namespace Backend.Services;
 
 /// <summary>
 /// Barrier labelling identical to ai/equity_base_rates.py <c>label_barriers</c> + <c>Costs.net_return</c>
-/// (spec §5): entry = open of the first bar; target/stop from the entry price; per bar in order:
+/// (spec §5, protocol v2 §5.1): entry = open of the first bar; target/stop from the entry price; barriers
+/// are checked only from bar <c>settlementSessions</c> (T+2: shares bought at the entry open are not
+/// sellable on the entry session or the next one, so touches there are ignored); per bar in order:
 /// open ≤ stop ⇒ stop-first at open (gap); open ≥ target ⇒ target-first at target; high ≥ target ∧
 /// low ≤ stop ⇒ stop-first at stop (double touch); low ≤ stop ⇒ stop-first at stop; high ≥ target ⇒
 /// target-first at target; last horizon bar ⇒ timeout at close. Fewer than H bars without a touch ⇒
@@ -31,14 +33,18 @@ public static class EquityBarrierLabeler
     /// window is immature (no touch and fewer than H bars available).
     /// </summary>
     public static Outcome? Label(IReadOnlyList<Bar> bars, double targetPct, double stopPct, int horizon,
-        double buyFee, double sellFee, double sellTax)
+        double buyFee, double sellFee, double sellTax,
+        int settlementSessions = VietnamExecutionRules.DefaultSettlementTradingDays)
     {
-        if (bars.Count == 0 || horizon < 1) return null;
+        if (settlementSessions < 0 || horizon <= settlementSessions)
+            throw new ArgumentOutOfRangeException(nameof(horizon), $"Horizon {horizon} must exceed T+{settlementSessions} settlement.");
+        if (bars.Count == 0) return null;
         var entry = bars[0].Open;
         var target = entry * (1.0 + targetPct);
         var stop = entry * (1.0 - stopPct);
         var last = horizon - 1;
-        for (var j = 0; j <= Math.Min(last, bars.Count - 1); j++)
+        // T+2: nothing can be sold before bar settlementSessions; earlier touches are not actionable.
+        for (var j = settlementSessions; j <= Math.Min(last, bars.Count - 1); j++)
         {
             var (o, h, lo) = (bars[j].Open, bars[j].High, bars[j].Low);
             string? label = null;
@@ -251,7 +257,8 @@ public sealed class EquityForecastJournalService
             var window = bars.Skip(start).Take(f.HorizonSessions)
                 .Select(b => new EquityBarrierLabeler.Bar(b.OpenTimeMs, (double)b.Open, (double)b.High, (double)b.Low, (double)b.Close))
                 .ToArray();
-            var outcome = EquityBarrierLabeler.Label(window, f.TargetPct, f.StopPct, f.HorizonSessions, buyFee, sellFee, tax);
+            var outcome = EquityBarrierLabeler.Label(window, f.TargetPct, f.StopPct, f.HorizonSessions, buyFee, sellFee, tax,
+                _costs.SettlementTradingDays);
             if (outcome is null) continue;
             f.EntryBarOpenTimeMs = window[0].OpenTimeMs;
             f.EntryPrice = bars[start].Open;
