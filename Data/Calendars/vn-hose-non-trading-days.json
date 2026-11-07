@@ -3,16 +3,857 @@
   "venue": "HOSE",
   "calendarVersion": "vn-hose-2026-11-06",
   "coverage": {
-    "fromDate": "2020-01-01",
+    "fromDate": "2011-01-01",
     "toDate": "2027-12-31"
   },
   "notes": [
     "Chỉ 'verified' khi đã đọc văn bản gốc của HOSE (staticfile.hsx.vn). 2021–2023: tin HOSE tồn tại trên hsx.vn nhưng tệp đính kèm không còn được phục vụ ⇒ 'unverified-legacy'.",
     "Ngày nghỉ cuối tuần và ngày làm bù thứ Bảy không liệt kê (thứ Bảy/Chủ nhật vốn không giao dịch).",
     "Đã bỏ khỏi cấu hình cũ: 2021-12-31 và 2025-02-03 (đều có nến của cả 5 mã; 2025-02-03 trái Thông báo 2079/TB-SGDHCM).",
-    "2027: 'provisional' = suy ra từ lịch nghỉ của Chính phủ (Thông báo 11483/TB-BNV) và Bộ luật Lao động trước khi HOSE công bố lịch giao dịch 2027 (HOSE công bố lịch 2026 ngày 09/12/2025). Tiền lệ: HOSE nghỉ đúng ngày nghỉ của khu vực nhà nước và không giao dịch thứ Bảy làm bù. Đổi sang 'verified' (hoặc sửa) khi có thông báo của HOSE."
+    "2027: 'provisional' = suy ra từ lịch nghỉ của Chính phủ (Thông báo 11483/TB-BNV) và Bộ luật Lao động trước khi HOSE công bố lịch giao dịch 2027 (HOSE công bố lịch 2026 ngày 09/12/2025). Tiền lệ: HOSE nghỉ đúng ngày nghỉ của khu vực nhà nước và không giao dịch thứ Bảy làm bù. Đổi sang 'verified' (hoặc sửa) khi có thông báo của HOSE.",
+    "2011–2019: 'unverified-legacy' có nguồn thứ cấp (thông báo công ty chứng khoán/HNX/UBCK, tin báo, bản HOSE do Vietstock lưu) vì không mở được văn bản gốc trên hsx.vn; danh sách khớp chính xác với các ngày không có phiên của VNINDEX trên CafeF 2011–2019 (cả hai chiều). 2018-01-23/24 là ngừng giao dịch đột xuất (market-closure), không phải ngày lễ."
   ],
   "days": [
+    {
+      "date": "2011-01-03",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch (nghỉ bù 01/01 thứ Bảy)",
+      "sourceUrl": "https://www.lpbs.com.vn/lvs-thong-bao-nghi-giao-dich-tet-duong-lich-nam-2011-detail776",
+      "sourceTitle": "LVS (LienVietPostBank Securities): Thông báo nghỉ giao dịch Tết Dương lịch năm 2011 (nghỉ thứ Hai 03/01/2011, giao dịch lại 04/01/2011)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-01-31",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.bsc.com.vn/tin-tuc/tin-chi-tiet/131094-thong-bao-lich-nghi-tet-tan-mao-2011/",
+      "sourceTitle": "BSC Thông báo 058/TB-BSC ngày 21/01/2011 lịch nghỉ Tết Tân Mão 2011 (căn cứ thông báo của UBCK, HNX, HOSE, VSD): nghỉ 31/01–07/02/2011, giao dịch lại 08/02/2011",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-02-01",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.bsc.com.vn/tin-tuc/tin-chi-tiet/131094-thong-bao-lich-nghi-tet-tan-mao-2011/",
+      "sourceTitle": "BSC Thông báo 058/TB-BSC ngày 21/01/2011 lịch nghỉ Tết Tân Mão 2011 (căn cứ thông báo của UBCK, HNX, HOSE, VSD): nghỉ 31/01–07/02/2011, giao dịch lại 08/02/2011",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-02-02",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.bsc.com.vn/tin-tuc/tin-chi-tiet/131094-thong-bao-lich-nghi-tet-tan-mao-2011/",
+      "sourceTitle": "BSC Thông báo 058/TB-BSC ngày 21/01/2011 lịch nghỉ Tết Tân Mão 2011 (căn cứ thông báo của UBCK, HNX, HOSE, VSD): nghỉ 31/01–07/02/2011, giao dịch lại 08/02/2011",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-02-03",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.bsc.com.vn/tin-tuc/tin-chi-tiet/131094-thong-bao-lich-nghi-tet-tan-mao-2011/",
+      "sourceTitle": "BSC Thông báo 058/TB-BSC ngày 21/01/2011 lịch nghỉ Tết Tân Mão 2011 (căn cứ thông báo của UBCK, HNX, HOSE, VSD): nghỉ 31/01–07/02/2011, giao dịch lại 08/02/2011",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-02-04",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.bsc.com.vn/tin-tuc/tin-chi-tiet/131094-thong-bao-lich-nghi-tet-tan-mao-2011/",
+      "sourceTitle": "BSC Thông báo 058/TB-BSC ngày 21/01/2011 lịch nghỉ Tết Tân Mão 2011 (căn cứ thông báo của UBCK, HNX, HOSE, VSD): nghỉ 31/01–07/02/2011, giao dịch lại 08/02/2011",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-02-07",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.bsc.com.vn/tin-tuc/tin-chi-tiet/131094-thong-bao-lich-nghi-tet-tan-mao-2011/",
+      "sourceTitle": "BSC Thông báo 058/TB-BSC ngày 21/01/2011 lịch nghỉ Tết Tân Mão 2011 (căn cứ thông báo của UBCK, HNX, HOSE, VSD): nghỉ 31/01–07/02/2011, giao dịch lại 08/02/2011",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-04-11",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương (hoán đổi, làm bù thứ Bảy 09/04/2011)",
+      "sourceUrl": "https://www.vbse.vn/vietinbank-securities-thong-bao-lich-nghi-giao-dich-nhan-dip-le-gio-to-hung-vuong-ngay-giai-phong-mien-nam-304-va-quoc-te-lao-dong-15-nam-2011/",
+      "sourceTitle": "VietinBank Securities thông báo ngày 05/04/2011 lịch nghỉ giao dịch Giỗ Tổ Hùng Vương, 30/4 và 1/5 năm 2011 (nghỉ 11–12/04 và 02–03/05/2011)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-04-12",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://www.vbse.vn/vietinbank-securities-thong-bao-lich-nghi-giao-dich-nhan-dip-le-gio-to-hung-vuong-ngay-giai-phong-mien-nam-304-va-quoc-te-lao-dong-15-nam-2011/",
+      "sourceTitle": "VietinBank Securities thông báo ngày 05/04/2011 lịch nghỉ giao dịch Giỗ Tổ Hùng Vương, 30/4 và 1/5 năm 2011 (nghỉ 11–12/04 và 02–03/05/2011)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-05-02",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4 (nghỉ bù)",
+      "sourceUrl": "https://www.vbse.vn/vietinbank-securities-thong-bao-lich-nghi-giao-dich-nhan-dip-le-gio-to-hung-vuong-ngay-giai-phong-mien-nam-304-va-quoc-te-lao-dong-15-nam-2011/",
+      "sourceTitle": "VietinBank Securities thông báo ngày 05/04/2011 lịch nghỉ giao dịch Giỗ Tổ Hùng Vương, 30/4 và 1/5 năm 2011 (nghỉ 11–12/04 và 02–03/05/2011)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-05-03",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động (nghỉ bù)",
+      "sourceUrl": "https://www.vbse.vn/vietinbank-securities-thong-bao-lich-nghi-giao-dich-nhan-dip-le-gio-to-hung-vuong-ngay-giai-phong-mien-nam-304-va-quoc-te-lao-dong-15-nam-2011/",
+      "sourceTitle": "VietinBank Securities thông báo ngày 05/04/2011 lịch nghỉ giao dịch Giỗ Tổ Hùng Vương, 30/4 và 1/5 năm 2011 (nghỉ 11–12/04 và 02–03/05/2011)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2011-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://www.lpbs.com.vn/tin-tuc/753/lvs-thong-bao-nghi-le-quoc-khanh-2-9.html",
+      "sourceTitle": "LVS thông báo ngày 29/08/2011 nghỉ lễ Quốc khánh 2/9/2011 (theo lịch của HOSE/HNX/VSD; giao dịch lại 05/09/2011)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-01-02",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch (nghỉ bù)",
+      "sourceUrl": "https://mbs.com.vn/vi/goc-truyen-thong/tin-tuc-mbs/thong-bao-nghi-tet-duong-lich-2012/",
+      "sourceTitle": "MBS: Thông báo nghỉ Tết Dương lịch 2012 (nghỉ bù thứ Hai 02/01/2012) — chỉ thấy đoạn trích tìm kiếm, trang trả 403",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-01-23",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://in.marketscreener.com/news/latest/WHAT-HAPPENED-IN-VIETNAM-ON-WEDNESDAY-11-JAN-2012-13964592",
+      "sourceTitle": "MarketScreener 11/01/2012: \"HOSE, HNX to stop trading on January 23-27 for Tet holiday\"",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-01-24",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://in.marketscreener.com/news/latest/WHAT-HAPPENED-IN-VIETNAM-ON-WEDNESDAY-11-JAN-2012-13964592",
+      "sourceTitle": "MarketScreener 11/01/2012: \"HOSE, HNX to stop trading on January 23-27 for Tet holiday\"",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-01-25",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://in.marketscreener.com/news/latest/WHAT-HAPPENED-IN-VIETNAM-ON-WEDNESDAY-11-JAN-2012-13964592",
+      "sourceTitle": "MarketScreener 11/01/2012: \"HOSE, HNX to stop trading on January 23-27 for Tet holiday\"",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-01-26",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://in.marketscreener.com/news/latest/WHAT-HAPPENED-IN-VIETNAM-ON-WEDNESDAY-11-JAN-2012-13964592",
+      "sourceTitle": "MarketScreener 11/01/2012: \"HOSE, HNX to stop trading on January 23-27 for Tet holiday\"",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-01-27",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://in.marketscreener.com/news/latest/WHAT-HAPPENED-IN-VIETNAM-ON-WEDNESDAY-11-JAN-2012-13964592",
+      "sourceTitle": "MarketScreener 11/01/2012: \"HOSE, HNX to stop trading on January 23-27 for Tet holiday\"",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-04-02",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương (nghỉ bù 31/3 thứ Bảy)",
+      "sourceUrl": "https://en.vietstock.vn/2012/04/stocks-rebound-after-holiday-36-122588.htm",
+      "sourceTitle": "Vietstock EN 03/04/2012 \"Stocks rebound after holiday\" (sau kỳ nghỉ 3 ngày 31/3–02/4/2012)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4",
+      "sourceUrl": "https://cafef.vn/du-lieu/Ajax/PageNew/DataHistory/PriceHistory.ashx?Symbol=VNINDEX&StartDate=04/25/2012&EndDate=05/05/2012&PageIndex=1&PageSize=20",
+      "sourceTitle": "CHƯA CÓ VĂN BẢN/TIN: chỉ có bằng chứng dữ liệu — lịch sử VNINDEX CafeF không có phiên 30/04 và 01/05/2012",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-05-01",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động",
+      "sourceUrl": "https://cafef.vn/du-lieu/Ajax/PageNew/DataHistory/PriceHistory.ashx?Symbol=VNINDEX&StartDate=04/25/2012&EndDate=05/05/2012&PageIndex=1&PageSize=20",
+      "sourceTitle": "CHƯA CÓ VĂN BẢN/TIN: chỉ có bằng chứng dữ liệu — lịch sử VNINDEX CafeF không có phiên 30/04 và 01/05/2012",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-09-03",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (nghỉ bù)",
+      "sourceUrl": "https://www.aseansc.com.vn/lich-nghi-giao-dich-nhan-ngay-quoc-khanh-29-nam-2012/",
+      "sourceTitle": "Chứng khoán ASEAN thông báo 27/08/2012, căn cứ Thông báo 719/2012/TB-SGDHCM ngày 15/08/2012 của HOSE: nghỉ thứ Hai 03/09/2012",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2012-12-31",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch 2013 (hoán đổi)",
+      "sourceUrl": "https://www.aseansc.com.vn/thong-bao-lich-nghi-giao-dich-tet-duong-lich-nam-2013/",
+      "sourceTitle": "Chứng khoán ASEAN thông báo 07/12/2012 lịch nghỉ giao dịch Tết Dương lịch 2013: nghỉ 31/12/2012 và 01/01/2013, giao dịch lại 02/01/2013",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://en.vietstock.vn/2013/01/shares-rise-welcoming-new-year-36-141552.htm",
+      "sourceTitle": "Vietstock EN 02/01/2013 \"Shares rise welcoming new year\" (02/01 là phiên đầu năm)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-02-11",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietnamplus.vn/deputy-pm-opens-securities-trading-in-hanoi-after-tet/42049.amp",
+      "sourceTitle": "VietnamPlus 18/02/2013: thị trường mở lại 18/02 sau kỳ nghỉ Tết 9 ngày (09–17/02/2013)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-02-12",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietnamplus.vn/deputy-pm-opens-securities-trading-in-hanoi-after-tet/42049.amp",
+      "sourceTitle": "VietnamPlus 18/02/2013: thị trường mở lại 18/02 sau kỳ nghỉ Tết 9 ngày (09–17/02/2013)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-02-13",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietnamplus.vn/deputy-pm-opens-securities-trading-in-hanoi-after-tet/42049.amp",
+      "sourceTitle": "VietnamPlus 18/02/2013: thị trường mở lại 18/02 sau kỳ nghỉ Tết 9 ngày (09–17/02/2013)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-02-14",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietnamplus.vn/deputy-pm-opens-securities-trading-in-hanoi-after-tet/42049.amp",
+      "sourceTitle": "VietnamPlus 18/02/2013: thị trường mở lại 18/02 sau kỳ nghỉ Tết 9 ngày (09–17/02/2013)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-02-15",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietnamplus.vn/deputy-pm-opens-securities-trading-in-hanoi-after-tet/42049.amp",
+      "sourceTitle": "VietnamPlus 18/02/2013: thị trường mở lại 18/02 sau kỳ nghỉ Tết 9 ngày (09–17/02/2013)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-04-19",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://en.vietnamplus.vn/vnindex-slightly-rises-hnxindex-drops/43857.vnp",
+      "sourceTitle": "VietnamPlus 18/04/2013: \"The market will be closed on April 19 for a national holiday\"",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-04-29",
+      "kind": "market-holiday",
+      "reason": "nghỉ bù (hoán đổi sang thứ Bảy 04/05/2013)",
+      "sourceUrl": "https://en.vietstock.vn/2013/05/shares-tumbled-as-exchanges-reopen-after-fiveday-holiday-36-148253.htm",
+      "sourceTitle": "Vietstock EN 02/05/2013 \"Shares tumbled as exchanges reopen after five-day holiday\" (27/04–01/05/2013; 29/4 hoán đổi sang thứ Bảy 04/05)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4",
+      "sourceUrl": "https://en.vietstock.vn/2013/05/shares-tumbled-as-exchanges-reopen-after-fiveday-holiday-36-148253.htm",
+      "sourceTitle": "Vietstock EN 02/05/2013 \"Shares tumbled as exchanges reopen after five-day holiday\" (27/04–01/05/2013; 29/4 hoán đổi sang thứ Bảy 04/05)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-05-01",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động",
+      "sourceUrl": "https://en.vietstock.vn/2013/05/shares-tumbled-as-exchanges-reopen-after-fiveday-holiday-36-148253.htm",
+      "sourceTitle": "Vietstock EN 02/05/2013 \"Shares tumbled as exchanges reopen after five-day holiday\" (27/04–01/05/2013; 29/4 hoán đổi sang thứ Bảy 04/05)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2013-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://www.vndirect.com.vn/?p=17333",
+      "sourceTitle": "VNDIRECT: Non-trading period on the occasion of National Day 02/09/2013 (dẫn thông báo HOSE/HNX; giao dịch lại 03/09/2013) — chỉ thấy đoạn trích, trang trả 403",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-01-28",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-01-29",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-01-30",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-01-31",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-02-03",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-02-04",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-02-05",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-04-09",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-05-01",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-05-02",
+      "kind": "market-holiday",
+      "reason": "nghỉ bù (hoán đổi dịp 30/4–1/5)",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-09-01",
+      "kind": "market-holiday",
+      "reason": "nghỉ bù (hoán đổi, làm bù thứ Bảy 06/09/2014)",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2014-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://thanhnien.vn/chung-khoan-nghi-giao-dich-14-ngay-trong-nam-2014-1857352.htm",
+      "sourceTitle": "Thanh Niên 21/12/2013 \"Chứng khoán nghỉ giao dịch 14 ngày trong năm 2014\" (lịch nghỉ năm 2014 của HOSE/HNX)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-01-02",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch (hoán đổi, làm bù thứ Bảy 27/12/2014)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-02-16",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (làm bù thứ Bảy 14/02/2015 không giao dịch)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-02-17",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (làm bù thứ Bảy 14/02/2015 không giao dịch)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-02-18",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (làm bù thứ Bảy 14/02/2015 không giao dịch)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-02-19",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (làm bù thứ Bảy 14/02/2015 không giao dịch)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-02-20",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (làm bù thứ Bảy 14/02/2015 không giao dịch)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-02-23",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (làm bù thứ Bảy 14/02/2015 không giao dịch)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-04-28",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-04-29",
+      "kind": "market-holiday",
+      "reason": "nghỉ bù (hoán đổi, làm bù thứ Bảy 25/04/2015)",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-05-01",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động",
+      "sourceUrl": "https://en.vietstock.vn/2014/12/hose-notice-of-holiday-schedule-2015-36-192062.htm",
+      "sourceTitle": "HOSE Thông báo 1157/TB-SGDHCM (19/12/2014) về lịch nghỉ giao dịch năm 2015, thay thế 596/TB-SGDHCM ngày 30/05/2014 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2015-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://en.sggp.org.vn/stocks-gold-march-south-post24035.html",
+      "sourceTitle": "SGGP English 04/09/2015 \"Stocks, gold march south\": thị trường nghỉ Quốc khánh, giao dịch lại 03/09/2015",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-02-08",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-02-09",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-02-10",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-02-11",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-02-12",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-04-18",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương (nghỉ bù 16/4 thứ Bảy)",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-05-02",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4 (nghỉ bù)",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-05-03",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động (nghỉ bù)",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2016-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://en.vietstock.vn/2015/06/hose-notice-of-holiday-schedule-2016-36-207307.htm",
+      "sourceTitle": "HOSE Thông báo 613/TB-SGDHCM (03/06/2015) về lịch nghỉ giao dịch năm 2016 — bản dịch đăng trên Vietstock EN",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-01-02",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch (nghỉ bù)",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-01-26",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-01-27",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-01-30",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-01-31",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (nghỉ bù)",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-02-01",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (nghỉ bù)",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-04-06",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-05-01",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4 và Quốc tế Lao động",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-05-02",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4 và Quốc tế Lao động (nghỉ bù)",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2017-09-04",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (nghỉ bù)",
+      "sourceUrl": "https://static2.vietstock.vn/vietstock/2016/12/8/20161208_20161208%20Cong%20bo%20lich%20nghi%20giao%20dich%202017.pdf",
+      "sourceTitle": "HOSE Thông báo 1241/TB-SGDHCM ngày 07/12/2016 về việc công bố lịch nghỉ giao dịch trong năm 2017 (thay thế 625/TB-SGDHCM ngày 26/05/2016) — bản PDF gốc của HOSE do Vietstock lưu",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-01-23",
+      "kind": "market-closure",
+      "reason": "Ngừng giao dịch đột xuất do sự cố hệ thống (KHÔNG phải ngày lễ)",
+      "sourceUrl": "https://vneconomy.vn/hose-thong-bao-ngung-giao-dich-ngay-23-1-2018.htm",
+      "sourceTitle": "VnEconomy: HOSE thông báo ngừng giao dịch ngày 23/1/2018 (sự cố hệ thống phiên ATC 22/01/2018)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-01-24",
+      "kind": "market-closure",
+      "reason": "Ngừng giao dịch đột xuất để kiểm thử hệ thống (KHÔNG phải ngày lễ)",
+      "sourceUrl": "https://vneconomy.vn/hose-tiep-tuc-ngung-giao-dich-ngay-24-1.htm",
+      "sourceTitle": "VnEconomy: HOSE tiếp tục ngừng giao dịch ngày 24/1 (kiểm thử toàn thị trường; giao dịch lại 25/01/2018)",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-02-14",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-02-15",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-02-16",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-02-19",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (nghỉ bù)",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-02-20",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch (nghỉ bù)",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-04-25",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-05-01",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-09-03",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh (nghỉ bù)",
+      "sourceUrl": "https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60000674.html?_page=1",
+      "sourceTitle": "HNX: Thông báo về lịch nghỉ giao dịch năm 2018 (06/06/2017), căn cứ Công văn 3232/UBCK-PTTT ngày 29/05/2017 của UBCK chấp thuận lịch nghỉ giao dịch năm 2018 — văn bản của HNX, không phải HOSE",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2018-12-31",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch 2019",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-01-01",
+      "kind": "market-holiday",
+      "reason": "Tết Dương lịch",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-02-04",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-02-05",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-02-06",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-02-07",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-02-08",
+      "kind": "market-holiday",
+      "reason": "Tết Âm lịch",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-04-15",
+      "kind": "market-holiday",
+      "reason": "Giỗ Tổ Hùng Vương (nghỉ bù 14/4 Chủ nhật)",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-04-29",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4 và Quốc tế Lao động (hoán đổi)",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-04-30",
+      "kind": "market-holiday",
+      "reason": "Ngày Chiến thắng 30/4",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-05-01",
+      "kind": "market-holiday",
+      "reason": "Quốc tế Lao động",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
+    {
+      "date": "2019-09-02",
+      "kind": "market-holiday",
+      "reason": "Quốc khánh",
+      "sourceUrl": "https://en.vietstock.vn/2018/08/notice-of-holiday-schedule-2019-36-333345.htm",
+      "sourceTitle": "HOSE: Notice of Holiday Schedule 2019 (Vietstock EN, 30/08/2018); khớp HNX Thông báo lịch nghỉ giao dịch năm 2019 (21/08/2018, căn cứ 3329/UBCK-PTTT ngày 25/05/2018) https://www.hnx.vn/vi-vn/chi-tiet-lich-nghi-gd-60002874.html",
+      "verification": "unverified-legacy"
+    },
     {
       "date": "2020-01-01",
       "kind": "market-holiday",

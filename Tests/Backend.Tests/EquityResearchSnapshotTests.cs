@@ -639,10 +639,10 @@ public class EquityResearchSnapshotTests(ITestOutputHelper output) : IDisposable
         Assert.Null(mem.LatestExpectedOpenTimeMsAtAsOf);
         Assert.Contains("not evaluable", FreshCheck(mem).Detail);
         Assert.Equal("fail", FreshCheck(mem).Status);
-        // Before coverage (Tet 2019 holidays are not in the calendar): not evaluable, never a false "stale".
+        // Before coverage (Tet 2010 holidays are not in the calendar, which starts 2011-01-01): not evaluable, never a false "stale".
         var tetDb = NewDb(nameof(Freshness_AsOfBeyondCalendarCoverage_FailsClosed) + "-tet");
-        await SeedAsync(tetDb, 60, new DateOnly(2019, 2, 1));
-        var tet = await Build(tetDb, Local(2019, 2, 6, 20, 0), canonical).Snapshots.BuildAsync("BID", Local(2019, 2, 6, 20, 0));
+        await SeedAsync(tetDb, 60, new DateOnly(2010, 2, 12));
+        var tet = await Build(tetDb, Local(2010, 2, 17, 20, 0), canonical).Snapshots.BuildAsync("BID", Local(2010, 2, 17, 20, 0));
         Assert.Null(tet.LatestExpectedOpenTimeMsAtAsOf);
         Assert.Contains("not evaluable", FreshCheck(tet).Detail);
     }

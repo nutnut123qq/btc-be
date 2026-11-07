@@ -8,7 +8,7 @@ using Xunit;
 namespace Backend.Tests;
 
 /// <summary>
-/// EQX v2 review #1: the canonical calendar covers 2020-01-01..2027-12-31 (2027 provisional). Past coverage.toDate nothing may
+/// EQX v2 review #1: the canonical calendar covers 2011-01-01..2027-12-31 (2011-2019 secondary-sourced, 2027 provisional). Past coverage.toDate nothing may
 /// assume "weekday = trading day": data quality / decision freshness flag calendar-coverage-expired, the decision
 /// waits, observation and forecast recording refuse, and forecast windows beyond coverage are never computed.
 /// Before coverage.fromDate missing bars are below-calendar-coverage, not real gaps.
@@ -50,12 +50,12 @@ public class MarketCalendarCoverageTests
     [Fact]
     public void Coverage_Bounds_AndNextSessionWindow()
     {
-        Assert.Equal((new DateOnly(2020, 1, 1), new DateOnly(2027, 12, 31)), (Cal.CoverageFrom!.Value, Cal.CoverageTo!.Value));
+        Assert.Equal((new DateOnly(2011, 1, 1), new DateOnly(2027, 12, 31)), (Cal.CoverageFrom!.Value, Cal.CoverageTo!.Value));
         Assert.True(Cal.IsBeyondCoverage(new DateOnly(2028, 1, 4)));
         Assert.False(Cal.IsBeyondCoverage(new DateOnly(2027, 12, 31)));
-        Assert.True(Cal.IsBelowCoverage(new DateOnly(2019, 12, 31)));
+        Assert.True(Cal.IsBelowCoverage(new DateOnly(2010, 12, 31)));
         Assert.True(Cal.Coverage(new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 31)).FullyCovered);
-        var st = Cal.Coverage(new DateOnly(2019, 6, 1), new DateOnly(2028, 2, 1));
+        var st = Cal.Coverage(new DateOnly(2010, 6, 1), new DateOnly(2028, 2, 1));
         Assert.True(st.BelowCoverage && st.BeyondCoverage);
         Assert.False(new VietnamMarketCalendar().IsBeyondCoverage(new DateOnly(2099, 1, 1))); // explicit test calendar: unbounded
 
@@ -73,11 +73,11 @@ public class MarketCalendarCoverageTests
     public async Task DataQuality_BeyondCoverage_FlagsExpired_AndBelowCoverageIsNotARealGap()
     {
         await using var db = NewDb(nameof(DataQuality_BeyondCoverage_FlagsExpired_AndBelowCoverageIsNotARealGap));
-        // 2019-12-24 missing (below coverage), 2028-01-04 missing (beyond coverage): neither is a real gap.
-        SeedDaily(db, "MBB", new DateOnly(2019, 12, 2), new DateOnly(2028, 1, 6), "2019-12-24", "2028-01-04");
-        SeedDaily(db, "BID", new DateOnly(2019, 12, 2), new DateOnly(2028, 1, 6), "2019-12-24", "2028-01-04");
+        // 2010-12-24 missing (below coverage), 2028-01-04 missing (beyond coverage): neither is a real gap.
+        SeedDaily(db, "MBB", new DateOnly(2010, 12, 2), new DateOnly(2028, 1, 6), "2010-12-24", "2028-01-04");
+        SeedDaily(db, "BID", new DateOnly(2010, 12, 2), new DateOnly(2028, 1, 6), "2010-12-24", "2028-01-04");
         await db.SaveChangesAsync();
-        var options = new MbbIngestionOptions { Symbol = "MBB", Timeframes = ["1d"], DailyBackfillStartLocal = "2019-12-02" };
+        var options = new MbbIngestionOptions { Symbol = "MBB", Timeframes = ["1d"], DailyBackfillStartLocal = "2010-12-02" };
 
         var beyond = (await new MbbDataQualityService(db, options, Cal, timeProvider: new FixedTime(Beyond)).BuildReportAsync())
             .Timeframes.Single();
